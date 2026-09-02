@@ -15,6 +15,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let onCheckUpdates: () -> Void
     private let availableUpdate: () -> AppDelegate.Update?
     private let onInstallUpdate: () -> Void
+    private let onReset: (HangarReset.Scope) -> Void
     private var observers: [AnyCancellable] = []
     private var editor: HostEditor?
     private var about: AboutWindow?
@@ -24,7 +25,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
          onShowSetup: @escaping () -> Void,
          onCheckUpdates: @escaping () -> Void,
          availableUpdate: @escaping () -> AppDelegate.Update?,
-         onInstallUpdate: @escaping () -> Void) {
+         onInstallUpdate: @escaping () -> Void,
+         onReset: @escaping (HangarReset.Scope) -> Void) {
         self.store = store
         self.onOpenPanel = onOpenPanel
         self.onReloadHotkeys = onReloadHotkeys
@@ -32,6 +34,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.onCheckUpdates = onCheckUpdates
         self.availableUpdate = availableUpdate
         self.onInstallUpdate = onInstallUpdate
+        self.onReset = onReset
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -275,6 +278,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         submenu.addItem(.separator())
         submenu.addItem(action("Edit Configuration\u{2026}", #selector(editConfig), key: ""))
         submenu.addItem(status("~/.hangar/config.json"))
+        submenu.addItem(.separator())
+        let clear = action("Clear Fleet Cache\u{2026}", #selector(clearCache), key: "")
+        clear.image = Brand.Glyph.symbol("arrow.clockwise.circle", size: 13)
+        submenu.addItem(clear)
+        let reset = action("Reset Hangar\u{2026}", #selector(resetEverything), key: "")
+        reset.image = Brand.Glyph.symbol("exclamationmark.arrow.circlepath", size: 13)
+        submenu.addItem(reset)
         item.submenu = submenu
         return item
     }
@@ -650,6 +660,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func installUpdate() { onInstallUpdate() }
+    @objc private func clearCache() { onReset(.cache) }
+    @objc private func resetEverything() { onReset(.everything) }
 
     @objc private func quit() { NSApp.terminate(nil) }
 }

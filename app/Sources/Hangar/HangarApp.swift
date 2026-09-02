@@ -31,7 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowSetup: { [weak self] in self?.showSetup() },
             onCheckUpdates: { [weak self] in self?.checkForUpdates(quietly: false) },
             availableUpdate: { [weak self] in self?.availableUpdate },
-            onInstallUpdate: { [weak self] in self?.installUpdate() })
+            onInstallUpdate: { [weak self] in self?.installUpdate() },
+            onReset: { [weak self] scope in self?.resetState(scope: scope) })
 
         registerHotKeys()
         scheduleRefresh()
@@ -70,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let channel = store.config.updateChannel ?? "stable"
         if !quietly {
             Notifier.show(title: "Checking for updates\u{2026}",
-                          body: "Channel: \(channel)")
+                          body: "Channel: \(channel)", seconds: 1.2)
         }
         Updates.recordCheck()
         Updates.check(currentVersion: Updates.bundleVersion, channel: channel) { result in
@@ -78,9 +79,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch result {
                 case .upToDate:
                     self.availableUpdate = nil
-                    if !quietly {
-                        Notifier.show(title: "Hangar \(Updates.bundleVersion) is current",
-                                      body: "Channel: \(channel)")
+                    guard !quietly else { return }
+                    // A HUD that fades after a second is fine for something the
+                    // user did not ask about. This is an answer to a question
+                    // they asked, so it waits to be dismissed.
+                    let alert = NSAlert()
+                    alert.messageText = "Hangar \(Updates.bundleVersion) is current"
+                    alert.informativeText =
+                        "No newer release on the \(channel) channel. Hangar checks "
+                        + "again automatically at most once every "
+                        + "\(self.store.config.updateCheckHours ?? 24) hours."
+                    alert.addButton(withTitle: "OK")
+                    alert.addButton(withTitle: "Release Notes")
+                    NSApp.activate(ignoringOtherApps: true)
+                    if alert.runModal() == .alertSecondButtonReturn {
+                        NSWorkspace.shared.open(Updates.repoURL
+                            .appendingPathComponent("releases"))
                     }
                 case .available(let version, let url, let dmg):
                     self.availableUpdate = Update(version: version, page: url, dmg: dmg)
@@ -89,9 +103,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // first, because nothing unprompted should start a download.
                     self.installUpdate(confirmFirst: quietly)
                 case .failed(let message):
-                    if !quietly {
-                        Notifier.show(title: "Update check failed", body: message, seconds: 4)
-                    }
+                    guard !quietly else { return }
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "Update check failed"
+                    alert.informativeText = message
+                    alert.addButton(withTitle: "OK")
+                    NSApp.activate(ignoringOtherApps: true)
+                    alert.runModal()
                 }
             }
         }
@@ -149,6 +168,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         })
+    }
+
+    /// Clears Hangar's own state after confirming exactly what goes.
+    func resetState(scope: HangarReset.Scope) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = scope == .cache
+            ? "Clear the cached fleet?"
+            : "Reset Hangar to a fresh install?"
+        alert.informativeText = HangarReset.description(of: scope)
+        alert.addButton(withTitle: scope == .cache ? "Clear Cache" : "Reset Hangar")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let outcome = HangarReset.perform(scope)
+        guard outcome.failed.isEmpty else {
+            let failure = NSAlert()
+            failure.alertStyle = .critical
+            failure.messageText = "Reset did not finish"
+            failure.informativeText = outcome.failed.joined(separator: "\n")
+            failure.runModal()
+            return
+        }
+
+        store.reloadAfterReset()
+        Notifier.show(
+            title: scope == .cache ? "Cache cleared" : "Hangar reset",
+            body: outcome.removed.isEmpty
+                ? "There was nothing left to remove"
+                : "\(outcome.removed.count) file(s) removed. Fetching the fleet\u{2026}",
+            seconds: 3)
+        registerHotKeys()
+        scheduleRefresh()
+        Task { @MainActor in
+            await store.refresh()
+            if scope == .everything { self.showSetup() }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

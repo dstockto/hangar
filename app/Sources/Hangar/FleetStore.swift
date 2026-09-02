@@ -369,6 +369,27 @@ final class FleetStore: ObservableObject {
         config.tagMapping.resolvedKey(for: concept, in: tagCatalog)
     }
 
+    /// Drops everything in memory and reloads from whatever is left on disk.
+    /// Called after a reset, so a cleared cache is actually forgotten rather
+    /// than lingering in the published properties until the next fetch.
+    func reloadAfterReset() {
+        instances = []
+        searchEntries = []
+        aliasByID = [:]
+        tagCatalog = .empty
+        fetchedAt = nil
+        region = ""
+        credentialSource = nil
+        credentialAdvice = nil
+        lastSyncMessage = nil
+        status = .idle
+        config = .standard()
+        reloadConfig()
+        loadCache()
+        refreshManagedHosts()
+        rebuildIndex()
+    }
+
     // MARK: - Menu levels
 
     /// The menubar levels, in order.
