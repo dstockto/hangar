@@ -29,6 +29,9 @@ final class AboutWindow: NSObject, NSWindowDelegate {
         icon.image = NSApp.applicationIconImage
         icon.imageScaling = .scaleProportionallyUpOrDown
 
+        // The lockup below the icon repeats the mark, but here they are stacked
+        // and a size apart rather than sitting side by side, which is the
+        // arrangement the brand kit shows. Left as it is.
         // The lockup, not a text label: the wordmark is custom geometry, so
         // setting "Hangar" in the system font would be a different mark.
         let name = NSImageView()

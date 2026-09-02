@@ -25,10 +25,23 @@ final class ClusterView: NSView {
         var position: CGPoint
         var velocity: CGVector = .zero
         var radius: CGFloat
+        /// Set when the node is a single host, so it can be coloured by state.
+        var state: String?
+        /// The second line of the tooltip: a hostname, or nothing for a group.
+        var detail: String?
         /// Hosts drawn around this node, at angles fixed by their instance id so
         /// the same host lands in the same place on every refresh.
         var hostAngles: [(angle: CGFloat, state: String)] = []
     }
+
+    /// Clicking a circle goes in, clicking the hub goes back out, which is the
+    /// whole navigation model. The filtering itself lives in the core.
+    private var instances: [Instance] = []
+    private var groupingKeys: [String] = []
+    private var focus: ClusterFocus = .fleet
+    /// Called with whatever is now in view, so the panels below can describe the
+    /// same subset the picture does.
+    var onFocusChange: (([Instance], String) -> Void)?
 
     private var nodes: [Node] = []
     /// Every group hangs off one hub: the account's EC2 inventory, which is the
@@ -75,9 +88,62 @@ final class ClusterView: NSView {
 
     // MARK: - Content
 
+    private var region = ""
+
     func show(_ instances: [Instance], groupBy keys: [String], region: String = "") {
+        self.instances = instances
+        self.groupingKeys = keys
+        self.region = region
+        if case .group = focus, !instances.contains(where: { inFocus($0) }) {
+            // The group went away between refreshes; do not strand the view on it.
+            focus = .fleet
+        }
+        rebuild()
+    }
+
+    private func inFocus(_ instance: Instance) -> Bool {
+        focus.matches(instance, groupingKeys: groupingKeys)
+    }
+
+    private func rebuild() {
+        switch focus {
+        case .fleet: buildGroups(instances)
+        case .group: buildHosts(instances.filter { inFocus($0) })
+        }
+        onFocusChange?(instances.filter { inFocus($0) }, focusLabel)
+    }
+
+    private var focusLabel: String { focus.label }
+
+    /// One circle per host, for a group that has been opened.
+    private func buildHosts(_ members: [Instance]) {
+        hubTotal = members.count
+        hubLabel = focusLabel.isEmpty ? "EC2" : "\(focusLabel)  ·  back"
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        nodes = members.enumerated().map { index, instance in
+            let angle = CGFloat(index) / CGFloat(max(1, members.count)) * .pi * 2
+            let alias = instance.leafLabel(alias: instance.aliasStem,
+                                           groupedBy: groupingKeys)
+            return Node(label: alias, product: instance.product,
+                        env: instance.env, count: 1,
+                        running: instance.state == "running" ? 1 : 0,
+                        stopped: instance.state == "stopped" ? 1 : 0,
+                        other: 0,
+                        position: CGPoint(x: centre.x + cos(angle) * 150,
+                                          y: centre.y + sin(angle) * 120),
+                        radius: 15,
+                        state: instance.state,
+                        detail: instance.host ?? instance.id,
+                        hostAngles: [])
+        }
+        setAccessibilityLabel("\(focusLabel): \(members.count) hosts.")
+        restart()
+    }
+
+    private func buildGroups(_ instances: [Instance]) {
         hubTotal = instances.count
         hubLabel = region.isEmpty ? "EC2" : "EC2 · \(region)"
+        let keys = groupingKeys
         let productKey = keys.first ?? TagMapping.Canonical.product
         let envKey = keys.count > 1 ? keys[1] : TagMapping.Canonical.env
 
@@ -241,8 +307,10 @@ final class ClusterView: NSView {
         let hubRadius: CGFloat = 34
 
         // Spokes first, so every circle sits on top of its own line.
-        context.setStrokeColor(Brand.Color.textSecondary.withAlphaComponent(0.28).cgColor)
         for node in nodes {
+            let tint = node.state.map { Brand.Color.state(for: $0) }
+                ?? Brand.Color.category(for: node.product)
+            context.setStrokeColor(tint.withAlphaComponent(0.35).cgColor)
             let delta = CGVector(dx: node.position.x - centre.x,
                                  dy: node.position.y - centre.y)
             let distance = max(1, hypot(delta.dx, delta.dy))
@@ -283,14 +351,19 @@ final class ClusterView: NSView {
             let rect = CGRect(x: node.position.x - node.radius,
                               y: node.position.y - node.radius,
                               width: node.radius * 2, height: node.radius * 2)
-            context.setFillColor(Brand.Color.surfaceRaised.cgColor)
+            // A host is coloured by its state, a group by its product. Neither
+            // colour is load bearing: the count sits inside every group circle,
+            // the name is on it or one hover away, and the panels below say the
+            // same things in words.
+            let tint = node.state.map { Brand.Color.state(for: $0) }
+                ?? Brand.Color.category(for: node.product)
+            context.setFillColor(tint.withAlphaComponent(index == hovered ? 0.38 : 0.24).cgColor)
             context.fillEllipse(in: rect)
-            context.setStrokeColor((index == hovered ? Brand.Color.accent
-                                    : Brand.Color.textSecondary).cgColor)
-            context.setLineWidth(index == hovered ? 2 : 1)
+            context.setStrokeColor(tint.withAlphaComponent(index == hovered ? 1 : 0.8).cgColor)
+            context.setLineWidth(index == hovered ? 2.5 : 1.5)
             context.strokeEllipse(in: rect)
 
-            let label = "\(node.count)"
+            let label = node.state == nil ? "\(node.count)" : ""
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
                 .foregroundColor: Brand.Color.textPrimary,
@@ -390,10 +463,36 @@ final class ClusterView: NSView {
         hovered = found
         toolTip = found.map { index in
             let node = nodes[index]
+            if let state = node.state {
+                return "\(node.label)\n\(node.detail ?? "")\n\(state)"
+            }
             return "\(node.label): \(node.count) hosts, \(node.running) running, "
-                + "\(node.stopped) stopped"
+                + "\(node.stopped) stopped\nClick to open"
         }
         needsDisplay = true
+    }
+
+    /// A click into an inactive window normally only activates it. Here the
+    /// first click should also drill in: the circle is what the person aimed at.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        if hypot(point.x - centre.x, point.y - centre.y) <= 36 {
+            guard focus != .fleet else { return }
+            focus = .fleet
+            rebuild()
+            return
+        }
+        guard case .fleet = focus,
+              let index = nodes.firstIndex(where: { node in
+                  hypot(node.position.x - point.x, node.position.y - point.y) <= node.radius
+              })
+        else { return }
+        focus = .group(product: nodes[index].product, env: nodes[index].env)
+        hovered = nil
+        rebuild()
     }
 
     override func mouseExited(with event: NSEvent) {

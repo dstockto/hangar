@@ -14,6 +14,8 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow!
     private var cluster: ClusterView!
     private var panels: NSStackView!
+    private var tabs: NSSegmentedControl!
+    private var scroll: NSScrollView!
     private var footer: NSTextField!
     private var observers: [AnyCancellable] = []
 
@@ -30,6 +32,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
     func show() {
         reload()
+        switchTab()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
@@ -37,13 +40,13 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     // MARK: - Construction
 
     private func build() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 700),
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 940),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
         window.title = "Hangar Fleet"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.minSize = NSSize(width: 640, height: 520)
+        window.minSize = NSSize(width: 680, height: 600)
         // Restored first, then autosaved: setting the autosave name alone does
         // not put a closed window back where it was on the next launch.
         if !window.setFrameUsingName(DashboardWindow.frameName) { window.center() }
@@ -51,6 +54,11 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
         cluster = ClusterView(frame: .zero)
         cluster.translatesAutoresizingMaskIntoConstraints = false
+        // Opening a group narrows the panels to it, so the numbers always
+        // describe whatever the picture is currently showing.
+        cluster.onFocusChange = { [weak self] hosts, label in
+            Task { @MainActor in self?.renderPanels(for: hosts, focus: label) }
+        }
 
         panels = NSStackView()
         panels.orientation = .vertical
@@ -58,7 +66,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         panels.spacing = Brand.Metric.space12
         panels.translatesAutoresizingMaskIntoConstraints = false
 
-        let scroll = NSScrollView()
+        scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -77,6 +85,27 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         refresh.bezelStyle = .rounded
         refresh.translatesAutoresizingMaskIntoConstraints = false
 
+        // A segmented control in the title bar, rather than a tab strip in the
+        // content: the fleet page is a picture, and a picture wants the window.
+        tabs = NSSegmentedControl(labels: ["Fleet", "Insights"],
+                                  trackingMode: .selectOne,
+                                  target: self, action: #selector(switchTab))
+        tabs.selectedSegment = 0
+        tabs.segmentStyle = .automatic
+        let accessory = NSTitlebarAccessoryViewController()
+        let holder = NSView()
+        holder.addSubview(tabs)
+        tabs.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            tabs.centerXAnchor.constraint(equalTo: holder.centerXAnchor),
+            tabs.topAnchor.constraint(equalTo: holder.topAnchor, constant: 4),
+            tabs.bottomAnchor.constraint(equalTo: holder.bottomAnchor, constant: -8),
+            holder.widthAnchor.constraint(greaterThanOrEqualToConstant: 260),
+        ])
+        accessory.view = holder
+        accessory.layoutAttribute = .bottom
+        window.addTitlebarAccessoryViewController(accessory)
+
         let content = NSView()
         content.addSubview(cluster)
         content.addSubview(scroll)
@@ -88,10 +117,10 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
             cluster.topAnchor.constraint(equalTo: content.topAnchor),
             cluster.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             cluster.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            cluster.heightAnchor.constraint(equalTo: content.heightAnchor,
-                                            multiplier: 0.36),
+            cluster.bottomAnchor.constraint(equalTo: footer.topAnchor,
+                                            constant: -Brand.Metric.space8),
 
-            scroll.topAnchor.constraint(equalTo: cluster.bottomAnchor),
+            scroll.topAnchor.constraint(equalTo: content.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: footer.topAnchor,
@@ -117,6 +146,14 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         ])
     }
 
+    /// The picture and the numbers are the same data; only one of them is on
+    /// screen at a time so neither has to be cramped.
+    @objc private func switchTab() {
+        let showingFleet = tabs.selectedSegment == 0
+        cluster.isHidden = !showingFleet
+        scroll.isHidden = showingFleet
+    }
+
     @objc private func refreshFleet() {
         Task { @MainActor in await store.refresh() }
     }
@@ -124,18 +161,30 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     // MARK: - Content
 
     private func reload() {
-        let insights = FleetInsights.compute(store.instances)
         cluster.show(store.instances, groupBy: store.config.groupingKeys,
                      region: store.region)
+        renderPanels(for: store.instances, focus: "")
+    }
+
+    private func renderPanels(for hosts: [Instance], focus: String) {
+        let insights = FleetInsights.compute(hosts)
 
         panels.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        panels.addArrangedSubview(statStrip(insights))
+        if !focus.isEmpty {
+            let scope = NSTextField(labelWithString:
+                "Showing \(focus). Click the centre circle to go back to the fleet.")
+            scope.font = .systemFont(ofSize: 11, weight: .medium)
+            scope.textColor = Brand.Color.accent
+            panels.addArrangedSubview(scope)
+        }
         for panel in [hygienePanel(insights), placementPanel(insights),
                       agePanel(insights), deltaPanel(insights)] {
             panels.addArrangedSubview(panel)
             panel.widthAnchor.constraint(equalTo: panels.widthAnchor).isActive = true
         }
 
-        var parts = ["\(insights.total) hosts", "\(insights.running) running"]
+        var parts = [count(insights.total, "host"), "\(insights.running) running"]
         if insights.stopped > 0 { parts.append("\(insights.stopped) stopped") }
         if !store.region.isEmpty { parts.append(store.region) }
         if let age = store.cacheAgeDescription { parts.append(age) }
@@ -151,32 +200,28 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
     private func hygienePanel(_ insights: FleetInsights) -> NSView {
         let hygiene = insights.hygiene
-        var rows: [(String, String)] = []
+        var rows: [(RowKind, String, String)] = []
         if hygiene.missingProduct > 0 {
-            rows.append(("\(hygiene.missingProduct) hosts have no product tag",
-                         "they group under untagged and get id-shaped aliases"))
+            rows.append((.warn, "No product tag", "\(hygiene.missingProduct) hosts"))
         }
         if hygiene.missingEnv > 0 {
-            rows.append(("\(hygiene.missingEnv) hosts have no env tag",
-                         "nothing marks them as production or not"))
+            rows.append((.warn, "No env tag", "\(hygiene.missingEnv) hosts"))
         }
         if hygiene.missingName > 0 {
-            rows.append(("\(hygiene.missingName) hosts have no name tag",
-                         "their alias falls back to the instance id"))
+            rows.append((.warn, "No name tag, alias falls back to the instance id",
+                         "\(hygiene.missingName) hosts"))
         }
         if hygiene.missingHostname > 0 {
-            rows.append(("\(hygiene.missingHostname) hosts have no hostname tag",
-                         "Hangar connects to their private address instead"))
+            rows.append((.note, "No hostname tag, reached by private address",
+                         "\(hygiene.missingHostname) hosts"))
         }
         for (alias, count) in hygiene.duplicateAliases.sorted(by: { $0.key < $1.key }) {
-            rows.append(("\(count) hosts share the alias \(alias)",
-                         "ssh reaches whichever entry it reads first"))
+            rows.append((.warn, "Alias \(alias) is shared", "\(count) hosts"))
         }
         if rows.isEmpty {
-            rows.append(("Every host has the tags Hangar maps",
-                         "aliases are unambiguous and reach a hostname"))
+            rows.append((.ok, "Every host has the tags Hangar maps", ""))
         }
-        return panel(title: "Tag hygiene",
+        return panel(title: "Tag hygiene", symbol: "tag",
                      headline: hygiene.isClean ? "Clean"
                                                : count(rows.count, "thing") + " to fix",
                      rows: rows)
@@ -185,117 +230,209 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     private func placementPanel(_ insights: FleetInsights) -> NSView {
         let singleZone = insights.placement.filter(\.isSingleZone)
         let pets = insights.placement.reduce(0) { $0 + $1.pets }
-        var rows: [(String, String)] = []
+        var rows: [(RowKind, String, String)] = []
         for group in singleZone.prefix(6) {
-            rows.append(("\(group.product) · \(group.env) is in one zone",
-                         "\(group.count) hosts, all in \(group.zones.first ?? "?")"))
+            rows.append((.warn, "\(group.product) · \(group.env) is only in \(group.zones.first ?? "?")",
+                         "\(group.count) hosts"))
         }
         if singleZone.count > 6 {
-            rows.append(("and \(singleZone.count - 6) more in one zone", ""))
+            rows.append((.note, "and \(singleZone.count - 6) more in one zone", ""))
         }
         for group in insights.placement.sorted(by: { $0.pets > $1.pets }).prefix(3)
         where group.pets > 0 {
-            rows.append(("\(group.product) · \(group.env) has \(group.pets) hosts outside an autoscaling group",
-                         "\(group.inAutoscalingGroup) of \(group.count) are in one"))
+            rows.append((.note, "\(group.product) · \(group.env) outside an autoscaling group",
+                         "\(group.pets) of \(group.count)"))
         }
         if rows.isEmpty {
-            rows.append(("Every group spans more than one zone", ""))
+            rows.append((.ok, "Every group spans more than one zone", ""))
         }
         return panel(title: "Placement and autoscaling",
+                     symbol: "point.3.connected.trianglepath.dotted",
                      headline: count(singleZone.count, "single-zone group") + "  ·  "
                              + count(pets, "host") + " outside an autoscaling group",
                      rows: rows)
     }
 
     private func agePanel(_ insights: FleetInsights) -> NSView {
-        var rows = insights.ages.filter { $0.count > 0 }
-            .map { ("\($0.count) hosts \($0.label)", "") }
+        var rows: [(RowKind, String, String)] = insights.ages
+            .filter { $0.count > 0 }
+            .map { bucket in
+                (bucket.label == "over 180 days" ? .warn : .note,
+                 "Up \(bucket.label)", "\(bucket.count) hosts")
+            }
         let flagged = insights.families.filter { $0.isPreviousGeneration || $0.isBurstable }
         for family in flagged.prefix(5) {
             let note = [family.isPreviousGeneration ? "previous generation" : nil,
                         family.isBurstable ? "burstable" : nil]
                 .compactMap { $0 }.joined(separator: ", ")
-            rows.append(("\(family.count) hosts on \(family.family)", note))
+            rows.append((.note, "\(family.family), \(note)", "\(family.count) hosts"))
         }
         let old = insights.ages.first { $0.label == "over 180 days" }?.count ?? 0
-        return panel(title: "Age and instance families",
+        return panel(title: "Age and instance families", symbol: "clock.arrow.circlepath",
                      headline: old == 0 ? "Nothing up longer than 180 days"
                                         : count(old, "host") + " up over 180 days",
                      rows: rows)
     }
 
     private func deltaPanel(_ insights: FleetInsights) -> NSView {
-        var rows: [(String, String)] = []
+        var rows: [(RowKind, String, String)] = []
         let history = store.history
         if history.count >= 2, let last = history.last {
             let previous = history[history.count - 2]
             let change = last.hosts - previous.hosts
             let formatter = DateFormatter()
             formatter.dateFormat = "HH:mm"
-            let word = change == 0 ? "unchanged" : (change > 0 ? "+\(change)" : "\(change)")
-            rows.append(("\(previous.hosts) to \(last.hosts) since \(formatter.string(from: previous.at))",
+            let word = change == 0 ? "no change" : (change > 0 ? "+\(change)" : "\(change)")
+            rows.append((change == 0 ? .note : .warn,
+                         "Since \(formatter.string(from: previous.at)): \(previous.hosts) to \(last.hosts)",
                          word))
         } else {
-            rows.append(("No history yet", "the delta appears after a second refresh"))
+            rows.append((.note, "No history yet, the delta needs a second refresh", ""))
         }
         for env in insights.exposure where env.withPublicAddress > 0 {
-            rows.append(("\(env.withPublicAddress) of \(env.total) hosts in \(env.env) have a public address", ""))
+            rows.append((.warn, "Public address in \(env.env)",
+                         "\(env.withPublicAddress) of \(env.total)"))
         }
         if insights.exposure.allSatisfy({ $0.withPublicAddress == 0 }) {
-            rows.append(("No host carries a public address", ""))
+            rows.append((.ok, "No host carries a public address", ""))
         }
-        return panel(title: "Change and exposure",
+        return panel(title: "Change and exposure", symbol: "chart.line.uptrend.xyaxis",
                      headline: count(history.count, "refresh", "refreshes") + " recorded",
                      rows: rows)
     }
 
-    /// One card: a heading, the number that matters, and the rows behind it.
-    private func panel(title: String, headline: String,
-                       rows: [(String, String)]) -> NSView {
+    /// Four numbers across the top, each in its own tile. The strip is the part
+    /// someone reads without reading: a glyph, a count, a noun.
+    private func statStrip(_ insights: FleetInsights) -> NSView {
+        let tiles: [(String, String, String, NSColor)] = [
+            ("shippingbox", "\(insights.total)",
+             insights.total == 1 ? "host" : "hosts", Brand.Color.textPrimary),
+            ("play.circle", "\(insights.running)", "running", Brand.Color.stateRunning),
+            ("stop.circle", "\(insights.stopped)", "stopped", Brand.Color.stateStopped),
+            ("square.grid.2x2", "\(insights.placement.count)",
+             insights.placement.count == 1 ? "group" : "groups", Brand.Color.accent),
+        ]
+        let views = tiles.map { symbol, value, caption, tint -> NSView in
+            let glyph = NSImageView()
+            glyph.image = Brand.Glyph.symbol(symbol, size: 15)
+            glyph.contentTintColor = tint
+            let number = NSTextField(labelWithString: value)
+            number.font = .monospacedDigitSystemFont(ofSize: 22, weight: .semibold)
+            number.textColor = Brand.Color.textPrimary
+            let label = NSTextField(labelWithString: caption)
+            label.font = .systemFont(ofSize: 10, weight: .medium)
+            label.textColor = Brand.Color.textSecondary
+            let text = NSStackView(views: [number, label])
+            text.orientation = .vertical
+            text.alignment = .leading
+            text.spacing = 0
+            let row = NSStackView(views: [glyph, text])
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = Brand.Metric.space8
+            return card(row)
+        }
+        let strip = NSStackView(views: views)
+        strip.orientation = .horizontal
+        strip.distribution = .fillEqually
+        strip.spacing = Brand.Metric.space8
+        return strip
+    }
+
+    /// The card chrome in one place, so every tile and panel matches.
+    private func card(_ content: NSView) -> NSView {
+        content.translatesAutoresizingMaskIntoConstraints = false
+        let card = NSView()
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 10
+        card.layer?.backgroundColor = Brand.Color.surfaceRaised.cgColor
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = Brand.Color.textPrimary.withAlphaComponent(0.06).cgColor
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: card.topAnchor,
+                                         constant: Brand.Metric.space12),
+            content.bottomAnchor.constraint(equalTo: card.bottomAnchor,
+                                            constant: -Brand.Metric.space12),
+            content.leadingAnchor.constraint(equalTo: card.leadingAnchor,
+                                             constant: Brand.Metric.space12),
+            content.trailingAnchor.constraint(equalTo: card.trailingAnchor,
+                                              constant: -Brand.Metric.space12),
+        ])
+        return card
+    }
+
+    /// A row's glyph says what kind of line it is before the words do.
+    enum RowKind {
+        case ok, warn, note
+
+        var symbol: String {
+            switch self {
+            case .ok:   return "checkmark.circle.fill"
+            case .warn: return "exclamationmark.triangle.fill"
+            case .note: return "circle.fill"
+            }
+        }
+
+        var tint: NSColor {
+            switch self {
+            case .ok:   return Brand.Color.stateRunning
+            case .warn: return Brand.Color.statePending
+            case .note: return Brand.Color.textSecondary
+            }
+        }
+    }
+
+    /// One card: a glyph, a heading, the number that matters, and the rows.
+    private func panel(title: String, symbol: String, headline: String,
+                       rows: [(RowKind, String, String)]) -> NSView {
+        let glyph = NSImageView()
+        glyph.image = Brand.Glyph.symbol(symbol, size: 14)
+        glyph.contentTintColor = Brand.Color.accent
         let heading = NSTextField(labelWithString: title.uppercased())
-        heading.font = .systemFont(ofSize: 11, weight: .semibold)
+        heading.font = .systemFont(ofSize: 10, weight: .semibold)
         heading.textColor = Brand.Color.textSecondary
+        let headingRow = NSStackView(views: [glyph, heading])
+        headingRow.orientation = .horizontal
+        headingRow.alignment = .centerY
+        headingRow.spacing = 6
 
         let number = NSTextField(labelWithString: headline)
-        number.font = .systemFont(ofSize: 15, weight: .semibold)
+        number.font = .systemFont(ofSize: 16, weight: .semibold)
         number.textColor = Brand.Color.textPrimary
 
-        let stack = NSStackView(views: [heading, number])
+        let stack = NSStackView(views: [headingRow, number])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 2
+        stack.spacing = 3
+        stack.setCustomSpacing(Brand.Metric.space8, after: number)
 
-        for (left, right) in rows {
+        for (kind, left, right) in rows {
+            let bullet = NSImageView()
+            bullet.image = Brand.Glyph.symbol(kind.symbol, size: kind == .note ? 7 : 11)
+            bullet.contentTintColor = kind.tint
+
             let label = NSTextField(labelWithString: left)
             label.font = .systemFont(ofSize: 12)
             label.textColor = Brand.Color.textPrimary
             label.lineBreakMode = .byTruncatingTail
-            let detail = NSTextField(labelWithString: right)
-            detail.font = .systemFont(ofSize: 11)
-            detail.textColor = Brand.Color.textSecondary
-            let row = NSStackView(views: [label, detail])
-            row.orientation = .horizontal
-            row.spacing = Brand.Metric.space8
-            stack.addArrangedSubview(row)
-        }
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        let card = NSView()
-        card.wantsLayer = true
-        card.layer?.cornerRadius = 8
-        card.layer?.backgroundColor = Brand.Color.surfaceRaised.cgColor
-        card.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: card.topAnchor,
-                                       constant: Brand.Metric.space12),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor,
-                                          constant: -Brand.Metric.space12),
-            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor,
-                                           constant: Brand.Metric.space12),
-            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor,
-                                            constant: -Brand.Metric.space12),
-        ])
-        return card
+            let detail = NSTextField(labelWithString: right)
+            detail.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+            detail.textColor = Brand.Color.textSecondary
+            detail.alignment = .right
+            detail.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+
+            let row = NSStackView(views: [bullet, label, NSView(), detail])
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = Brand.Metric.space8
+            bullet.widthAnchor.constraint(equalToConstant: 12).isActive = true
+            stack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+        return card(stack)
     }
 }

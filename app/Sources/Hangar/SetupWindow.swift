@@ -61,12 +61,11 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
 
-        let icon = NSImageView()
-        icon.image = NSApp.applicationIconImage
-        icon.imageScaling = .scaleProportionallyUpOrDown
-
+        // No app icon beside the lockup: the lockup is a lockup, mark and all,
+        // so the two together drew the hangar symbol twice, at two different
+        // weights, an inch apart. The supplied artwork wins.
         let lockup = NSImageView()
-        lockup.image = Brand.Glyph.wordmark(width: 154)
+        lockup.image = Brand.Glyph.wordmark(width: 172)
         lockup.contentTintColor = Brand.Color.textPrimary
         lockup.imageScaling = .scaleProportionallyUpOrDown
         lockup.setAccessibilityLabel("Hangar")
@@ -196,10 +195,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         titleBlock.spacing = Brand.Metric.space4
         titleBlock.setCustomSpacing(Brand.Metric.space8, after: lockup)
 
-        let header = NSStackView(views: [icon, titleBlock])
+        let header = NSStackView(views: [titleBlock])
         header.orientation = .horizontal
         header.alignment = .top
-        header.spacing = Brand.Metric.space16
 
         // All three sit together on the right, in the order macOS expects: the
         // utility first, then the dismiss, then the default action last.
@@ -284,8 +282,6 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             footer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             footer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 44),
-            icon.heightAnchor.constraint(equalToConstant: 44),
             lockup.widthAnchor.constraint(equalToConstant: 154),
             lockup.heightAnchor.constraint(equalToConstant: 35),
             header.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
