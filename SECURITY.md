@@ -34,6 +34,14 @@ whether to run it:
   alone does not stop `ssh` from reading a host that begins with `-o` as an
   option.
 
+## Removing it
+
+**Settings → Reset Hangar** removes everything Hangar wrote: `~/.hangar/` and the
+generated `~/.ssh/config.d/hangar`. It does not remove the `Include` line from
+your `~/.ssh/config`, which is yours and is harmless pointing at nothing, and it
+never touches `~/.aws` or your keys. Deleting the app and that directory leaves
+nothing behind.
+
 ## Untrusted input
 
 Instance tags are written by anyone who can tag the account, so they are treated

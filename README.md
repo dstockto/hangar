@@ -100,6 +100,19 @@ Bartender, you may need to unhide the icon there once.
 **Help** in the menubar lists every shortcut and the intended flow, so the app
 explains itself without this README.
 
+### Starting over
+
+**Settings → Clear Fleet Cache** forgets the cached fleet and refetches, keeping
+your settings, tag mapping and menu levels. **Settings → Reset Hangar** also
+forgets the config, the onboarding marker and the ssh aliases Hangar generated,
+so it starts as it does on a fresh install. Neither touches your own
+`~/.ssh/config`, your `known_hosts`, or anything under `~/.aws`.
+
+Deleting the app and installing the DMG again also starts fresh: Hangar notices a
+newly installed bundle at a version that did not increase, drops the cache and
+runs the setup check. Your settings survive that, on the grounds that reinstalling
+to replace a damaged binary should not cost you your tag mapping.
+
 ### Updates
 
 **Settings… → Check for Updates**. Hangar reads the GitHub releases API only when

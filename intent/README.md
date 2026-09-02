@@ -43,3 +43,4 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0008 | ssh argument and pattern injection | Shipped |
 | 0009 | Tag picker on the setup screen | Shipped |
 | 0010 | Composable menu levels | Shipped |
+| 0011 | Reinstall behaves like one, and reset | Shipped |
