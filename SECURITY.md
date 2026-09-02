@@ -49,6 +49,21 @@ unregisters the login item and moves the app bundle to `~/.Trash` via a detached
 `mv`, never `rm`, so the uninstall is reversible. `~/.aws` and your keys are still
 untouched.
 
+## What is logged
+
+`~/.hangar/logs/hangar.log`, at `0600` inside a `0700` directory, rotating at
+512 KB with one generation kept. It holds events and errors: launches, refresh
+outcomes with host counts and timings, which credential source resolved, alias
+writes, update checks, uninstalls.
+
+- **Credentials are never passed to the logger**, at any level, in any form.
+- **Instance ids and hostnames are digests**, `i#8c31` and `host#4f2a`, four hex
+  characters of SHA-256. Stable enough to correlate two lines, useless for
+  learning what anyone's infrastructure is called.
+- **Nothing is uploaded.** The log is a local file; there is no reporting
+  endpoint, and the same lines go only to the local unified log besides.
+- A reset and an uninstall both remove the log directory with everything else.
+
 ## Untrusted input
 
 Instance tags are written by anyone who can tag the account, so they are treated

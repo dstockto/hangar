@@ -13,6 +13,12 @@ final class HangarResetTests: XCTestCase {
         XCTAssertEqual(paths.count, 2, "and nothing else")
     }
 
+    func testCacheScopeKeepsTheLog() {
+        // Clearing the cache is a fleet problem, not a "throw away the evidence"
+        // problem: the log is what explains why the fleet looked wrong.
+        XCTAssertFalse(HangarReset.paths(for: .cache).contains(HangarConfig.logDirectory))
+    }
+
     func testCacheScopeKeepsSettings() {
         let paths = HangarReset.paths(for: .cache)
         XCTAssertFalse(paths.contains(HangarConfig.path),
@@ -25,10 +31,10 @@ final class HangarResetTests: XCTestCase {
         let paths = HangarReset.paths(for: .everything)
         for expected in [HangarConfig.cachePath, UpdateSchedule.stampPath,
                          HangarConfig.path, HangarConfig.onboardedMarkerPath,
-                         HangarConfig.sshIncludePath] {
+                         HangarConfig.logDirectory, HangarConfig.sshIncludePath] {
             XCTAssertTrue(paths.contains(expected), "missing \(expected)")
         }
-        XCTAssertEqual(paths.count, 5)
+        XCTAssertEqual(paths.count, 6)
     }
 
     func testNeitherScopeTouchesAnythingHangarDoesNotOwn() {

@@ -128,6 +128,14 @@ login, then quits and moves the app to the Trash. Your AWS credentials and the
 rest of your `~/.ssh/config` are untouched, and the app is in the Trash rather
 than deleted, so Put Back undoes it.
 
+Every installed copy goes, not just the one you opened: copies under
+`/Applications` and `~/Applications`, plus whichever one you uninstalled from.
+The confirmation lists the bundles it found, so you approve the removal with the
+paths in front of you. Anything else it turns up, a build in a source tree, a
+copy on a mounted DMG it cannot move, is named as left alone rather than skipped
+in silence. Other running instances are quit first: one of them would otherwise
+write `~/.hangar` straight back.
+
 <div align="center">
 
 <img src="site/assets/shot-settings.png" alt="Hangar's Settings submenu in sections: Account, Startup, Updates, Configuration, Start Over, and Uninstall" width="560">
@@ -138,6 +146,19 @@ Deleting the app and installing the DMG again also starts fresh: Hangar notices 
 newly installed bundle at a version that did not increase, drops the cache and
 runs the setup check. Your settings survive that, on the grounds that reinstalling
 to replace a damaged binary should not cost you your tag mapping.
+
+### Logs
+
+Hangar writes `~/.hangar/logs/hangar.log`, `0600`, rotating at half a megabyte
+with one previous generation kept. It records launches, refreshes with host
+counts and timings, which credential source resolved, alias writes, updates and
+uninstalls, plus every error. **Settings → Reveal Log in Finder** opens it.
+
+Instance ids and hostnames are replaced with short digests such as `host#4f2a`,
+so the file can be attached to an issue without scrubbing it first, and two lines
+about the same host can still be tied together. Credentials never reach it. The
+same lines also go to the unified log, under the subsystem `com.goriparthi.hangar`,
+where Console.app can filter them.
 
 ### Updates
 

@@ -38,6 +38,8 @@ public enum HangarReset {
             return cache + [
                 HangarConfig.path,
                 HangarConfig.onboardedMarkerPath,
+                // The log describes the install that is being thrown away.
+                HangarConfig.logDirectory,
                 // Hangar's own generated file. The Include line in the user's
                 // ~/.ssh/config stays: that file is theirs, and the line is
                 // harmless pointing at nothing.

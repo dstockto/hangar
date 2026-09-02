@@ -34,6 +34,7 @@ public enum HangarUninstall {
     public static func perform(
         sshConfigPath: String = NSString(string: "~/.ssh/config").expandingTildeInPath
     ) -> Outcome {
+        Log.info(.uninstall, "removing Hangar's files")
         let fm = FileManager.default
         var removed: [String] = []
         var failed: [String] = []
@@ -52,6 +53,9 @@ public enum HangarUninstall {
         } catch {
             failed.append("\(sshConfigPath): \(error.localizedDescription)")
         }
+        Log.info(.uninstall, "files removed",
+                 ["removed": "\(removed.count)", "failed": "\(failed.count)",
+                  "include_line": includeLineRemoved ? "removed" : "absent"])
         return Outcome(removed: removed, failed: failed,
                        includeLineRemoved: includeLineRemoved)
     }
@@ -60,8 +64,8 @@ public enum HangarUninstall {
     public static var description: String {
         "Removes ~/.hangar, the ssh aliases Hangar generated, and the Include "
             + "line Hangar added to ~/.ssh/config. Hangar stops opening at login, "
-            + "then quits and moves itself to the Trash, where you can put it "
-            + "back. Your AWS credentials and the rest of your ~/.ssh/config are "
-            + "not touched."
+            + "then quits and moves every installed copy to the Trash, where you "
+            + "can put them back. Your AWS credentials and the rest of your "
+            + "~/.ssh/config are not touched."
     }
 }

@@ -324,6 +324,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         submenu.addItem(action("Setup Check\u{2026}", #selector(showSetup), key: ""))
         submenu.addItem(action("Edit Configuration\u{2026}", #selector(editConfig), key: ""))
         submenu.addItem(status("~/.hangar/config.json"))
+        submenu.addItem(action("Reveal Log in Finder", #selector(revealLog), key: ""))
+        submenu.addItem(status("~/.hangar/logs/hangar.log"))
 
         // Last, and behind its own heading: both of these throw work away.
         submenu.addItem(.separator())
@@ -342,7 +344,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let uninstall = action("Uninstall Hangar\u{2026}", #selector(uninstallHangar), key: "")
         uninstall.image = Brand.Glyph.symbol("trash", size: 13)
         submenu.addItem(uninstall)
-        submenu.addItem(statusRow([.text("Removes Hangar's files and moves the app to the Trash")],
+        submenu.addItem(statusRow([.text("Removes Hangar's files and every installed copy")],
                                   tier: .faint))
 
         item.submenu = submenu
@@ -724,6 +726,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func clearCache() { onReset(.cache) }
     @objc private func resetEverything() { onReset(.everything) }
     @objc private func uninstallHangar() { onUninstall() }
+
+    /// Reveals rather than opens: the log is a growing file, and Finder is where
+    /// someone goes to attach it to a bug report.
+    @objc private func revealLog() {
+        let path = HangarConfig.logPath
+        if !FileManager.default.fileExists(atPath: path) {
+            Log.info(.app, "log revealed before anything was written")
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
 
     @objc private func quit() { NSApp.terminate(nil) }
 }

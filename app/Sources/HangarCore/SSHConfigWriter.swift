@@ -162,9 +162,12 @@ public struct SSHConfigWriter {
         try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
 
         let count = entries(for: instances).count
+        let skipped = omitted(from: instances).map(\.id)
+        Log.info(.ssh, "aliases written",
+                 ["hosts": "\(count)", "skipped": "\(skipped.count)"])
         return SyncResult(path: path, hostCount: count,
                           includeLineNeeded: !SSHConfigWriter.includeLinePresent(),
-                          omittedHosts: omitted(from: instances).map(\.id))
+                          omittedHosts: skipped)
     }
 
     /// Asks ssh to parse the file. Cheaper and far more accurate than trying to
@@ -210,6 +213,7 @@ public struct SSHConfigWriter {
         }
         try updated.write(toFile: path, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        Log.info(.ssh, "include line added to ~/.ssh/config")
     }
 
     /// Takes the include back out, for an uninstall. Only lines Hangar would have
@@ -234,6 +238,7 @@ public struct SSHConfigWriter {
         }
         try? FileManager.default.removeItem(atPath: path + ".hangar-backup")
         try? FileManager.default.copyItem(atPath: path, toPath: path + ".hangar-backup")
+        Log.info(.ssh, "include line removed from ~/.ssh/config")
         try lines.joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
         // replaceItemAt behind atomically: true keeps its own mode, so set it after.
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)

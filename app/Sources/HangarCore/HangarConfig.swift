@@ -150,6 +150,14 @@ public struct HangarConfig: Codable, Sendable {
     }
     /// Written once the user has been through the setup check, so it only appears
     /// unprompted on a genuinely fresh install.
+    /// The log lives under ~/.hangar like everything else, so a reset or an
+    /// uninstall takes it with them.
+    public static var logDirectory: String {
+        (home as NSString).appendingPathComponent("logs")
+    }
+    public static var logPath: String {
+        (logDirectory as NSString).appendingPathComponent("hangar.log")
+    }
     public static var onboardedMarkerPath: String {
         (home as NSString).appendingPathComponent(".setup-complete")
     }

@@ -141,6 +141,8 @@ public enum CredentialResolver {
             let grace = Date().addingTimeInterval(2)
             while process.isRunning && Date() < grace { usleep(20_000) }
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            Log.error(.credentials, "credential_process timed out",
+                      ["seconds": "\(Int(timeout))"])
             throw HangarError.timedOut(
                 "credential_process did not finish within \(Int(timeout)) seconds")
         }

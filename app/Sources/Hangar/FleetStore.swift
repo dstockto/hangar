@@ -156,6 +156,8 @@ final class FleetStore: ObservableObject {
     func refresh() async {
         guard status != .refreshing else { return }
         status = .refreshing
+        let started = Date()
+        Log.info(.fleet, "refresh started")
         reloadConfig()
         // Read before resolving: when resolution fails we still need to know what
         // kind of profile it was to say anything useful about why.
@@ -181,6 +183,11 @@ final class FleetStore: ObservableObject {
             credentialSource = resolved.source
             credentialAdvice = nil
             status = .idle
+            Log.info(.fleet, "refresh finished",
+                     ["hosts": "\(instances.count)", "region": queryRegion,
+                      "ms": "\(Int(Date().timeIntervalSince(started) * 1000))"])
+            Log.info(.credentials, "credentials resolved",
+                     ["source": resolved.source.label])
             saveCache()
             if config.syncSSHConfigOnRefresh ?? true {
                 syncSSHConfig(announce: false)
@@ -189,6 +196,9 @@ final class FleetStore: ObservableObject {
             let advice = CredentialAdvice.forFailure(error, profile: attempted)
             credentialAdvice = advice
             status = .failed(advice.message)
+            Log.error(.fleet, "refresh failed",
+                      ["error": error.localizedDescription,
+                       "ms": "\(Int(Date().timeIntervalSince(started) * 1000))"])
         }
     }
 

@@ -130,6 +130,7 @@ enum Updates {
     private static func verifyAndStage(image: URL, work: URL, target: URL) -> StageResult {
         let fm = FileManager.default
         func fail(_ message: String) -> StageResult {
+            Log.error(.updates, "update rejected", ["reason": message])
             try? fm.removeItem(at: work)
             return .failed(message)
         }
@@ -217,6 +218,7 @@ enum Updates {
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
         } catch { return fail("Could not write the update helper") }
 
+        Log.info(.updates, "update staged and verified")
         return .ready(swap: {
             // nohup plus & detaches the helper into its own lineage, so quitting this
             // app does not take the helper down with it

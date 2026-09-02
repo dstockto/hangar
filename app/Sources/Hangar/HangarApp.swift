@@ -49,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let launch = InstallState.classify(
             version: Updates.bundleVersion,
             bundleCreated: InstallState.bundleCreated(at: Bundle.main.bundleURL))
+        Log.info(.app, "launched", ["version": Updates.bundleVersion,
+                                    "install": "\(launch)"])
         if case .reinstalled = launch {
             // The cache goes, so the fleet is fetched rather than remembered.
             // Settings stay: losing a tag mapping because someone reinstalled to
@@ -238,10 +240,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// moves the bundle to the Trash. Confirmed once, because the Trash makes it
     /// recoverable and the dialog says exactly what goes.
     func uninstall() {
+        // Every copy, not just the one this process is running from. A DMG
+        // dragged to Applications alongside a build installed elsewhere is an
+        // ordinary state, and removing one of them left the other opening at
+        // login and rewriting ~/.hangar the moment it launched.
+        let copies = Uninstaller.installedCopies()
+        var detail = HangarUninstall.description
+        if !copies.removable.isEmpty {
+            detail += "\n\nThese copies will be moved to the Trash:\n"
+                + InstalledCopies.describe(copies.removable)
+        }
+        if !copies.stuck.isEmpty {
+            detail += "\n\nFound but left alone, because it is not an installed copy:\n"
+                + InstalledCopies.describe(copies.stuck)
+        }
+
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Uninstall Hangar?"
-        alert.informativeText = HangarUninstall.description
+        alert.informativeText = detail
         alert.addButton(withTitle: "Uninstall Hangar")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
@@ -250,7 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Staged before anything is removed, so a helper that cannot be written
         // leaves the install intact rather than half gone.
         let staged: () -> Void
-        switch Uninstaller.stageBundleRemoval() {
+        switch Uninstaller.stageBundleRemoval(
+            of: copies.removable.map { URL(fileURLWithPath: $0) }) {
         case .ready(let removal):
             staged = removal
         case .failed(let message):
@@ -261,6 +279,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             failure.runModal()
             return
         }
+
+        // Other instances go first: one of them would write ~/.hangar straight
+        // back after the removal below, which is how an uninstall undoes itself.
+        Log.info(.uninstall, "uninstall confirmed",
+                 ["copies": "\(copies.removable.count)",
+                  "left_in_place": "\(copies.stuck.count)"])
+        Uninstaller.quitOtherInstances()
 
         // Unregistering needs the bundle still in place, so it goes first.
         LoginItem.set(false)
@@ -283,6 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        Log.info(.app, "quitting")
         hotKeys.unregisterAll()
         refreshTimer?.invalidate()
         updateTimer?.invalidate()
@@ -340,6 +366,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotkeyProblems = failed
         if let first { primaryCombination = first }
+        Log.info(.app, "hotkeys registered",
+                 ["wanted": "\(configured.count)", "failed": "\(failed.count)",
+                  "primary": first ?? "none"])
         if !failed.isEmpty {
             Notifier.show(title: "Hotkey problem", body: failed.joined(separator: "; "),
                           seconds: 5)
