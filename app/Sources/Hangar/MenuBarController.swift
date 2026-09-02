@@ -237,6 +237,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func sshConfigItem() -> NSMenuItem {
         let item = NSMenuItem(title: "SSH Config\u{2026}", action: nil, keyEquivalent: "")
+        item.image = Brand.Glyph.symbol("doc.text", size: 13)
         let submenu = NSMenu()
         submenu.addItem(action("Write Aliases Now", #selector(sync), key: ""))
         if !SSHConfigWriter.includeLinePresent() {
@@ -253,6 +254,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func settingsItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Settings\u{2026}", action: nil, keyEquivalent: ",")
+        item.image = Brand.Glyph.symbol("gearshape", size: 13)
         let submenu = NSMenu()
         submenu.addItem(profileMenuItem())
         let daily = action("Check for Updates Daily", #selector(toggleDailyUpdates), key: "")
@@ -408,6 +410,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // a size and a half above the status rows.
         let help: CGFloat = 13.5
         let item = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        item.image = Brand.Glyph.symbol("questionmark.circle", size: 13)
         let submenu = NSMenu()
 
         func row(_ runs: [StatusRun], tier: StatusTier = .normal,

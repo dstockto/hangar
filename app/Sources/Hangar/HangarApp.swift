@@ -41,7 +41,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A fresh install gets the setup check once. It reads the machine and says
         // what works, which is more useful than a wizard asking questions whose
         // answers are already on disk.
-        if !HangarConfig.hasOnboarded {
+        //
+        // A reinstall counts as fresh. Deleting an app leaves its support files
+        // behind, so without this a delete and reinstall served the old cache
+        // and skipped setup, which looks like the delete did not take.
+        let launch = InstallState.classify(
+            version: Updates.bundleVersion,
+            bundleCreated: InstallState.bundleCreated(at: Bundle.main.bundleURL))
+        if case .reinstalled = launch {
+            // The cache goes, so the fleet is fetched rather than remembered.
+            // Settings stay: losing a tag mapping because someone reinstalled to
+            // replace a damaged binary would be a nasty surprise, and Reset
+            // Hangar is right there for anyone who wants nothing kept.
+            HangarReset.perform(.cache)
+            store.reloadAfterReset()
+        }
+        if InstallState.shouldStartFresh(launch) || !HangarConfig.hasOnboarded {
             showSetup()
             return
         }
