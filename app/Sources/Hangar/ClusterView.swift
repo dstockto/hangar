@@ -38,6 +38,11 @@ final class ClusterView: NSView {
         /// and opened for its metadata.
         var state: String?
         var instanceID: String?
+        /// The instance type, for the tooltip: the circle says how big, this
+        /// says exactly which.
+        var type: String?
+        /// `4xl`, `lg`: what fits inside a host circle.
+        var shortSize: String?
         /// The second line of the tooltip: a hostname, or nothing for a group.
         var detail: String?
         /// Hosts drawn around this node, at angles fixed by their instance id so
@@ -81,7 +86,7 @@ final class ClusterView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         setAccessibilityElement(true)
-        setAccessibilityRole(.image)
+        setAccessibilityRole(.group)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -148,13 +153,18 @@ final class ClusterView: NSView {
                         other: 0,
                         position: CGPoint(x: centre.x + cos(angle) * 150,
                                           y: centre.y + sin(angle) * 120),
-                        radius: 15,
+                        // At host level the circle is the machine's size, so a
+                        // 4xlarge next to a medium reads as one at a glance.
+                        radius: min(46, 9 + sqrt(InstanceType(instance.type).sizeWeight) * 5),
                         state: instance.state,
                         instanceID: instance.id,
+                        type: instance.type,
+                        shortSize: InstanceType(instance.type).shortSize,
                         detail: instance.host ?? instance.id,
                         hostAngles: [])
         }
         setAccessibilityLabel("\(focusLabel): \(members.count) hosts.")
+        refreshAccessibilityChildren()
         restart()
     }
 
@@ -217,6 +227,7 @@ final class ClusterView: NSView {
         }
 
         setAccessibilityLabel(accessibilitySummary())
+        refreshAccessibilityChildren()
         restart()
     }
 
@@ -443,9 +454,15 @@ final class ClusterView: NSView {
             context.setLineWidth(index == hovered ? 2.5 : 1.5)
             context.strokeEllipse(in: rect)
 
-            let label = node.state == nil ? "\(node.count)" : ""
+            // A host circle shows how big the machine is; a group shows how
+            // many. An empty circle after drilling in was a wasted one.
+            let label = node.state == nil
+                ? "\(node.count)"
+                : (node.drawRadius >= 13 ? (node.shortSize ?? "") : "")
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold),
+                .font: NSFont.monospacedDigitSystemFont(
+                    ofSize: node.state == nil ? 13 : min(12, max(9, node.drawRadius * 0.5)),
+                    weight: .semibold),
                 .foregroundColor: Brand.Color.textPrimary,
             ]
             let size = (label as NSString).size(withAttributes: attributes)
@@ -566,7 +583,7 @@ final class ClusterView: NSView {
         toolTip = found.map { index in
             let node = nodes[index]
             if let state = node.state {
-                return "\(node.label)\n\(node.detail ?? "")\n\(state)"
+                return "\(node.label)\n\(node.detail ?? "")\n\(node.type ?? "")  ·  \(state)"
             }
             return "\(node.label): \(node.count) hosts, \(node.running) running, "
                 + "\(node.stopped) stopped\nClick to open"
@@ -593,6 +610,64 @@ final class ClusterView: NSView {
         }) else { return }
         // A group opens one level down; a host opens itself, which is where the
         // metadata appears.
+        open(index)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovered = nil
+        toolTip = nil
+        needsDisplay = true
+    }
+
+    // MARK: - Accessibility
+    //
+    // Each circle is a button in the accessibility tree, so the cluster can be
+    // driven without a mouse and read without sight. It also means the picture
+    // can be tested by pressing its elements rather than by clicking pixels,
+    // which is the only reliable way when another window is in front.
+
+    private func refreshAccessibilityChildren() {
+        let children: [Any] = nodes.enumerated().map { index, node in
+            let element = ClusterNodeElement()
+            element.setAccessibilityParent(self)
+            element.setAccessibilityRole(.button)
+            let described = node.state == nil
+                ? "\(node.label), \(node.count) hosts"
+                : "\(node.label), \(node.type ?? ""), \(node.state ?? "")"
+            element.setAccessibilityLabel(described)
+            element.setAccessibilityTitle(node.label)
+            let drawn = drawPosition(node)
+            let rect = NSRect(x: drawn.x - node.drawRadius, y: drawn.y - node.drawRadius,
+                              width: node.drawRadius * 2, height: node.drawRadius * 2)
+            element.setAccessibilityFrameInParentSpace(rect)
+            element.onPress = { [weak self] in self?.open(index) }
+            return element
+        } + [hubElement()]
+        setAccessibilityChildren(children)
+    }
+
+    private func hubElement() -> NSAccessibilityElement {
+        let element = ClusterNodeElement()
+        element.setAccessibilityParent(self)
+        element.setAccessibilityRole(.button)
+        let title = focus.isFleet
+            ? "\(hubTotal) hosts in the fleet"
+            : "Back to \(focus.leaving().label.isEmpty ? "the fleet" : focus.leaving().label)"
+        element.setAccessibilityLabel(title)
+        element.setAccessibilityTitle(title)
+        element.setAccessibilityFrameInParentSpace(
+            NSRect(x: bounds.midX - 40, y: bounds.midY - 40, width: 80, height: 80))
+        element.onPress = { [weak self] in
+            guard let self, !self.focus.isFleet else { return }
+            self.focus = self.focus.leaving()
+            self.rebuild()
+        }
+        return element
+    }
+
+    /// Opening a circle: a group descends a level, a host opens its record.
+    private func open(_ index: Int) {
+        guard nodes.indices.contains(index) else { return }
         if let id = nodes[index].instanceID {
             focus = focus.opening(host: id)
         } else {
@@ -602,16 +677,24 @@ final class ClusterView: NSView {
         rebuild()
     }
 
-    override func mouseExited(with event: NSEvent) {
-        hovered = nil
-        toolTip = nil
-        needsDisplay = true
-    }
-
     private func accessibilitySummary() -> String {
         let hosts = nodes.reduce(0) { $0 + $1.count }
         let running = nodes.reduce(0) { $0 + $1.running }
         return "Fleet cluster: \(hosts) hosts in \(nodes.count) groups, \(running) running. "
             + "The panels below say the same in text."
     }
+}
+
+
+/// One circle, as something the accessibility tree can press.
+@MainActor
+final class ClusterNodeElement: NSAccessibilityElement {
+    var onPress: (() -> Void)?
+
+    override func accessibilityPerformPress() -> Bool {
+        onPress?()
+        return true
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
 }

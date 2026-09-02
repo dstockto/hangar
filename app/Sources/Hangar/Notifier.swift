@@ -39,7 +39,7 @@ enum Notifier {
             // operating system alert rather than as this app saying something.
             detail.lineBreakMode = .byWordWrapping
             detail.maximumNumberOfLines = 3
-            detail.preferredMaxLayoutWidth = 300
+            detail.preferredMaxLayoutWidth = 290
             views.append(detail)
         }
 
@@ -47,7 +47,7 @@ enum Notifier {
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 5
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 22, bottom: 18, right: 22)
+        stack.edgeInsets = NSEdgeInsets(top: 18, left: 30, bottom: 18, right: 30)
 
         let container = NSView()
         container.wantsLayer = true
@@ -87,7 +87,7 @@ enum Notifier {
         ])
 
         let fitting = stack.fittingSize
-        let width = min(max(fitting.width, 240), 360)
+        let width = min(max(fitting.width, 260), 380)
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: fitting.height),
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)

@@ -34,6 +34,55 @@ public struct InstanceType: Sendable, Equatable {
         InstanceType.previousGenerationFamilies.contains(family)
     }
 
+    /// Roughly how much machine this is, on a scale where `large` is 4. Taken
+    /// from the size suffix alone, which is the only thing DescribeInstances
+    /// tells us without asking a second API what a type actually contains.
+    /// Relative, not exact: it exists so a picture can show that one host is
+    /// bigger than another, not to price anything.
+    public var sizeWeight: Double {
+        switch size {
+        case "nano":    return 0.25
+        case "micro":   return 0.5
+        case "small":   return 1
+        case "medium":  return 2
+        case "large":   return 4
+        case "xlarge":  return 8
+        // A bare-metal instance is the whole host, which across families lands
+        // around a 24xlarge. Approximate on purpose: the suffix is all
+        // DescribeInstances gives us.
+        case "metal":   return 192
+        default: break
+        }
+        // 2xlarge, 4xlarge, 12xlarge and so on: the multiple times an xlarge.
+        if size.hasSuffix("xlarge"),
+           let multiple = Double(size.dropLast("xlarge".count)) {
+            return multiple * 8
+        }
+        // Unknown sizes sit between medium and large rather than at either end,
+        // so an unfamiliar family neither dominates the picture nor vanishes.
+        return 3
+    }
+
+    /// The size in two or three characters, for drawing inside a small circle:
+    /// `4xl`, `lg`, `md`. Empty when the string is not shaped like a type, so a
+    /// caller can fall back rather than print nonsense.
+    public var shortSize: String {
+        switch size {
+        case "nano":   return "nano"
+        case "micro":  return "mic"
+        case "small":  return "sm"
+        case "medium": return "md"
+        case "large":  return "lg"
+        case "xlarge": return "xl"
+        case "metal":  return "metal"
+        default: break
+        }
+        // "8xlarge" is "8xl", not "8xxl": drop the whole suffix, not just the
+        // "large" part of it.
+        if size.hasSuffix("xlarge") { return size.dropLast("xlarge".count) + "xl" }
+        return size.isEmpty ? "" : String(size.prefix(4))
+    }
+
     public init(_ raw: String) {
         self.raw = raw
         let halves = raw.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)

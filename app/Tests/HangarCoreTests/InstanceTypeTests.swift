@@ -38,3 +38,43 @@ final class InstanceTypeTests: XCTestCase {
         XCTAssertEqual(InstanceType("").family, "")
     }
 }
+
+extension InstanceTypeTests {
+
+    func testSizeWeightOrdersTheUsualSizes() {
+        let ordered = ["t3.nano", "t3.micro", "t3.small", "t3.medium", "m6i.large",
+                       "m6i.xlarge", "m6i.2xlarge", "m6i.4xlarge", "m6i.12xlarge"]
+            .map { InstanceType($0).sizeWeight }
+        XCTAssertEqual(ordered, ordered.sorted(), "each size outweighs the one before")
+        XCTAssertEqual(InstanceType("m6i.large").sizeWeight, 4)
+        XCTAssertEqual(InstanceType("m6i.2xlarge").sizeWeight, 16)
+        XCTAssertEqual(InstanceType("m6i.4xlarge").sizeWeight,
+                       InstanceType("m6i.2xlarge").sizeWeight * 2)
+    }
+
+    func testMetalIsTheBiggestAndUnknownSitsInTheMiddle() {
+        // Metal is the whole host: bigger than the sizes people run day to day,
+        // in the region of a 24xlarge rather than beyond every size that exists.
+        XCTAssertGreaterThan(InstanceType("m6i.metal").sizeWeight,
+                             InstanceType("m6i.16xlarge").sizeWeight)
+        XCTAssertLessThanOrEqual(InstanceType("m6i.metal").sizeWeight,
+                                 InstanceType("m6i.48xlarge").sizeWeight)
+        // An unfamiliar size neither dominates the picture nor disappears.
+        let unknown = InstanceType("m6i.jumbo").sizeWeight
+        XCTAssertGreaterThan(unknown, InstanceType("t3.small").sizeWeight)
+        XCTAssertLessThan(unknown, InstanceType("m6i.large").sizeWeight)
+    }
+}
+
+extension InstanceTypeTests {
+
+    func testShortSizeFitsInsideACircle() {
+        XCTAssertEqual(InstanceType("m6i.large").shortSize, "lg")
+        XCTAssertEqual(InstanceType("m6i.xlarge").shortSize, "xl")
+        XCTAssertEqual(InstanceType("m6i.2xlarge").shortSize, "2xl")
+        XCTAssertEqual(InstanceType("m6i.8xlarge").shortSize, "8xl")
+        XCTAssertEqual(InstanceType("t3.medium").shortSize, "md")
+        XCTAssertEqual(InstanceType("m6i.metal").shortSize, "metal")
+        XCTAssertEqual(InstanceType("weird").shortSize, "")
+    }
+}

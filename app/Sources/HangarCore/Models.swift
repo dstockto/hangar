@@ -10,10 +10,36 @@ public struct Instance: Sendable, Hashable, Codable {
     public var availabilityZone: String?
     public var launchTime: String
     public var tags: [String: String]
+    /// The rest of what DescribeInstances says about an instance. All optional,
+    /// because a cache written before these existed has to keep decoding, and
+    /// all free: they came back in the same response as everything above.
+    public var imageID: String?
+    public var vpcID: String?
+    public var subnetID: String?
+    public var keyName: String?
+    public var iamProfile: String?
+    public var architecture: String?
+    public var platform: String?
+    /// "spot" or "scheduled" when the instance is not on demand.
+    public var lifecycle: String?
+    public var cores: Int?
+    public var threadsPerCore: Int?
+    public var privateDNS: String?
+    public var securityGroups: [String]?
+    public var monitoring: String?
+    public var rootDeviceType: String?
+    public var stateReason: String?
 
     public init(id: String, state: String, type: String, privateIP: String?,
                 publicIP: String?, availabilityZone: String?, launchTime: String,
-                tags: [String: String]) {
+                tags: [String: String], imageID: String? = nil, vpcID: String? = nil,
+                subnetID: String? = nil, keyName: String? = nil,
+                iamProfile: String? = nil, architecture: String? = nil,
+                platform: String? = nil, lifecycle: String? = nil,
+                cores: Int? = nil, threadsPerCore: Int? = nil,
+                privateDNS: String? = nil, securityGroups: [String]? = nil,
+                monitoring: String? = nil, rootDeviceType: String? = nil,
+                stateReason: String? = nil) {
         self.id = id
         self.state = state
         self.type = type
@@ -22,6 +48,27 @@ public struct Instance: Sendable, Hashable, Codable {
         self.availabilityZone = availabilityZone
         self.launchTime = launchTime
         self.tags = tags
+        self.imageID = imageID
+        self.vpcID = vpcID
+        self.subnetID = subnetID
+        self.keyName = keyName
+        self.iamProfile = iamProfile
+        self.architecture = architecture
+        self.platform = platform
+        self.lifecycle = lifecycle
+        self.cores = cores
+        self.threadsPerCore = threadsPerCore
+        self.privateDNS = privateDNS
+        self.securityGroups = securityGroups
+        self.monitoring = monitoring
+        self.rootDeviceType = rootDeviceType
+        self.stateReason = stateReason
+    }
+
+    /// vCPUs, when the response said how the cores are laid out.
+    public var vcpus: Int? {
+        guard let cores, let threadsPerCore else { return nil }
+        return cores * threadsPerCore
     }
 
     public var product: String { tags["product"] ?? "" }

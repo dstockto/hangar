@@ -447,26 +447,58 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     private func hostPanel(_ host: Instance) -> NSView {
         let alias = store.alias(for: host) ?? host.aliasStem
         var rows: [(RowKind, String, String)] = [
-            (host.state == "running" ? .ok : .note, "State", host.state),
-            (.family, "Instance type", host.type),
+            (host.state == "running" ? .ok : .note, "State",
+             host.stateReason.map { "\(host.state) · \($0)" } ?? host.state),
+            (.clock, "Launched", launchDescription(host)),
+            (.family, "Instance type", typeDescription(host)),
             (.note, "Instance id", host.id),
             (.zone, "Availability zone", host.availabilityZone ?? "unknown"),
-            (.note, "Private address", host.privateIP ?? "none"),
         ]
+        if let vpc = host.vpcID { rows.append((.zone, "VPC", vpc)) }
+        if let subnet = host.subnetID { rows.append((.zone, "Subnet", subnet)) }
+        rows.append((.note, "Private address", host.privateIP ?? "none"))
+        if let dns = host.privateDNS, !dns.isEmpty {
+            rows.append((.note, "Private DNS", dns))
+        }
         if let publicIP = host.publicIP, !publicIP.isEmpty {
             rows.append((.address, "Public address", publicIP))
         }
         if let hostname = host.tags["hostname"], !hostname.isEmpty {
             rows.append((.note, "Hostname tag", hostname))
         }
-        rows.append((.clock, "Launched", launchDescription(host)))
-        if host.isASG {
-            rows.append((.scaling, "Autoscaling group", host.asg))
-        } else {
-            rows.append((.scaling, "Autoscaling group", "none, this one is a pet"))
+        if let image = host.imageID { rows.append((.note, "AMI", image)) }
+        if let key = host.keyName, !key.isEmpty {
+            rows.append((.note, "Key pair", key))
         }
+        if let profile = host.iamProfile, !profile.isEmpty {
+            rows.append((.note, "IAM instance profile", profile))
+        }
+        if let groups = host.securityGroups, !groups.isEmpty {
+            rows.append((.address, "Security groups", groups.joined(separator: ", ")))
+        }
+        if let lifecycle = host.lifecycle, !lifecycle.isEmpty {
+            // Worth knowing before you ssh in and start work on it.
+            rows.append((.warn, "Lifecycle", lifecycle))
+        }
+        if let monitoring = host.monitoring, !monitoring.isEmpty {
+            rows.append((.note, "Monitoring", monitoring))
+        }
+        if let root = host.rootDeviceType { rows.append((.note, "Root device", root)) }
+        rows.append((.scaling, "Autoscaling group",
+                     host.isASG ? host.asg : "none, this one is a pet"))
         rows.append((.note, "ssh alias", alias))
         return panel(title: "Host", symbol: "shippingbox", headline: alias, rows: rows)
+    }
+
+    /// The type, plus what the response said it contains and runs.
+    private func typeDescription(_ host: Instance) -> String {
+        var parts = [host.type]
+        if let vcpus = host.vcpus { parts.append("\(vcpus) vCPU") }
+        if let architecture = host.architecture { parts.append(architecture) }
+        if let platform = host.platform, platform.lowercased() != "linux/unix" {
+            parts.append(platform)
+        }
+        return parts.joined(separator: "  ·  ")
     }
 
     /// Every tag, because the one you need is always the one a summary dropped.

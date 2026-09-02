@@ -79,3 +79,69 @@ final class AWSConfigTests: TemporaryDirectoryTestCase {
         }
     }
 }
+
+/// The rest of the DescribeInstances response, which Hangar used to throw away.
+final class InstanceDetailParsingTests: XCTestCase {
+
+    func testTheParserKeepsWhatTheHostRecordShows() throws {
+        let xml = """
+        <DescribeInstancesResponse>
+          <reservationSet><item><instancesSet><item>
+            <instanceId>i-0abc</instanceId>
+            <imageId>ami-0123</imageId>
+            <instanceState><name>running</name></instanceState>
+            <privateDnsName>ip-10-0-0-1.ec2.internal</privateDnsName>
+            <keyName>deploy-key</keyName>
+            <instanceType>m6i.large</instanceType>
+            <launchTime>2026-08-01T12:00:00.000Z</launchTime>
+            <placement><availabilityZone>us-west-2a</availabilityZone></placement>
+            <monitoring><state>disabled</state></monitoring>
+            <subnetId>subnet-9</subnetId>
+            <vpcId>vpc-7</vpcId>
+            <privateIpAddress>10.0.0.1</privateIpAddress>
+            <architecture>x86_64</architecture>
+            <rootDeviceType>ebs</rootDeviceType>
+            <instanceLifecycle>spot</instanceLifecycle>
+            <iamInstanceProfile><arn>arn:aws:iam::123456789012:instance-profile/app-role</arn></iamInstanceProfile>
+            <groupSet>
+              <item><groupId>sg-1</groupId><groupName>web</groupName></item>
+              <item><groupId>sg-2</groupId><groupName>bastion</groupName></item>
+            </groupSet>
+            <platformDetails>Linux/UNIX</platformDetails>
+            <cpuOptions><coreCount>1</coreCount><threadsPerCore>2</threadsPerCore></cpuOptions>
+            <tagSet><item><key>Name</key><value>web-1</value></item></tagSet>
+          </item></instancesSet></item></reservationSet>
+        </DescribeInstancesResponse>
+        """
+        let page = try InstanceParser().parse(Data(xml.utf8))
+        let host = try XCTUnwrap(page.instances.first)
+        XCTAssertEqual(host.imageID, "ami-0123")
+        XCTAssertEqual(host.vpcID, "vpc-7")
+        XCTAssertEqual(host.subnetID, "subnet-9")
+        XCTAssertEqual(host.keyName, "deploy-key")
+        XCTAssertEqual(host.iamProfile, "app-role", "the name, not the whole ARN")
+        XCTAssertEqual(host.architecture, "x86_64")
+        XCTAssertEqual(host.lifecycle, "spot")
+        XCTAssertEqual(host.securityGroups, ["web", "bastion"])
+        XCTAssertEqual(host.privateDNS, "ip-10-0-0-1.ec2.internal")
+        XCTAssertEqual(host.monitoring, "disabled")
+        XCTAssertEqual(host.rootDeviceType, "ebs")
+        XCTAssertEqual(host.vcpus, 2)
+    }
+
+    func testAResponseWithoutTheExtrasStillParses() throws {
+        let xml = """
+        <DescribeInstancesResponse><reservationSet><item><instancesSet><item>
+          <instanceId>i-0abc</instanceId>
+          <instanceState><name>running</name></instanceState>
+          <instanceType>t3.small</instanceType>
+          <launchTime>2026-08-01T12:00:00.000Z</launchTime>
+        </item></instancesSet></item></reservationSet></DescribeInstancesResponse>
+        """
+        let host = try XCTUnwrap(InstanceParser().parse(Data(xml.utf8)).instances.first)
+        XCTAssertEqual(host.id, "i-0abc")
+        XCTAssertNil(host.imageID)
+        XCTAssertNil(host.vcpus)
+        XCTAssertNil(host.securityGroups)
+    }
+}

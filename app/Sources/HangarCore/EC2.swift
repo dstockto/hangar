@@ -152,6 +152,29 @@ final class InstanceParser: NSObject, XMLParserDelegate {
         case "ipAddress":                 current?.publicIP = value
         case "instanceState/name":        current?.state = value
         case "placement/availabilityZone":current?.availabilityZone = value
+        case "imageId":                   current?.imageID = value
+        case "vpcId":                     current?.vpcID = value
+        case "subnetId":                  current?.subnetID = value
+        case "keyName":                   current?.keyName = value
+        case "architecture":              current?.architecture = value
+        case "platformDetails":           current?.platform = value
+        case "instanceLifecycle":         current?.lifecycle = value
+        case "privateDnsName":            current?.privateDNS = value
+        case "monitoring/state":          current?.monitoring = value
+        case "rootDeviceType":            current?.rootDeviceType = value
+        case "stateReason/message":       current?.stateReason = value
+        case "iamInstanceProfile/arn":
+            // The profile name is the last path component of the ARN, which is
+            // the part anyone reads.
+            current?.iamProfile = value.split(separator: "/").last.map(String.init) ?? value
+        case "cpuOptions/coreCount":      current?.cores = Int(value)
+        case "cpuOptions/threadsPerCore": current?.threadsPerCore = Int(value)
+        case "groupSet/item/groupName":
+            // Read out, appended, put back: modifying through the optional while
+            // reading it is an exclusivity violation.
+            var groups = current?.securityGroups ?? []
+            groups.append(value)
+            current?.securityGroups = groups
         case "tagSet/item/key":           pendingTagKey = value
         case "tagSet/item/value":         pendingTagValue = value
         case "tagSet/item":
