@@ -1,0 +1,7 @@
+{
+  "id": "product-works-without-our-tags",
+  "promise": "A fleet tagged Service/Environment/Component works with no configuration.",
+  "why": "Hardcoded tag names made the app useless to anyone but its author.",
+  "command": "scripts/test.sh --filter TagMappingTests 2>&1 | grep -q 'with 0 failures'",
+  "expect": "exit 0"
+}

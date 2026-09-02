@@ -1,0 +1,59 @@
+name: Pages
+
+# Publishes site/ as-is. Deliberately not the legacy Jekyll build: that one only
+# publishes from the repository root or /docs, and it ran the landing page
+# through a Jekyll theme, which replaced the page's own <head> and rendered
+# README.md instead. Uploading a static artifact skips Jekyll entirely.
+#
+# One-time repository setting: Settings, Pages, Source must be "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never two deploys at once, and let a newer commit win.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the page for the things that break it
+        run: |
+          set -euo pipefail
+          # Absolute asset paths break under the /hangar/ base path.
+          if grep -nE '(src|href)="/[^/]' site/index.html; then
+            echo "::error::absolute asset path; use a relative one for /hangar/"
+            exit 1
+          fi
+          # A localhost URL means a preview link was committed.
+          if grep -n 'localhost\|127\.0\.0\.1' site/index.html site/*.css site/*.js; then
+            echo "::error::localhost reference in the published site"
+            exit 1
+          fi
+          test -f site/.nojekyll || { echo "::error::site/.nojekyll missing"; exit 1; }
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

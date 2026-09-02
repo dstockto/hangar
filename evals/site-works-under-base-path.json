@@ -1,0 +1,7 @@
+{
+  "id": "site-works-under-base-path",
+  "promise": "No asset is referenced by an absolute path, which would break under /hangar/.",
+  "why": "GitHub Pages serves this project from a subdirectory, not a domain root.",
+  "command": "! grep -nE '(src|href)=\"/[^/]' site/index.html",
+  "expect": "exit 0"
+}

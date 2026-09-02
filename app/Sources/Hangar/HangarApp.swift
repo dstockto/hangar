@@ -1,0 +1,252 @@
+import AppKit
+import HangarCore
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let store = FleetStore()
+    private var panel: PanelController!
+    private var menuBar: MenuBarController!
+    private let hotKeys = HotKeyManager()
+    private var refreshTimer: Timer?
+    private var setup: SetupWindow?
+    private var hotkeyProblems: [String] = []
+    private var primaryCombination = "\u{2318}\u{21E7}H"
+    private var updateTimer: Timer?
+
+    /// A release newer than this build, once a check has found one. The menu reads
+    /// it, so the user decides when to install rather than being interrupted.
+    struct Update {
+        var version: String
+        var page: URL
+        var dmg: URL?
+    }
+    private(set) var availableUpdate: Update?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        panel = PanelController(store: store)
+        menuBar = MenuBarController(
+            store: store,
+            onOpenPanel: { [weak self] in self?.openPanel() },
+            onReloadHotkeys: { [weak self] in self?.registerHotKeys() },
+            onShowSetup: { [weak self] in self?.showSetup() },
+            onCheckUpdates: { [weak self] in self?.checkForUpdates(quietly: false) },
+            availableUpdate: { [weak self] in self?.availableUpdate },
+            onInstallUpdate: { [weak self] in self?.installUpdate() })
+
+        registerHotKeys()
+        scheduleRefresh()
+        scheduleUpdateChecks()
+
+        // A fresh install gets the setup check once. It reads the machine and says
+        // what works, which is more useful than a wizard asking questions whose
+        // answers are already on disk.
+        if !HangarConfig.hasOnboarded {
+            showSetup()
+            return
+        }
+
+        Task { @MainActor in
+            await store.refresh()
+            if case .failed(let message) = store.status {
+                Notifier.show(title: "Hangar could not reach AWS", body: message, seconds: 5)
+            }
+        }
+    }
+
+    func showSetup() {
+        let window = SetupWindow(
+            store: store,
+            hotkeyProblem: { [weak self] in self?.hotkeyProblems.first },
+            hotkeyCombination: { [weak self] in self?.primaryCombination ?? "\u{2318}\u{21E7}H" },
+            onOpenPanel: { [weak self] in self?.openPanel() })
+        setup = window
+        window.show()
+    }
+
+    /// On demand from the menu, or on the daily schedule. Either way a newer
+    /// release ends in an offer to install it in place; nothing is said at all
+    /// when there is nothing new and the user did not ask.
+    func checkForUpdates(quietly: Bool) {
+        let channel = store.config.updateChannel ?? "stable"
+        if !quietly {
+            Notifier.show(title: "Checking for updates\u{2026}",
+                          body: "Channel: \(channel)")
+        }
+        Updates.recordCheck()
+        Updates.check(currentVersion: Updates.bundleVersion, channel: channel) { result in
+            Task { @MainActor in
+                switch result {
+                case .upToDate:
+                    self.availableUpdate = nil
+                    if !quietly {
+                        Notifier.show(title: "Hangar \(Updates.bundleVersion) is current",
+                                      body: "Channel: \(channel)")
+                    }
+                case .available(let version, let url, let dmg):
+                    self.availableUpdate = Update(version: version, page: url, dmg: dmg)
+                    // Either way the answer is an offer to install. A check the
+                    // user asked for goes straight to it; the daily one asks
+                    // first, because nothing unprompted should start a download.
+                    self.installUpdate(confirmFirst: quietly)
+                case .failed(let message):
+                    if !quietly {
+                        Notifier.show(title: "Update check failed", body: message, seconds: 4)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Downloads, verifies and stages the new build, then asks before quitting.
+    /// Nothing touches the installed app until the user says go.
+    ///
+    /// `confirmFirst` covers the unprompted daily check: it asks before spending
+    /// the user's bandwidth. A check they asked for has already been consented to.
+    func installUpdate(confirmFirst: Bool = false) {
+        guard let update = availableUpdate else { return }
+        guard let dmg = update.dmg else {
+            NSWorkspace.shared.open(update.page)
+            return
+        }
+        if confirmFirst {
+            let ask = NSAlert()
+            ask.messageText = "Hangar \(update.version) is available"
+            ask.informativeText =
+                "You are on \(Updates.bundleVersion). Download it and install in place? "
+                + "Hangar verifies the download is notarized by Apple and signed by this "
+                + "project before it replaces anything."
+            ask.addButton(withTitle: "Download and Install")
+            ask.addButton(withTitle: "Not Now")
+            ask.addButton(withTitle: "Release Notes")
+            NSApp.activate(ignoringOtherApps: true)
+            switch ask.runModal() {
+            case .alertFirstButtonReturn: break
+            case .alertThirdButtonReturn: NSWorkspace.shared.open(update.page); return
+            default: return
+            }
+        }
+        let target = Bundle.main.bundleURL
+        Notifier.show(title: "Downloading Hangar \(update.version)\u{2026}", seconds: 3)
+        Updates.stage(dmg: dmg, replacing: target, status: { message in
+            Task { @MainActor in Notifier.show(title: message, seconds: 2) }
+        }, completion: { result in
+            Task { @MainActor in
+                switch result {
+                case .failed(let message):
+                    Notifier.show(title: "Update failed", body: message, seconds: 5)
+                case .ready(let swap):
+                    let alert = NSAlert()
+                    alert.messageText = "Hangar \(update.version) is ready to install"
+                    alert.informativeText =
+                        "Hangar will quit, replace itself, and reopen. The download was "
+                        + "verified as notarized by Apple and signed by this project."
+                    alert.addButton(withTitle: "Install and Relaunch")
+                    alert.addButton(withTitle: "Later")
+                    NSApp.activate(ignoringOtherApps: true)
+                    guard alert.runModal() == .alertFirstButtonReturn else { return }
+                    swap()
+                    NSApp.terminate(nil)
+                }
+            }
+        })
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        hotKeys.unregisterAll()
+        refreshTimer?.invalidate()
+        updateTimer?.invalidate()
+    }
+
+    /// Checks at most once every `update_check_hours`, default 24. The timer ticks
+    /// hourly and usually decides it is not due yet, which is what makes the
+    /// schedule survive a laptop that sleeps for most of the day.
+    private func scheduleUpdateChecks() {
+        updateTimer?.invalidate()
+        guard store.config.checkUpdatesOnLaunch ?? true else { return }
+        let hours = store.config.updateCheckHours ?? 24
+        guard hours > 0 else { return }
+        checkIfDue()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
+            Task { @MainActor in self.checkIfDue() }
+        }
+    }
+
+    private func checkIfDue() {
+        guard store.config.checkUpdatesOnLaunch ?? true else { return }
+        guard Updates.isDue(every: store.config.updateCheckHours ?? 24) else { return }
+        checkForUpdates(quietly: true)
+    }
+
+    private func openPanel() {
+        panel.show(filter: [:], title: "All hosts")
+    }
+
+    /// Every hotkey in the config gets its own registration and its own filter,
+    /// so cmd+shift+P can open straight into production while cmd+shift+H shows
+    /// everything.
+    private func registerHotKeys() {
+        hotKeys.unregisterAll()
+        store.reloadConfig()
+        let configured = store.config.hotkeys ?? [HangarConfig.Hotkey(
+            keys: "cmd+shift+h", title: "All hosts", filter: [:])]
+
+        var failed: [String] = []
+        var first: String?
+        for entry in configured {
+            guard let spec = HotKeyManager.parse(entry.keys) else {
+                failed.append("\(entry.keys) is not a combination Hangar understands")
+                continue
+            }
+            let filter = entry.filter ?? [:]
+            let title = entry.title ?? (filter.isEmpty
+                ? "All hosts"
+                : filter.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " "))
+            let ok = hotKeys.register(spec) { [weak self] in
+                self?.panel.toggle(filter: filter, title: title)
+            }
+            if !ok { failed.append("\(spec.display) is already taken by another app") }
+            if first == nil { first = spec.display }
+        }
+        hotkeyProblems = failed
+        if let first { primaryCombination = first }
+        if !failed.isEmpty {
+            Notifier.show(title: "Hotkey problem", body: failed.joined(separator: "; "),
+                          seconds: 5)
+        }
+    }
+
+    private func scheduleRefresh() {
+        refreshTimer?.invalidate()
+        let minutes = max(1, store.config.refreshMinutes ?? 30)
+        refreshTimer = Timer.scheduledTimer(
+            withTimeInterval: Double(minutes) * 60, repeats: true) { _ in
+            Task { @MainActor in await self.store.refresh() }
+        }
+    }
+}
+
+/// `.accessory` keeps Hangar out of the Dock and the app switcher: it is a
+/// menubar utility, and a Dock icon would be noise.
+@main
+struct HangarApp {
+    @MainActor
+    static func main() {
+        // Build-time check that every supplied asset name resolves in the real
+        // bundle. Runs before the app starts so it can be used from the Makefile.
+        if CommandLine.arguments.contains("--verify-assets") {
+            Brand.printVerification()
+            exit(Brand.verifyAssets().isEmpty ? 0 : 1)
+        }
+        // Writes the composed menubar glyphs out so the two-tone health variant
+        // can be inspected without hunting for it in a screenshot.
+        if let index = CommandLine.arguments.firstIndex(of: "--dump-status-glyph"),
+           CommandLine.arguments.count > index + 1 {
+            exit(StatusGlyphDump.run(directory: CommandLine.arguments[index + 1]) ? 0 : 1)
+        }
+        let application = NSApplication.shared
+        let delegate = AppDelegate()
+        application.delegate = delegate
+        application.setActivationPolicy(.accessory)
+        application.run()
+    }
+}

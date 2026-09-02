@@ -1,0 +1,7 @@
+{
+  "id": "security-no-unsanitized-ssh-writes",
+  "promise": "Every ssh_config directive is written through the sanitizing option() helper, never by string interpolation.",
+  "why": "A newline in a tag value could otherwise append ProxyCommand, which ssh executes on connect.",
+  "command": "! grep -nE 'lines\\\\.append\\\\(\"  [A-Z]' app/Sources/HangarCore/SSHConfigWriter.swift",
+  "expect": "exit 0"
+}

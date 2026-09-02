@@ -1,0 +1,7 @@
+{
+  "id": "site-no-external-requests",
+  "promise": "The landing page loads no font, script, or stylesheet from another origin.",
+  "why": "The product claims nothing is uploaded; a page that phones a CDN undercuts it.",
+  "command": "! grep -nE '(src|href)=\"https?://' site/index.html | grep -vE 'og:|canonical|twitter:|github.com'",
+  "expect": "exit 0"
+}

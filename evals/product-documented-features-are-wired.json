@@ -1,0 +1,7 @@
+{
+  "id": "product-documented-features-are-wired",
+  "promise": "The in-place updater the documentation describes is actually called.",
+  "why": "Updates.stage was complete, careful, and dead code for two releases while three documents described it.",
+  "command": "grep -rq 'Updates.stage' app/Sources/Hangar/HangarApp.swift",
+  "expect": "exit 0"
+}

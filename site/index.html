@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hangar: Your fleet, one keystroke away</title>
+<meta name="description" content="A native macOS launcher that turns changing EC2 instances into stable, searchable SSH targets. Press Command-Shift-H, find the host, connect.">
+<link rel="canonical" href="https://goriparthi.github.io/hangar/">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://goriparthi.github.io/hangar/">
+<meta property="og:title" content="Hangar: Your fleet, one keystroke away">
+<meta property="og:description" content="A native macOS launcher that turns changing EC2 instances into stable, searchable SSH targets.">
+<meta property="og:image" content="https://goriparthi.github.io/hangar/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Hangar: Your fleet, one keystroke away">
+<meta name="twitter:description" content="A native macOS launcher that turns changing EC2 instances into stable, searchable SSH targets.">
+<meta name="twitter:image" content="https://goriparthi.github.io/hangar/assets/og.png">
+
+<meta name="theme-color" content="#f6f7f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="assets/hangar-icon.png">
+<link rel="apple-touch-icon" href="assets/hangar-icon.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="./" aria-label="Hangar, home">
+      <picture>
+        <source srcset="assets/hangar-wordmark-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="assets/hangar-wordmark-light.svg" width="154" height="35" alt="Hangar">
+      </picture>
+    </a>
+
+    <ul class="nav-links" id="nav-links">
+      <li><a href="#product">Product</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#docs">Documentation</a></li>
+      <li><a class="nav-gh" href="https://github.com/goriparthi/hangar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+        GitHub</a></li>
+    </ul>
+
+    <a class="btn btn-primary btn-sm nav-cta" href="https://github.com/goriparthi/hangar/releases/latest">Download</a>
+
+    <button class="burger" id="burger" type="button"
+            aria-expanded="false" aria-controls="sheet" aria-label="Menu">
+      <svg class="bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      <svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="sheet" id="sheet" data-open="false">
+  <div class="wrap">
+    <ul>
+      <li><a href="#product">Product</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#docs">Documentation</a></li>
+      <li><a href="https://github.com/goriparthi/hangar">GitHub</a></li>
+    </ul>
+    <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">Download Hangar</a>
+  </div>
+</div>
+
+<main id="main">
+
+  <!-- ---------------- Hero ---------------- -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow"><span class="dot"></span> NATIVE macOS &nbsp;·&nbsp; SIGNED AND NOTARIZED</p>
+        <h1>Your fleet,<br>one keystroke away.</h1>
+        <p class="lede">
+          Hangar turns changing EC2 instances into stable, searchable SSH targets.
+          Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd>, find the host, and connect.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">
+            Download Hangar
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/goriparthi/hangar">View on GitHub</a>
+        </div>
+        <p class="hero-fine">
+          <span>macOS 14+</span> · <span>No server</span> · <span>No account</span> ·
+          <span>No runtime dependencies</span>
+        </p>
+      </div>
+
+      <div class="panel-frame">
+        <!-- A representation of the floating panel, drawn in HTML and CSS from the
+             brand kit's geometry. Not a screenshot. Marked aria-hidden with a text
+             description below, so a screen reader gets the meaning, not fake rows. -->
+        <div class="panel" aria-hidden="true">
+          <div class="panel-head">
+            <p class="panel-kicker">ALL HOSTS</p>
+            <div class="panel-search">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+              <span class="panel-query">payments prod web</span><span class="caret"></span>
+            </div>
+          </div>
+          <div class="panel-rule"></div>
+
+          <div class="group"><span>PAYMENTS</span><span>3</span></div>
+
+          <div class="row row-sel row-prod">
+            <svg class="state" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
+            <div>
+              <div class="alias"><mark>payments</mark>-<mark>prod</mark>-<mark>web</mark>-1</div>
+              <div class="meta"><span class="badge">PROD</span> running · web-1.prod.example.com</div>
+            </div>
+          </div>
+
+          <div class="row row-prod">
+            <svg class="state" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
+            <div>
+              <div class="alias"><mark>payments</mark>-<mark>prod</mark>-<mark>w</mark>orker-2</div>
+              <div class="meta"><span class="badge">PROD</span> running · worker-2.prod.example.com</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <svg class="state state-stopped" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
+            <div>
+              <div class="alias"><mark>payments</mark>-qa-<mark>web</mark>-1</div>
+              <div class="meta">qa · stopped · web-1.qa.example.com</div>
+            </div>
+          </div>
+
+          <div class="panel-foot">
+            <span>↩ Connect &nbsp;&nbsp; ⌘↩ Copy &nbsp;&nbsp; ⌘E Edit</span>
+            <span>3 of 249</span>
+          </div>
+        </div>
+        <p class="panel-note">
+          An illustration of the floating panel: three of 249 hosts left after typing
+          <code>payments prod web</code>.
+        </p>
+      </div>
+    </div>
+    <div class="taxiway" aria-hidden="true"></div>
+  </section>
+
+  <!-- ---------------- Proof ---------------- -->
+  <section class="band band-strip" id="product">
+    <div class="wrap">
+      <dl class="proof">
+        <div><dt>Shortcut</dt><dd>One global key</dd></div>
+        <div><dt>Aliases</dt><dd>Standard ssh_config</dd></div>
+        <div><dt>Cache</dt><dd>Local only</dd></div>
+        <div><dt>Server</dt><dd>None</dd></div>
+        <div><dt>Account</dt><dd>None</dd></div>
+        <div><dt>AWS CLI</dt><dd>Not required</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ---------------- Before and after ---------------- -->
+  <section class="band" id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>250 hosts to the right one.</h2>
+        <p class="lede">
+          Autoscaling replaces instances and their hostnames go with them. The
+          lookup is the work, and you do it again every time.
+        </p>
+      </div>
+
+      <div class="compare">
+        <div class="card card-before">
+          <h3>Without Hangar</h3>
+          <p class="card-sub">Every single time.</p>
+          <ol class="steps">
+            <li><span>Remember roughly what the box is called
+              <span class="cost">was it web, webapp, or www?</span></span></li>
+            <li><span><code>aws ec2 describe-instances --filters …</code>
+              <span class="cost">then read JSON to find the one you want</span></span></li>
+            <li><span>Copy a 58-character hostname
+              <span class="cost">ip-10-0-42-17.us-west-2.compute.internal</span></span></li>
+            <li><span><code>ssh ec2-user@…</code> and hope the login is right</span></li>
+            <li><span>The instance is replaced tomorrow
+              <span class="cost">and the hostname you saved is gone</span></span></li>
+          </ol>
+        </div>
+
+        <svg class="compare-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 12h15M13 6l6 6-6 6"/>
+        </svg>
+
+        <div class="card">
+          <h3>With Hangar</h3>
+          <p class="card-sub">Four seconds, from any app.</p>
+          <ol class="steps">
+            <li><span>Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></span></li>
+            <li><span>Type <code>payments prod web</code>
+              <span class="cost">terms match in any order</span></span></li>
+            <li><span>Press <kbd>↩</kbd>
+              <span class="cost">the first match is already selected</span></span></li>
+            <li><span>You are on the box
+              <span class="cost">in iTerm2 or Terminal, with the right login</span></span></li>
+            <li><span>Tomorrow the alias still works
+              <span class="cost">it follows the tags, not the hostname</span></span></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- Features ---------------- -->
+  <section class="band">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Built for the way you already work.</h2>
+        <p class="lede">Standard SSH underneath. Nothing to learn, nothing to migrate.</p>
+      </div>
+
+      <div class="features">
+        <article class="feature">
+          <h3>Fuzzy fleet search</h3>
+          <p>Terms match in any order across alias, hostname and tags. Type the
+             three things you remember.</p>
+          <div class="demo"><span class="c">query</span>  pay prod web
+<span class="c">match</span>  <span class="acc">pay</span>ments-<span class="acc">prod</span>-<span class="acc">web</span>-1
+<span class="c">from</span>   249 hosts in 0.4 ms</div>
+        </article>
+
+        <article class="feature">
+          <h3>Stable SSH aliases</h3>
+          <p>Hangar owns one ssh_config include and rewrites it on every sync, so
+             terminated instances drop out on their own.</p>
+          <div class="demo"><span class="c"># ~/.ssh/config.d/hangar</span>
+Host payments-prod-web-1
+  HostName web-1.prod.example.com
+  User deploy</div>
+        </article>
+
+        <article class="feature">
+          <h3>Native terminal launch</h3>
+          <p>Return opens a real session in iTerm2 or Terminal.
+             <kbd>⌘</kbd><kbd>↩</kbd> copies the command instead.</p>
+          <div class="demo"><span class="c">$</span> ssh payments-prod-web-1
+<span class="ok">Last login: Tue 09:14 from 10.0.0.9</span>
+<span class="c">[deploy@web-1 ~]$</span></div>
+        </article>
+
+        <article class="feature">
+          <h3>Credentials stay local</h3>
+          <p>The same resolution order the AWS CLI uses, read straight from your
+             home directory. Expired SSO tokens refresh in place.</p>
+          <div class="demo"><span class="c">env</span>               <span class="c">skip</span>
+<span class="c">~/.aws/credentials</span> <span class="c">skip</span>
+<span class="c">sso profile work</span>  <span class="ok">resolved</span></div>
+        </article>
+
+        <article class="feature">
+          <h3>Fix a wrong login in place</h3>
+          <p><kbd>⌘</kbd>-click a host to set its user or key. Detect Login probes
+             the usual cloud images and keeps the one that authenticates.</p>
+          <div class="demo">ec2-user  <span class="c">refused</span>
+rocky     <span class="c">refused</span>
+ubuntu    <span class="ok">authenticated</span></div>
+        </article>
+
+        <article class="feature">
+          <h3>Fleet health at a glance</h3>
+          <p>The menubar aircraft turns green while the cache is fresh, and says so
+             when it is not.</p>
+          <div class="demo"><span class="ok">●</span> 249 hosts · us-west-2
+<span class="c">  cache updated 2 min ago</span>
+<span class="warn">●</span> <span class="warn">stale after 24 h</span></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- ssh_config interop ---------------- -->
+  <section class="band">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>The aliases work everywhere ssh does.</h2>
+        <p class="lede">
+          Hangar writes standard <code>ssh_config</code>. Anything that speaks SSH
+          picks the aliases up, whether Hangar is running or not.
+        </p>
+      </div>
+
+      <div class="code">
+        <div class="code-bar">
+          <span>any terminal, any tool</span>
+          <button class="copy" type="button" data-copy="ssh payments-prod-web-1
+scp deploy.tar.gz payments-prod-web-1:/tmp/
+rsync -av ./dist/ payments-prod-web-1:/srv/app/">
+            <span data-label>Copy</span>
+          </button>
+        </div>
+        <pre><code><span class="p">$</span> ssh payments-prod-web-1
+<span class="p">$</span> scp deploy.tar.gz payments-prod-web-1:/tmp/
+<span class="p">$</span> rsync -av ./dist/ payments-prod-web-1:/srv/app/</code></pre>
+      </div>
+
+      <ul class="tools">
+        <li>Terminal</li><li>iTerm2</li><li>scp</li><li>rsync</li>
+        <li>Ansible</li><li>VS Code Remote</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ---------------- Security ---------------- -->
+  <section class="band" id="security">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Nothing is uploaded.</h2>
+        <p class="lede">
+          Hangar reads what is already on your machine and writes one file. There is
+          no other side to it.
+        </p>
+      </div>
+
+      <ul class="trust">
+        <li><strong>No Hangar server</strong>
+            <span>It talks to AWS and to GitHub for updates. Nowhere else.</span></li>
+        <li><strong>No account, no telemetry</strong>
+            <span>Nothing to sign up for and nothing reported back.</span></li>
+        <li><strong>Private keys are never read</strong>
+            <span>Key material stays with ssh and your agent.</span></li>
+        <li><strong>Read-only against AWS</strong>
+            <span>One <code>ec2:DescribeInstances</code> call, signed with SigV4.</span></li>
+        <li><strong>One generated file</strong>
+            <span><code>~/.ssh/config.d/hangar</code>, written at 0600 after ssh
+                  itself validates the syntax.</span></li>
+        <li><strong>Your own config is left alone</strong>
+            <span>The Include line is added only by the explicit menu action, which
+                  keeps a backup.</span></li>
+        <li><strong>Tags are untrusted input</strong>
+            <span>Values are quoted on the way into ssh_config and shell-quoted on
+                  the way into a terminal.</span></li>
+        <li><strong>Signed and notarized</strong>
+            <span>Updates install only when Apple notarized them and the signing
+                  team matches.</span></li>
+      </ul>
+
+      <p style="margin-top:30px">
+        <a class="btn btn-ghost btn-sm"
+           href="https://github.com/goriparthi/hangar/blob/main/SECURITY.md">
+          Read the security policy
+        </a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ---------------- Install ---------------- -->
+  <section class="band" id="install">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Three steps, no toolchain.</h2>
+        <p class="lede">
+          No Homebrew, no Xcode, no <code>xattr</code> workaround. The app is signed
+          with a Developer ID certificate and notarized by Apple.
+        </p>
+      </div>
+
+      <div class="install">
+        <div class="step">
+          <span class="n">1</span>
+          <h3>Download the DMG</h3>
+          <p>One file, under a megabyte.</p>
+        </div>
+        <div class="step">
+          <span class="n">2</span>
+          <h3>Drag Hangar to Applications</h3>
+          <p>It opens without a Gatekeeper warning.</p>
+        </div>
+        <div class="step">
+          <span class="n">3</span>
+          <h3>Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></h3>
+          <p>A setup check reads your machine and says what works.</p>
+        </div>
+      </div>
+
+      <p style="margin-top:28px">
+        <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">
+          Download Hangar
+        </a>
+      </p>
+      <p class="hero-fine" style="margin-top:16px">
+        <span>macOS 14 or newer</span> · <span>Apple silicon and Intel</span> ·
+        <span>MIT licensed</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- ---------------- Docs ---------------- -->
+  <section class="band" id="docs">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Deeper detail, in the repository.</h2>
+        <p class="lede">
+          Tag discovery, credential resolution, SSO refresh, the generated
+          ssh_config, configuration, and how a release is cut.
+        </p>
+      </div>
+      <ul class="tools" style="margin-top:0">
+        <li><a href="https://github.com/goriparthi/hangar#discovery">Tag discovery</a></li>
+        <li><a href="https://github.com/goriparthi/hangar#credentials">Credentials</a></li>
+        <li><a href="https://github.com/goriparthi/hangar#configuration">Configuration</a></li>
+        <li><a href="https://github.com/goriparthi/hangar#keyboard">Keyboard</a></li>
+        <li><a href="https://github.com/goriparthi/hangar/blob/main/SECURITY.md">Security</a></li>
+        <li><a href="https://github.com/goriparthi/hangar/blob/main/CONTRIBUTING.md">Contributing</a></li>
+        <li><a href="https://github.com/goriparthi/hangar/blob/main/RELEASING.md">Releasing</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ---------------- Final CTA ---------------- -->
+  <section class="band final">
+    <div class="wrap">
+      <h2>Stop memorizing disposable hostnames.</h2>
+      <p class="lede">Find the host. Press Return.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">
+          Download Hangar
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/goriparthi/hangar">View the source</a>
+      </div>
+      <p class="hero-fine">
+        <span>Signed and notarized</span> · <span>macOS 14+</span> · <span>MIT</span>
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand brand-lg" href="./" aria-label="Hangar, home">
+          <picture>
+            <source srcset="assets/hangar-wordmark-dark.svg" media="(prefers-color-scheme: dark)">
+            <img src="assets/hangar-wordmark-light.svg" width="190" height="43" alt="Hangar">
+          </picture>
+        </a>
+        <p>Spotlight for your SSH hosts. A native macOS launcher for tagged EC2 fleets.</p>
+      </div>
+
+      <nav aria-labelledby="f-project">
+        <h2 id="f-project">Project</h2>
+        <ul>
+          <li><a href="https://github.com/goriparthi/hangar">GitHub</a></li>
+          <li><a href="https://github.com/goriparthi/hangar/releases">Releases</a></li>
+          <li><a href="https://github.com/goriparthi/hangar/issues">Issues</a></li>
+        </ul>
+      </nav>
+
+      <nav aria-labelledby="f-docs">
+        <h2 id="f-docs">Documentation</h2>
+        <ul>
+          <li><a href="https://github.com/goriparthi/hangar#readme">Read me</a></li>
+          <li><a href="https://github.com/goriparthi/hangar/blob/main/SECURITY.md">Security</a></li>
+          <li><a href="https://github.com/goriparthi/hangar/blob/main/CONTRIBUTING.md">Contributing</a></li>
+        </ul>
+      </nav>
+
+      <nav aria-labelledby="f-legal">
+        <h2 id="f-legal">Legal</h2>
+        <ul>
+          <li><a href="https://github.com/goriparthi/hangar/blob/main/LICENSE">MIT License</a></li>
+        </ul>
+      </nav>
+    </div>
+
+    <div class="foot-legal">
+      <span>Unaffiliated with Amazon Web Services.</span>
+      <span>Hostnames shown are examples.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>

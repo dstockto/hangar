@@ -1,0 +1,33 @@
+{
+  "dark": {
+    "canvas": "#111418", "panel": "#171B20", "surfaceRaised": "#1D2228",
+    "textPrimary": "#F3F6F8", "textSecondary": "#AAB3BD", "accent": "#57B9FF",
+    "selectionBackground": "#163A52", "selectionForeground": "#FFFFFF",
+    "stateRunning": "#49C983", "stateStopped": "#B2BAC2", "statePending": "#F0C15A", "stateTerminated": "#F07880",
+    "prodBackground": "#45191F", "prodDanger": "#FF8C96"
+  },
+  "light": {
+    "canvas": "#F6F7F8", "panel": "#FFFFFF", "surfaceRaised": "#E9EDF1",
+    "textPrimary": "#15191D", "textSecondary": "#59636D", "accent": "#006EAD",
+    "selectionBackground": "#D9EEFF", "selectionForeground": "#004B77",
+    "stateRunning": "#167548", "stateStopped": "#59636D", "statePending": "#8A5A00", "stateTerminated": "#B32632",
+    "prodBackground": "#FFE1E4", "prodDanger": "#A60017"
+  },
+  "contrastRatios": {
+    "dark.textPrimary.canvas": 17.02, "dark.textSecondary.canvas": 8.70,
+    "dark.textPrimary.panel": 15.94, "dark.textSecondary.panel": 8.15,
+    "dark.textPrimary.surfaceRaised": 14.75, "dark.textSecondary.surfaceRaised": 7.54,
+    "dark.accent.panel": 8.06, "dark.selectionForeground.selectionBackground": 11.92,
+    "dark.stateRunning.panel": 8.21, "dark.stateStopped.panel": 8.81,
+    "dark.statePending.panel": 10.28, "dark.stateTerminated.panel": 6.35,
+    "dark.prodDanger.prodBackground": 6.69,
+    "light.textPrimary.canvas": 16.47, "light.textSecondary.canvas": 5.71,
+    "light.textPrimary.panel": 17.67, "light.textSecondary.panel": 6.12,
+    "light.textPrimary.surfaceRaised": 15.02, "light.textSecondary.surfaceRaised": 5.20,
+    "light.accent.panel": 5.48, "light.selectionForeground.selectionBackground": 7.75,
+    "light.stateRunning.panel": 5.72, "light.stateStopped.panel": 6.12,
+    "light.statePending.panel": 5.93, "light.stateTerminated.panel": 6.48,
+    "light.prodDanger.prodBackground": 6.51
+  }
+}
+

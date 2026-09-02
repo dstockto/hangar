@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hangar is not sandboxed and declares no capability. A capability entitlement
+         would require a provisioning profile, which forces development signing and
+         makes the build unnotarizable.
+
+         The one entry below is a hardened runtime exception rather than a capability,
+         so it needs no profile and signs with Developer ID unchanged. Without it the
+         runtime kills every Apple event, which is how Hangar opens an ssh session in
+         iTerm2 or Terminal. macOS still asks the user per target app the first time. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

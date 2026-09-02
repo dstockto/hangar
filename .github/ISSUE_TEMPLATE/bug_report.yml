@@ -1,0 +1,51 @@
+name: Bug report
+description: Something Hangar does wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste account ids, real hostnames, internal IPs, or anything from
+        `~/.aws`. Redact them; the shape of the value is what matters here.
+        Security vulnerabilities go through Security → Report a vulnerability
+        instead, not this form.
+  - type: input
+    id: version
+    attributes:
+      label: Hangar version
+      description: From the menubar, About Hangar.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.2"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup Check output
+      description: >
+        Settings… → Setup Check, then Re-check. Paste the six lines, redacted.
+        Skip this if Hangar will not launch at all.
+  - type: dropdown
+    id: credentials
+    attributes:
+      label: How your credentials resolve
+      options:
+        - SSO profile
+        - Static keys
+        - Assumed role via source_profile
+        - credential_process
+        - Environment variables
+        - Not sure

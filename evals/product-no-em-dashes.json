@@ -1,0 +1,7 @@
+{
+  "id": "product-no-em-dashes",
+  "promise": "No em dash appears in any tracked text file.",
+  "why": "It is a house style rule, and it leaks into user-facing copy where it is hard to spot.",
+  "command": "! git ls-files | grep -vE '\\.(png|car|icns|dmg)$|^evals/' | tr '\\n' '\\0' | xargs -0 grep -l '\u2014' 2>/dev/null | grep .",
+  "expect": "exit 0"
+}

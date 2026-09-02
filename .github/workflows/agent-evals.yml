@@ -1,0 +1,22 @@
+name: Evals
+
+# The product promises, checked on every pull request. These are not unit tests:
+# they assert properties that must survive any refactor, and each one exists
+# because it was once broken. See evals/README.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    name: Product promises
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run evals
+        run: evals/check.sh

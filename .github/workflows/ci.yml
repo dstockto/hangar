@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build
+        run: swift build --package-path app -c release
+
+      # The suite is offline: no network, no AWS account, and it never reads the
+      # runner's real ~/.aws files. It does shell out to /usr/bin/ssh to have ssh
+      # itself validate the generated config, which needs no network either.
+      - name: Test
+        run: make test
+
+      - name: Assemble and verify the bundle
+        # No Developer ID cert on a runner, so this signs ad-hoc. It still proves
+        # the catalog compiles and every brand asset resolves in the real bundle.
+        run: make verify-assets
+
+  lint:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -x scripts/*.sh

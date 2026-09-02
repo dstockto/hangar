@@ -1,0 +1,23 @@
+# build products
+dist/
+build/
+.build/
+app/.build/
+app/.build-test/
+
+# macOS
+.DS_Store
+
+# local state, never committed: contains the user's own fleet and settings
+.hangar/
+
+# signing material. App Store Connect keys live in ~/.appstoreconnect/private_keys
+*.p8
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+
+# visual review artifacts, regenerated on demand
+.site-review/
