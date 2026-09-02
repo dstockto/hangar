@@ -7,6 +7,13 @@ import AppKit
 enum Notifier {
     private static var hud: NSPanel?
 
+    /// Takes the HUD down now. A modal alert does not run the main queue, so a HUD
+    /// still up when one opens would sit under it until the alert was dismissed.
+    static func dismiss() {
+        hud?.orderOut(nil)
+        hud = nil
+    }
+
     static func show(title: String, body: String? = nil, seconds: TimeInterval = 1.6) {
         hud?.orderOut(nil)
 

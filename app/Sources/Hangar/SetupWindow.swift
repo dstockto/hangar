@@ -34,6 +34,10 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private var recheckButton: NSButton!
     private var running = false
 
+    /// Keys the remembered frame in the standard defaults, so the window opens
+    /// where it was last left rather than in the middle of whatever is there.
+    private static let frameName = "HangarSetupWindow"
+
     init(store: FleetStore,
          hotkeyProblem: @escaping () -> String?,
          hotkeyCombination: @escaping () -> String,
@@ -299,6 +303,10 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         // Resizable vertically only: the wrapping labels are laid out for this width.
         window.contentMinSize = NSSize(width: 600, height: 360)
         window.contentMaxSize = NSSize(width: 600, height: 20_000)
+        // Reopen where it was left. Centring every time moved the window out from
+        // under whoever had put it somewhere deliberate.
+        if !window.setFrameUsingName(Self.frameName) { window.center() }
+        window.setFrameAutosaveName(Self.frameName)
         self.content = content
         self.document = container
         self.footer = footer
@@ -327,8 +335,10 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        AppMainMenu.install()
-        window.center()
+        // The menu bar is reference counted against the open windows, so a second
+        // install for a window already on screen would leave the menu behind after
+        // that window closed.
+        if !window.isVisible { AppMainMenu.install() }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         Task { await runChecks() }

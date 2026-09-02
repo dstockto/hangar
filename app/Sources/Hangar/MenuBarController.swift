@@ -256,18 +256,26 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let item = NSMenuItem(title: "Settings\u{2026}", action: nil, keyEquivalent: ",")
         item.image = Brand.Glyph.symbol("gearshape", size: 13)
         let submenu = NSMenu()
+
+        // Grouped by what the item is about, because a flat list mixed a toggle,
+        // a submenu, an action and a destructive reset with no order to it.
+        submenu.addItem(sectionHeader("Account", symbol: "person.crop.circle"))
         submenu.addItem(profileMenuItem())
-        let daily = action("Check for Updates Daily", #selector(toggleDailyUpdates), key: "")
-        daily.state = (store.config.checkUpdatesOnLaunch ?? true) ? .on : .off
-        submenu.addItem(daily)
-        submenu.addItem(updateChannelItem())
+
+        submenu.addItem(.separator())
+        submenu.addItem(sectionHeader("Startup", symbol: "power"))
         let login = action("Open Hangar at Login", #selector(toggleLoginItem), key: "")
         login.state = LoginItem.isEnabled ? .on : .off
         submenu.addItem(login)
         submenu.addItem(statusRow([.text(LoginItem.statusDescription)], tier: .faint))
+
         submenu.addItem(.separator())
-        submenu.addItem(action("Setup Check\u{2026}", #selector(showSetup), key: ""))
-        submenu.addItem(action("Check for Updates\u{2026}", #selector(checkUpdates), key: ""))
+        submenu.addItem(sectionHeader("Updates", symbol: "arrow.down.circle"))
+        let daily = action("Check Daily", #selector(toggleDailyUpdates), key: "")
+        daily.state = (store.config.checkUpdatesOnLaunch ?? true) ? .on : .off
+        submenu.addItem(daily)
+        submenu.addItem(updateChannelItem())
+        submenu.addItem(action("Check Now\u{2026}", #selector(checkUpdates), key: ""))
         // The version belongs next to the thing that changes it, so "is there
         // anything newer" can be answered without opening About.
         var versionRuns: [StatusRun] = [.text("Version "), .mono(Updates.bundleVersion)]
@@ -277,16 +285,23 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             versionRuns.append(.text("  ·  checked \(MenuBarController.ago(checked))"))
         }
         submenu.addItem(statusRow(versionRuns, tier: .faint))
+
         submenu.addItem(.separator())
+        submenu.addItem(sectionHeader("Configuration", symbol: "slider.horizontal.3"))
+        submenu.addItem(action("Setup Check\u{2026}", #selector(showSetup), key: ""))
         submenu.addItem(action("Edit Configuration\u{2026}", #selector(editConfig), key: ""))
         submenu.addItem(status("~/.hangar/config.json"))
+
+        // Last, and behind its own heading: both of these throw work away.
         submenu.addItem(.separator())
+        submenu.addItem(sectionHeader("Start Over", symbol: "exclamationmark.triangle"))
         let clear = action("Clear Fleet Cache\u{2026}", #selector(clearCache), key: "")
         clear.image = Brand.Glyph.symbol("arrow.clockwise.circle", size: 13)
         submenu.addItem(clear)
         let reset = action("Reset Hangar\u{2026}", #selector(resetEverything), key: "")
         reset.image = Brand.Glyph.symbol("exclamationmark.arrow.circlepath", size: 13)
         submenu.addItem(reset)
+
         item.submenu = submenu
         return item
     }

@@ -70,6 +70,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showSetup() {
+        // One window, reused. Building a second while the first is still on screen
+        // left two setup windows side by side, which is what a reset used to do.
+        if let existing = setup {
+            existing.show()
+            return
+        }
         let window = SetupWindow(
             store: store,
             hotkeyProblem: { [weak self] in self?.hotkeyProblems.first },
@@ -106,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         + "\(self.store.config.updateCheckHours ?? 24) hours."
                     alert.addButton(withTitle: "OK")
                     alert.addButton(withTitle: "Release Notes")
+                    Notifier.dismiss()
                     NSApp.activate(ignoringOtherApps: true)
                     if alert.runModal() == .alertSecondButtonReturn {
                         NSWorkspace.shared.open(Updates.repoURL
@@ -124,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     alert.messageText = "Update check failed"
                     alert.informativeText = message
                     alert.addButton(withTitle: "OK")
+                    Notifier.dismiss()
                     NSApp.activate(ignoringOtherApps: true)
                     alert.runModal()
                 }
@@ -152,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ask.addButton(withTitle: "Download and Install")
             ask.addButton(withTitle: "Not Now")
             ask.addButton(withTitle: "Release Notes")
+            Notifier.dismiss()
             NSApp.activate(ignoringOtherApps: true)
             switch ask.runModal() {
             case .alertFirstButtonReturn: break
@@ -176,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         + "verified as notarized by Apple and signed by this project."
                     alert.addButton(withTitle: "Install and Relaunch")
                     alert.addButton(withTitle: "Later")
+                    Notifier.dismiss()
                     NSApp.activate(ignoringOtherApps: true)
                     guard alert.runModal() == .alertFirstButtonReturn else { return }
                     swap()
