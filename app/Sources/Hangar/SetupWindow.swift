@@ -201,12 +201,12 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         header.alignment = .top
         header.spacing = Brand.Metric.space16
 
-        let leftButtons = NSStackView(views: [closeButton])
-        leftButtons.orientation = .horizontal
-        let rightButtons = NSStackView(views: [recheckButton, openButton])
+        // All three sit together on the right, in the order macOS expects: the
+        // utility first, then the dismiss, then the default action last.
+        let rightButtons = NSStackView(views: [recheckButton, closeButton, openButton])
         rightButtons.orientation = .horizontal
         rightButtons.spacing = Brand.Metric.space8
-        let buttonRow = NSStackView(views: [leftButtons, NSView(), rightButtons])
+        let buttonRow = NSStackView(views: [NSView(), rightButtons])
         buttonRow.orientation = .horizontal
 
         let toggles = NSStackView(views: [syncToggle, loginToggle])
