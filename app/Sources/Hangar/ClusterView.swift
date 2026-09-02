@@ -622,6 +622,7 @@ final class ClusterView: NSView {
     // which is the only reliable way when another window is in front.
 
     private func refreshAccessibilityChildren() {
+        ClusterActions.clear()
         let children: [Any] = nodes.enumerated().map { index, node in
             let element = ClusterNodeElement()
             element.setAccessibilityParent(self)
@@ -682,16 +683,51 @@ final class ClusterView: NSView {
 
 
 /// One circle, as something the accessibility tree can press.
+///
+/// The press arrives on a nonisolated path, so the element carries a token
+/// rather than a closure: an Int can cross to the main actor, a closure over
+/// main-actor state cannot, and this module does not sign `@unchecked
+/// Sendable` waivers to pretend otherwise.
 @MainActor
 final class ClusterNodeElement: NSAccessibilityElement {
-    var onPress: (() -> Void)?
+    nonisolated(unsafe) private var token = 0
 
-    override func accessibilityPerformPress() -> Bool {
-        // The press arrives on a nonisolated path, and everything it touches is
-        // main-actor state.
-        MainActor.assumeIsolated { onPress?() }
+    var onPress: (() -> Void)? {
+        get { ClusterActions.action(for: token) }
+        set {
+            if token == 0 { token = ClusterActions.nextToken() }
+            ClusterActions.set(newValue, for: token)
+        }
+    }
+
+    override nonisolated func accessibilityPerformPress() -> Bool {
+        let token = self.token
+        Task { @MainActor in ClusterActions.action(for: token)?() }
         return true
     }
 
-    override func isAccessibilityElement() -> Bool { true }
+    override nonisolated func isAccessibilityElement() -> Bool { true }
+}
+
+/// Where the circles' actions live, so an element can refer to one by number.
+@MainActor
+enum ClusterActions {
+    private static var actions: [Int: () -> Void] = [:]
+    private static var counter = 0
+
+    static func nextToken() -> Int {
+        counter += 1
+        return counter
+    }
+
+    static func set(_ action: (() -> Void)?, for token: Int) {
+        actions[token] = action
+    }
+
+    static func action(for token: Int) -> (() -> Void)? { actions[token] }
+
+    /// Called when the cluster rebuilds, so the table cannot grow forever.
+    static func clear() {
+        actions.removeAll()
+    }
 }
