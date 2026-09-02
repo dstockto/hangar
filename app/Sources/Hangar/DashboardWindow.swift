@@ -43,8 +43,11 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         window.title = "Hangar Fleet"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.setFrameAutosaveName(DashboardWindow.frameName)
         window.minSize = NSSize(width: 640, height: 520)
+        // Restored first, then autosaved: setting the autosave name alone does
+        // not put a closed window back where it was on the next launch.
+        if !window.setFrameUsingName(DashboardWindow.frameName) { window.center() }
+        window.setFrameAutosaveName(DashboardWindow.frameName)
 
         cluster = ClusterView(frame: .zero)
         cluster.translatesAutoresizingMaskIntoConstraints = false
@@ -122,7 +125,8 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
     private func reload() {
         let insights = FleetInsights.compute(store.instances)
-        cluster.show(store.instances, groupBy: store.config.groupingKeys)
+        cluster.show(store.instances, groupBy: store.config.groupingKeys,
+                     region: store.region)
 
         panels.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for panel in [hygienePanel(insights), placementPanel(insights),

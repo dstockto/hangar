@@ -66,15 +66,31 @@ it appears in the app switcher like the setup screen. Top to bottom:
 
 An `NSView` drawing with Core Graphics, driven by a display link, no dependency.
 
-- **Nodes.** One per product, one per env inside it. Hosts are particles bound to
-  their env node, not simulated individually: a force simulation over 2,847
-  bodies is a frame budget spent on nothing, since a host's position carries no
-  information beyond which env it belongs to.
-- **Layout.** Product nodes repel each other and are pulled to the centre;
-  env nodes are pulled to their product with a spring. Host particles sit on a
-  ring around their env node, at an angle from a hash of the instance id, so the
-  same host lands in the same place across launches and the picture is stable
-  between refreshes.
+- **A hub.** One circle in the middle for the account's EC2 inventory, carrying
+  the total and the region, with a spoke to every group. It is where the data
+  came from, and it gives the layout something to orbit, so the picture reads as
+  one fleet rather than as scattered blobs.
+- **Nodes.** One per product, one per env inside it, `radius = 9 + 6 * sqrt(count)`
+  capped at 52, so area tracks the host count and a group twice the size looks
+  twice the size. Hosts are particles bound to their env node, not simulated
+  individually: a force simulation over 2,847 bodies is a frame budget spent on
+  nothing, since a host's position carries no information beyond which env it
+  belongs to.
+- **Layout.** Groups are sprung towards an orbit around the hub, repelled from
+  each other, and pulled gently towards others of the same product. Host
+  particles sit on a ring around their group, at an angle from a hash of the
+  instance id, so the same host lands in the same place across launches and the
+  picture is stable between refreshes.
+
+  **Refined during build.** The orbit was first a fraction of the view, which
+  worked at eight groups and failed at twenty-four: they piled onto one small
+  circle and repulsion then shoved them off the edges. The radius now comes from
+  what has to fit on it, the summed diameters plus a gap divided by 2π, clamped
+  to the view.
+
+- **Labels.** Only the largest groups are named, as many as the view can hold at
+  one per 46 points, plus whichever is hovered. Two dozen labels around one ring
+  overlap into noise, and every circle carries its count inside it either way.
 - **Motion.** The simulation settles in about two seconds and then idles: no
   perpetual drift, because a picture that never stops moving is a picture nobody
   can read. Arrivals fade in and departures fade out over half a second when a
