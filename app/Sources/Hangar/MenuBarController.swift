@@ -19,6 +19,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let onReset: (HangarReset.Scope) -> Void
     private let onUninstall: () -> Void
     private var observers: [AnyCancellable] = []
+    /// Runs only while a refresh is in flight.
+    private var pulse: Timer?
+    private var pulsePhase: CGFloat = 0
     private var editor: HostEditor?
     private var about: AboutWindow?
 
@@ -56,8 +59,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         store.$fetchedAt.sink { [weak self] _ in
             Task { @MainActor in self?.updateStatusImage() }
         }.store(in: &observers)
-        store.$status.sink { [weak self] _ in
-            Task { @MainActor in self?.updateStatusImage() }
+        store.$status.sink { [weak self] status in
+            Task { @MainActor in
+                // A refresh can take seconds against a slow endpoint, and until
+                // now the menubar said nothing at all while it did.
+                if status == .refreshing { self?.startPulse() } else { self?.stopPulse() }
+                self?.updateStatusImage()
+            }
         }.store(in: &observers)
 
         // A light/dark switch changes the colour the shell has to be painted in.
@@ -76,7 +84,63 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// keeps inverting it against the highlight and the menubar appearance.
     private var menuIsOpen = false
 
+    /// Amber, breathing, while the fleet is being fetched. Amber because it is
+    /// the brand's pending colour, and breathing because a menubar item has no
+    /// room for a spinner. The word is in the tooltip, so the colour is not
+    /// carrying this on its own.
+    private func startPulse() {
+        guard pulse == nil else { return }
+        pulsePhase = 0
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            drawPulse(intensity: 1)
+            return
+        }
+        pulse = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.pulsePhase += 0.1
+                // Quantised, because every distinct colour becomes a cached
+                // image and a smooth sweep would fill that cache with junk.
+                let wave = (sin(self.pulsePhase) + 1) / 2
+                self.drawPulse(intensity: (wave * 8).rounded() / 8)
+            }
+        }
+    }
+
+    private func stopPulse() {
+        pulse?.invalidate()
+        pulse = nil
+    }
+
+    private func drawPulse(intensity: CGFloat) {
+        guard let button = statusItem.button else { return }
+        var shell = Brand.Color.textPrimary
+        button.effectiveAppearance.performAsCurrentDrawingAppearance {
+            shell = NSColor.labelColor.usingColorSpace(.sRGB) ?? shell
+        }
+        // Mixed towards the shell rather than faded with alpha: the glyph cache
+        // keys on the colour's RGB, so an alpha-only change returned the first
+        // frame every time and the pulse held still.
+        let amber = Brand.Color.statePending.usingColorSpace(.sRGB)
+            ?? Brand.Color.statePending
+        let dim = shell.usingColorSpace(.sRGB) ?? shell
+        let mix = 0.35 + 0.65 * intensity
+        let aircraft = NSColor(
+            srgbRed: dim.redComponent + (amber.redComponent - dim.redComponent) * mix,
+            green: dim.greenComponent + (amber.greenComponent - dim.greenComponent) * mix,
+            blue: dim.blueComponent + (amber.blueComponent - dim.blueComponent) * mix,
+            alpha: 1)
+        button.image = StatusGlyph.twoTone(shell: shell, aircraft: aircraft)
+            ?? StatusGlyph.plain()
+        button.title = ""
+        button.imagePosition = .imageOnly
+        button.toolTip = "Hangar: refreshing the fleet\u{2026}"
+        button.setAccessibilityLabel("Hangar, refreshing the fleet")
+    }
+
     func updateStatusImage() {
+        // The pulse owns the button while it runs.
+        guard pulse == nil else { return }
         guard let button = statusItem.button else { return }
         let healthy = store.isHealthy && !menuIsOpen
         if healthy {
