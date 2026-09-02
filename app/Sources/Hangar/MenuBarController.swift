@@ -247,7 +247,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func hostItem(_ instance: Instance) -> NSMenuItem {
         let alias = store.alias(for: instance) ?? instance.aliasStem
-        let label = instance.leafLabel(alias: alias)
+        let label = instance.leafLabel(alias: alias, groupedBy: store.config.groupingKeys)
         let item = NSMenuItem(title: label, action: #selector(openHost(_:)),
                               keyEquivalent: "")
         item.target = self

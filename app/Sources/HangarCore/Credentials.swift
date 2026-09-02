@@ -106,9 +106,20 @@ public enum CredentialResolver {
             + "SSO settings, role_arn with source_profile, or credential_process.")
     }
 
+    /// How long a credential helper gets. Long enough for one that waits on a
+    /// hardware token to be touched, short enough that a helper which never
+    /// returns does not become a Hangar that never returns.
+    static let credentialProcessTimeout: TimeInterval = 30
+
     /// credential_process is the user's own configured helper, so running it is
     /// honouring their setup rather than adding a dependency of our own.
-    static func runCredentialProcess(_ command: String) throws -> AWSCredentials {
+    ///
+    /// It is also arbitrary code that can block forever, and did: a helper that
+    /// hangs used to leave the setup window on "Checking your setup" with nothing
+    /// under it and the fleet permanently refreshing. So it gets a deadline.
+    static func runCredentialProcess(
+        _ command: String, timeout: TimeInterval = credentialProcessTimeout
+    ) throws -> AWSCredentials {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
@@ -116,8 +127,25 @@ public enum CredentialResolver {
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
         try process.run()
+
+        // Waited for before reading, because readDataToEndOfFile blocks until the
+        // write end closes, which is exactly what a hung helper never does. The
+        // JSON is a few hundred bytes, well inside the pipe buffer, so nothing is
+        // lost by letting it sit there until the process is done.
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            usleep(20_000)
+        }
+        if process.isRunning {
+            process.terminate()
+            let grace = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < grace { usleep(20_000) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            throw HangarError.timedOut(
+                "credential_process did not finish within \(Int(timeout)) seconds")
+        }
+
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             throw HangarError.malformedResponse(
                 "credential_process exited \(process.terminationStatus)")

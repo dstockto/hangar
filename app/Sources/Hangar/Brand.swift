@@ -89,7 +89,7 @@ enum Brand {
         static let selectedRowHeight: CGFloat = 40
         static let selectedRowRadius: CGFloat = 9
         static let selectionInsetVertical: CGFloat = 4
-        static let selectionInsetHorizontal: CGFloat = 8
+        static let selectionInsetHorizontal: CGFloat = 14
         static let selectionRailWidth: CGFloat = 2
         static let productionRailWidth: CGFloat = 3
         static let focusRingWidth: CGFloat = 1.5

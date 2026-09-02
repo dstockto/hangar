@@ -25,8 +25,34 @@ final class AliasTests: XCTestCase {
     func testLeafLabelDropsTheGroupingItSitsUnder() {
         XCTAssertEqual(
             Fixture.instance(["product": "payments", "env": "prod", "Name": "web"])
-                .leafLabel(alias: "payments-prod-web-1"),
+                .leafLabel(alias: "payments-prod-web-1", groupedBy: ["product", "env"]),
             "web-1")
+    }
+
+    func testLeafLabelKeepsWhatTheMenuDidNotGroupBy() {
+        // Grouped by product alone, the env has to stay in the label. It used to
+        // be cut regardless, so a product with prod, stage and qa web boxes
+        // listed "web-1" three times with nothing to tell them apart.
+        let instance = Fixture.instance(["product": "payments", "env": "prod", "Name": "web"])
+        XCTAssertEqual(instance.leafLabel(alias: "payments-prod-web-1",
+                                          groupedBy: ["product"]),
+                       "prod-web-1")
+    }
+
+    func testLeafLabelIsUntouchedWhenNothingIsGroupedBy() {
+        let instance = Fixture.instance(["product": "payments", "env": "prod", "Name": "web"])
+        XCTAssertEqual(instance.leafLabel(alias: "payments-prod-web-1", groupedBy: []),
+                       "payments-prod-web-1")
+    }
+
+    func testLeafLabelIgnoresLevelsThatAreNotInTheAlias() {
+        // A fleet grouped by a tag the alias does not carry keeps the whole alias,
+        // rather than having an unrelated prefix chopped off it.
+        let instance = Fixture.instance(["product": "payments", "env": "prod",
+                                         "Name": "web", "Team": "core"])
+        XCTAssertEqual(instance.leafLabel(alias: "payments-prod-web-1",
+                                          groupedBy: ["Team"]),
+                       "payments-prod-web-1")
     }
 
     func testEnvNameIsIncluded() {

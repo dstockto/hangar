@@ -51,8 +51,14 @@ public struct Instance: Sendable, Hashable, Codable {
 
     /// The alias with the grouping it already sits under removed, for display in
     /// a product → env submenu where repeating both would be noise.
-    public func leafLabel(alias: String) -> String {
-        let prefix = [product, env].map(Instance.slug).filter { !$0.isEmpty }
+    ///
+    /// The levels come from the menu that is being built, not from a guess. When
+    /// they were assumed to be product and env, a fleet grouped by product alone
+    /// lost the env from every label and listed `web-1` three times, once per
+    /// environment, with nothing to tell them apart.
+    public func leafLabel(alias: String, groupedBy keys: [String]) -> String {
+        let prefix = keys.map { Instance.slug(tagValue(for: $0)) }
+            .filter { !$0.isEmpty }
             .joined(separator: "-") + "-"
         guard prefix.count > 1, alias.hasPrefix(prefix) else { return alias }
         return String(alias.dropFirst(prefix.count))
@@ -99,6 +105,7 @@ public enum HangarError: LocalizedError {
     case ssoTokenExpired(String)
     case http(Int, String)
     case malformedResponse(String)
+    case timedOut(String)
 
     public var errorDescription: String? {
         switch self {
@@ -107,6 +114,7 @@ public enum HangarError: LocalizedError {
         case .ssoTokenExpired(let m):  return "SSO session expired: \(m)"
         case .http(let code, let m):   return "HTTP \(code): \(m)"
         case .malformedResponse(let m):return "Unexpected response: \(m)"
+        case .timedOut(let m):         return "Timed out: \(m)"
         }
     }
 }

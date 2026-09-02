@@ -46,3 +46,4 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0011 | Reinstall behaves like one, and reset | Shipped |
 | 0012 | Uninstall from the menu | Shipped |
 | 0013 | Menu heading, EC2 glyph, honest empty state, landing page | Shipped |
+| 0014 | A hanging credential helper, a lying leaf label, a setup screen that shows its work | Shipped |

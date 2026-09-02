@@ -182,8 +182,11 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         recheckButton = NSButton(title: "Re-check", target: self, action: #selector(recheck))
         openButton = NSButton(title: "Open Hangar", target: self, action: #selector(openPanel))
         openButton.keyEquivalent = "\r"
-        let sourceButton = NSButton(title: "Source", target: self, action: #selector(openSource))
-        for button in [recheckButton!, openButton!, sourceButton] {
+        // Close rather than Source: by the time this window is up, the menubar item
+        // is already there, and closing is the thing a person actually wants next.
+        let closeButton = NSButton(title: "Close", target: self, action: #selector(closeWindow))
+        closeButton.keyEquivalent = "\u{1b}"
+        for button in [recheckButton!, openButton!, closeButton] {
             button.bezelStyle = .rounded
         }
 
@@ -198,7 +201,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         header.alignment = .top
         header.spacing = Brand.Metric.space16
 
-        let leftButtons = NSStackView(views: [sourceButton])
+        let leftButtons = NSStackView(views: [closeButton])
         leftButtons.orientation = .horizontal
         let rightButtons = NSStackView(views: [recheckButton, openButton])
         rightButtons.orientation = .horizontal
@@ -358,15 +361,31 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     @objc private func recheck() { Task { await runChecks() } }
 
+    /// The steps in the order they run. The window shows this list from the first
+    /// frame and fills it in, because the checks are not instant: resolving
+    /// credentials talks to AWS, and until this existed the window sat on
+    /// "Checking your setup" over an empty sheet for as long as that took.
+    private static let plan: [(title: String, detail: String)] = [
+        ("AWS profiles", "Reading ~/.aws/config and ~/.aws/credentials."),
+        ("Credentials", "Resolving your profile, then asking EC2 for the fleet."),
+        ("Hosts and tags", "Indexing what came back."),
+        ("SSH aliases", "Looking for Hangar's include in ~/.ssh/config."),
+        ("Terminal", "Looking for iTerm2 and Terminal."),
+        ("Shortcut", "Checking the shortcut is free."),
+    ]
+
     private func runChecks() async {
         guard !running else { return }
         running = true
         recheckButton.isEnabled = false
         headline.stringValue = "Checking your setup\u{2026}"
-        render([])
+
+        var checks: [Preflight.Check] = []
+        renderProgress(checks)
 
         let files = AWSConfigFiles.load()
-        var checks: [Preflight.Check] = [Preflight.profilesCheck(files)]
+        checks.append(Preflight.profilesCheck(files))
+        renderProgress(checks)
 
         // Refreshing is the honest credential and connectivity test: it does exactly
         // what Hangar does in normal use.
@@ -376,8 +395,10 @@ final class SetupWindow: NSObject, NSWindowDelegate {
                 [description.label, description.literal].compactMap { $0 }.joined(separator: " ")
             },
             advice: store.credentialAdvice))
+        renderProgress(checks)
 
         checks.append(Preflight.taggingCheck(instances: store.instances))
+        renderProgress(checks)
 
         let includeFileExists = FileManager.default
             .fileExists(atPath: HangarConfig.sshIncludePath)
@@ -385,12 +406,14 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             includePresent: SSHConfigWriter.includeLinePresent(),
             fileExists: includeFileExists,
             hostCount: store.instances.count))
+        renderProgress(checks)
 
         let terminal = Launcher.Terminal.from(store.config.terminal)
         checks.append(Preflight.terminalCheck(
             configured: store.config.terminal,
             installed: terminal.isInstalled,
             fallbackInstalled: Launcher.Terminal.terminal.isInstalled))
+        renderProgress(checks)
 
         checks.append(Preflight.hotkeyCheck(problem: hotkeyProblem(),
                                             combination: hotkeyCombination()))
@@ -615,6 +638,126 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         Task { await runChecks() }
     }
 
+    /// The finished checks, then the one being worked on, then the ones still to
+    /// come. Motion is carried by a spinner on the active step and a slow pulse on
+    /// the waiting ones, so the window looks like it is discovering rather than
+    /// hung, and the list never jumps: every step has a card from the first frame.
+    private func renderProgress(_ done: [Preflight.Check]) {
+        checksStack.subviews.forEach { $0.removeFromSuperview() }
+        for check in done { add(row(for: check)) }
+        for (offset, step) in SetupWindow.plan.dropFirst(done.count).enumerated() {
+            add(pendingRow(title: step.title, detail: step.detail,
+                           active: offset == 0, delay: Double(offset) * 0.14))
+        }
+    }
+
+    private func add(_ card: NSView) {
+        checksStack.addView(card, in: .top)
+        card.widthAnchor.constraint(equalTo: checksStack.widthAnchor).isActive = true
+    }
+
+    /// A step that has not answered yet. Same geometry as a finished card, so
+    /// nothing shifts sideways when the real one replaces it.
+    private func pendingRow(title: String, detail: String,
+                            active: Bool, delay: Double) -> NSView {
+        let badge = NSStackView()
+        badge.orientation = .vertical
+        badge.alignment = .centerX
+        badge.spacing = 2
+
+        if active {
+            let spinner = NSProgressIndicator()
+            spinner.style = .spinning
+            spinner.controlSize = .small
+            spinner.isIndeterminate = true
+            spinner.startAnimation(nil)
+            badge.addArrangedSubview(spinner)
+            NSLayoutConstraint.activate([
+                spinner.widthAnchor.constraint(equalToConstant: Brand.Metric.glyphSize),
+                spinner.heightAnchor.constraint(equalToConstant: Brand.Metric.glyphSize),
+            ])
+        } else {
+            let glyph = NSImageView()
+            glyph.image = Brand.Glyph.symbol("circle.dotted", size: Brand.Metric.glyphSize)
+            glyph.contentTintColor = Brand.Color.textSecondary
+            glyph.imageScaling = .scaleProportionallyUpOrDown
+            badge.addArrangedSubview(glyph)
+            NSLayoutConstraint.activate([
+                glyph.widthAnchor.constraint(equalToConstant: Brand.Metric.glyphSize),
+                glyph.heightAnchor.constraint(equalToConstant: Brand.Metric.glyphSize),
+            ])
+        }
+
+        // The word carries the state as well as the motion does, per the brand kit.
+        let status = NSTextField(labelWithString: active ? "NOW" : "WAIT")
+        status.font = .systemFont(ofSize: 9, weight: .bold)
+        status.textColor = Brand.Color.textSecondary
+        status.alignment = .center
+        badge.addArrangedSubview(status)
+
+        let titleField = NSTextField(labelWithString: title)
+        titleField.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleField.textColor = active ? Brand.Color.textPrimary : Brand.Color.textSecondary
+        titleField.lineBreakMode = .byTruncatingTail
+
+        let detailField = NSTextField(wrappingLabelWithString: detail)
+        detailField.font = .systemFont(ofSize: 11, weight: .regular)
+        detailField.textColor = Brand.Color.textSecondary
+        detailField.maximumNumberOfLines = 2
+        detailField.preferredMaxLayoutWidth = 380
+
+        let text = NSStackView(views: [titleField, detailField])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 2
+
+        let content = NSStackView(views: [badge, text])
+        content.orientation = .horizontal
+        content.alignment = .centerY
+        content.spacing = Brand.Metric.space12
+        content.translatesAutoresizingMaskIntoConstraints = false
+
+        let card = NSView()
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 8
+        card.layer?.backgroundColor = Brand.Color.surfaceRaised.cgColor
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(content)
+        card.alphaValue = active ? 1 : 0.62
+        card.setAccessibilityLabel("\(title), \(active ? "checking now" : "waiting")")
+
+        NSLayoutConstraint.activate([
+            badge.widthAnchor.constraint(equalToConstant: 44),
+            content.topAnchor.constraint(equalTo: card.topAnchor,
+                                         constant: Brand.Metric.space8),
+            content.bottomAnchor.constraint(equalTo: card.bottomAnchor,
+                                            constant: -Brand.Metric.space8),
+            content.leadingAnchor.constraint(equalTo: card.leadingAnchor,
+                                             constant: Brand.Metric.space8),
+            content.trailingAnchor.constraint(equalTo: card.trailingAnchor,
+                                              constant: -Brand.Metric.space12),
+        ])
+
+        if !active { pulse(card, delay: delay) }
+        return card
+    }
+
+    /// A slow breath on the cards still to come, staggered so the list reads as a
+    /// queue rather than one block blinking. Skipped when the user has asked the
+    /// system for less motion.
+    private func pulse(_ view: NSView, delay: Double) {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0.42
+        animation.toValue = 0.78
+        animation.duration = 1.1
+        animation.autoreverses = true
+        animation.repeatCount = .infinity
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        animation.beginTime = CACurrentMediaTime() + delay
+        view.layer?.add(animation, forKey: "pulse")
+    }
+
     private func render(_ checks: [Preflight.Check]) {
         checksStack.subviews.forEach { $0.removeFromSuperview() }
         for check in checks {
@@ -793,8 +936,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         onOpenPanel()
     }
 
-    @objc private func openSource() {
-        NSWorkspace.shared.open(Updates.repoURL)
+    @objc private func closeWindow() {
+        window?.performClose(nil)
     }
 }
 

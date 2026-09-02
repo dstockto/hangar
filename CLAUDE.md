@@ -124,6 +124,14 @@ Kept because each one cost real debugging and would be easy to reintroduce.
 12. **`createDirectory(attributes:)` does not tighten an existing directory.** A
     hand-made `mkdir ~/.hangar` stayed at the umask. `PrivateFile.ensureDirectory`
     sets the mode either way.
+13. **A label that assumed the default config.** `leafLabel` cut `product-env`
+    off every alias, so a fleet grouped by product alone showed `web-1` three
+    times for prod, stage and qa. Anything that trims a label has to be told the
+    levels the menu was actually built from.
+14. **An external process with no deadline.** `credential_process` is the user's
+    own command, and `readDataToEndOfFile` waits for the pipe to close, which a
+    helper that hangs never does. The fleet refreshed forever and the setup
+    window sat blank. Every process Hangar runs gets a deadline and a kill.
 
 ## Permissions and file modes
 

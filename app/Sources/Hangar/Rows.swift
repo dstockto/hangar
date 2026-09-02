@@ -112,23 +112,25 @@ final class HostRowView: NSTableCellView {
         let textTrailing = bounds.width - Brand.Metric.space12
         let textWidth = max(40, textTrailing - textLeading)
 
-        // Baselines from the brand kit: primary at 17, metadata at 35.
-        aliasField.frame = NSRect(x: textLeading, y: 17 - 14,
+        // The brand kit puts the baselines at 17 and 35, which sits the alias one
+        // point above the top of the selection capsule. Two points lower centres
+        // the pair inside it, so the highlight has air above and below the text.
+        aliasField.frame = NSRect(x: textLeading, y: 19 - 14,
                                   width: textWidth, height: 18)
         var metadataX = textLeading
         if isProduction {
             let badgeSize = prodBadge.intrinsicSize
-            prodBadge.frame = NSRect(x: metadataX, y: 35 - 12,
+            prodBadge.frame = NSRect(x: metadataX, y: 37 - 12,
                                      width: badgeSize.width, height: badgeSize.height)
             metadataX += badgeSize.width + Brand.Metric.space8
         }
         prodBadge.isHidden = !isProduction
 
         if !asgGlyph.isHidden {
-            asgGlyph.frame = NSRect(x: metadataX, y: 35 - 12, width: 14, height: 14)
+            asgGlyph.frame = NSRect(x: metadataX, y: 37 - 12, width: 14, height: 14)
             metadataX += 14 + Brand.Metric.space4
         }
-        metadataField.frame = NSRect(x: metadataX, y: 35 - 12,
+        metadataField.frame = NSRect(x: metadataX, y: 37 - 12,
                                      width: max(40, textTrailing - metadataX), height: 15)
         divider.frame = NSRect(x: Brand.Metric.space16, y: 0,
                                width: bounds.width - Brand.Metric.space16 * 2, height: 1)
