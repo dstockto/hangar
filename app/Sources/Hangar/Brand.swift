@@ -85,8 +85,8 @@ enum Brand {
         static let panelTopFraction: CGFloat = 0.18
 
         static let searchRegionHeight: CGFloat = 56
-        static let hostRowHeight: CGFloat = 48
-        static let selectedRowHeight: CGFloat = 40
+        static let hostRowHeight: CGFloat = 56
+        static let selectedRowHeight: CGFloat = 48
         static let selectedRowRadius: CGFloat = 9
         static let selectionInsetVertical: CGFloat = 4
         static let selectionInsetHorizontal: CGFloat = 14

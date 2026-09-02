@@ -36,9 +36,9 @@ enum HangarMetric {
     static let panelWidth: CGFloat = 640
     static let panelInitialHeight: CGFloat = 456
     static let panelCornerRadius: CGFloat = 18
-    static let hostRowHeight: CGFloat = 48
+    static let hostRowHeight: CGFloat = 56
     static let groupHeaderHeight: CGFloat = 24
-    static let selectedRowHeight: CGFloat = 40
+    static let selectedRowHeight: CGFloat = 48
     static let selectedRowRadius: CGFloat = 9
     static let space4: CGFloat = 4
     static let space8: CGFloat = 8
