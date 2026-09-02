@@ -48,7 +48,7 @@ enum PanelRow {
 /// arrow and return handling, which is the whole interaction here.
 @MainActor
 final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
-                             NSTableViewDataSource {
+                             NSTableViewDataSource, NSWindowDelegate {
     private let store: FleetStore
     private var panel: HangarPanel!
     private var backdrop: NSView!
@@ -96,6 +96,10 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         panel.maxSize = metric.panelMaxSize
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.onDismiss = { [weak self] in self?.hide() }
+        // Clicking away dismisses it, the way Spotlight does. Without this the
+        // panel stayed on screen behind whatever was clicked, holding a query
+        // nobody was still typing.
+        panel.delegate = self
         panel.setAccessibilityLabel("Hangar host search")
 
         // System material, with the brand panel colour beneath it so the surface
@@ -272,14 +276,35 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         }
     }
 
-    func hide() {
+    func hide(restoringFocus: Bool = true) {
         collapseWork?.cancel()
         removeKeyMonitor()
         panel.orderOut(nil)
-        if let previousApp, previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {
+        // Cleared on the way out as well as on the way in, so a query never
+        // flashes back up in the frame before the next show() resets it.
+        searchField.stringValue = ""
+        lastQuery = ""
+        if restoringFocus, let previousApp,
+           previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {
             previousApp.activate()
         }
         previousApp = nil
+    }
+
+    /// Losing key means the click landed somewhere else, so the panel goes away.
+    /// Focus is not handed back to the previous app here: whatever was clicked is
+    /// already frontmost, and activating anything else would take it away again.
+    ///
+    /// One of our own windows taking key, the ssh settings editor from
+    /// command-click, is not clicking away.
+    func windowDidResignKey(_ notification: Notification) {
+        guard panel.isVisible else { return }
+        Task { @MainActor in
+            guard panel.isVisible, !panel.isKeyWindow else { return }
+            if let key = NSApp.keyWindow, key !== panel { return }
+            if editor != nil { return }
+            hide(restoringFocus: false)
+        }
     }
 
     /// Named colours resolve against the drawing appearance, so anything cached
