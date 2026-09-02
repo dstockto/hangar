@@ -14,6 +14,8 @@ Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd>, type a few characters, press
 
 ### [Download Hangar](https://github.com/goriparthi/hangar/releases/latest)
 
+**[hangar homepage](https://goriparthi.github.io/hangar/)**
+
 Signed and notarized by Apple. Open the DMG, drag Hangar to Applications, launch it.
 No Gatekeeper warning, no `xattr` command, no Homebrew, no Xcode.
 
@@ -21,32 +23,48 @@ No Gatekeeper warning, no `xattr` command, no Homebrew, no Xcode.
 
 ---
 
-## Why
+## Thousands of hosts to the right one
 
-Autoscaling should replace instances, not your memory. Instances in an
-autoscaling group get machine-generated hostnames that change every time one is
-replaced, so there is nothing to bookmark and nothing to remember. Finding the
-box you need means running an AWS CLI query and copying a 58-character hostname
-by hand.
+Autoscaling replaces instances and their hostnames go with them. The lookup is
+the work, and you do it again every time.
 
-Hangar indexes your tagged fleet, gives every host a stable alias, and puts the
-right target one keystroke away.
+**Without Hangar.** Remember roughly what the box is called. Run
+`aws ec2 describe-instances --filters …` and read JSON to find it. Copy a
+58-character `ip-10-0-42-17.us-west-2.compute.internal`. `ssh ec2-user@…` and
+hope the login is right. Tomorrow the instance is replaced and the hostname you
+saved is gone.
 
-## What it does
+**With Hangar.** Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd>. Type
+`payments prod web`; terms match in any order. Press <kbd>Return</kbd>; the first
+match is already selected. You are on the box, in iTerm2 or Terminal, with the
+right login. Tomorrow the alias still works, because it follows the tags rather
+than the hostname.
 
-- **Global shortcut, fuzzy search.** A floating panel opens from anywhere. Terms
-  match in any order, so `payments web qa` finds `payments-qa-web`.
-- **Return connects** in iTerm2 or Terminal. <kbd>⌘</kbd><kbd>Return</kbd> copies
-  the command for another tool instead.
-- **Stable aliases everywhere.** Hangar writes an ssh_config include, so
-  `ssh payments-prod-web-1` works from any terminal, and from `scp`, `rsync`,
-  Ansible, and VS Code Remote.
-- **Health at a glance.** The menubar aircraft turns green while the cache is
-  fresh.
-- **Fix a wrong login in place.** <kbd>⌘</kbd>-click a host to edit its ssh user
+Search stays under half a millisecond per keystroke at ten thousand hosts.
+
+## Built for the way you already work
+
+Standard SSH underneath. Nothing to learn, nothing to migrate.
+
+- **Fuzzy fleet search.** Terms match in any order across alias, hostname and
+  tags. Type the three things you remember.
+- **Stable SSH aliases.** Hangar owns one `ssh_config` include and rewrites it on
+  every sync, so terminated instances drop out on their own. `ssh
+  payments-prod-web-1` works from any terminal, and from `scp`, `rsync`, Ansible
+  and VS Code Remote.
+- **Native terminal launch.** <kbd>Return</kbd> opens a real session in iTerm2 or
+  Terminal. <kbd>⌘</kbd><kbd>Return</kbd> copies the command instead.
+- **Works with your tags, not ours.** `product`/`env`, `Service`/`Environment`,
+  `app`/`stage`, or a single `Name` tag all work with no configuration. The setup
+  screen shows the tag keys your fleet actually uses and lets you point each one
+  at the right key.
+- **Credentials stay local.** The same resolution order the AWS CLI uses, read
+  from your home directory. Expired SSO tokens refresh in place.
+- **Fix a wrong login in place.** <kbd>⌘</kbd>-click a host to set its ssh user
   or key, with a **Detect Login** button that probes the usual cloud-image logins
   and keeps the one that authenticates.
-- **Menubar cascade** grouped product, environment, host.
+- **Fleet health at a glance.** The menubar aircraft turns green while the cache
+  is fresh, and says so when it is not.
 
 ## Install
 
@@ -134,14 +152,36 @@ would beat every generated entry. Hangar connects fine without it; only the
 ## Discovery
 
 Hangar calls `ec2:DescribeInstances` once and caches the result locally. Hosts are
-grouped and named from four tags:
+grouped and named from four ideas:
 
-| Tag | Used for |
-|---|---|
-| `product` | top-level grouping |
-| `env` | environment grouping and the production treatment |
-| `env_name` | disambiguating parallel environments |
-| `Name` | the host's role |
+| Idea | Used for | Tag keys tried by default |
+|---|---|---|
+| product | top-level grouping | `product`, `Service`, `app`, `project`, `system` |
+| env | environment grouping and the production treatment | `env`, `Environment`, `stage`, `tier` |
+| env_name | disambiguating parallel environments | `env_name`, `cluster`, `instance_name` |
+| role | the host's role, used in the alias | `Name`, `role`, `Component`, `function` |
+| hostname | what ssh connects to | `hostname`, `FQDN`, `dns`; private IP if unset |
+
+Each is a list of candidate keys, tried in order and matched case-insensitively,
+so the conventions in common use work untouched. **If your fleet uses something
+else, the setup screen lists the tag keys it actually found, with how many hosts
+carry each and a couple of real values, and you point each one at the right
+key.** That takes effect immediately, without a refresh. It can also be set by
+hand under `"tags"` in `~/.hangar/config.json`.
+
+### Menu levels
+
+The menubar cascade is an ordered list of tag keys, and you compose it. One level
+is a perfectly good answer, and so is none:
+
+```json
+"group_by": ["Team", "Environment"]
+```
+
+Any tag key works, not only the ones above. A level no host carries adds no
+submenu, so nothing produces an empty "untagged" level containing everything.
+Add, remove and reorder from the setup screen, or edit `group_by` directly. The
+default is `["product", "env", "env_name"]`.
 
 Each host gets three ssh names: a readable alias, a stable instance-id alias, and
 its real hostname.
@@ -282,8 +322,11 @@ scripts/          build, test, and release
 ```
 
 `HangarCore` is UI-free, which is what makes it testable. Search is byte-level
-subsequence matching over a precomputed index: fifteen keystrokes across 249 hosts
-costs under 7 ms.
+subsequence matching over a precomputed index. Typing a seventeen-character query
+costs 0.44 ms across 249 hosts and 7.35 ms across 10,000, measured on a release
+build, so the per-keystroke cost stays under half a millisecond at ten thousand
+hosts. The suite asserts the shape of that curve rather than an absolute time,
+because it runs unoptimized.
 
 ## Status
 
@@ -302,6 +345,14 @@ out so that arrangement produces something trustworthy rather than something tha
 merely compiles. The working method, the review passes, and an honest account of
 what it has caught are in
 [docs/ai-native-sdlc.md](docs/ai-native-sdlc.md).
+
+## Links
+
+- [Homepage](https://goriparthi.github.io/hangar/)
+- [Releases](https://github.com/goriparthi/hangar/releases)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [How this repository is built](docs/ai-native-sdlc.md)
 
 ## License
 

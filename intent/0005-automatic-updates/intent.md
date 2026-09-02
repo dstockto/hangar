@@ -1,31 +1,63 @@
-# Intent: check for updates and install them
+# 0005: an updater that was described but not connected
 
-## Problem
+## How this came about
 
-Two problems, one of which was invisible.
+Two instructions, a few minutes apart:
 
-Visible: Hangar only checked for updates when asked, and then opened a browser
-page. A menubar utility that is running anyway should notice a release itself.
+> add auto updater, check once per day, default on
 
-Invisible: `Updates.stage`, the download-verify-stage-swap path, was never called
-by anything. It was complete, careful, and dead, while `README.md`, `SECURITY.md`
-and `RELEASING.md` all described how the in-place installer verified downloads.
-The documentation described a code path that could not run.
+> check updates should pull from github and offer to inplace update the app
 
-## Outcome
+and then, when the manual path was made to offer the install:
 
-Hangar checks daily by default and offers to install in place, using the verified
-path that already existed.
+> same with daily check
 
-## Constraints
+The second instruction is the interesting one, because the answer was that the
+code to do it already existed and had never run.
 
-- Nothing unprompted may spend the user's bandwidth without asking.
-- Nothing may replace the running app without an explicit confirmation.
-- The check must be daily in wall-clock terms, not once per launch. A laptop that
-  sleeps and wakes all day must not check twenty times.
-- The privacy claim changes: the README said Hangar makes no network request the
-  user did not ask for. That sentence has to change with the default.
+## What was found
 
-## Out of scope
+`Updates.stage` downloaded a DMG, mounted it, verified notarization and a pinned
+Developer ID team, staged the bundle beside a swap script, and returned a closure
+that would install it. Complete, careful, and called by nothing. Meanwhile
+`README.md`, `SECURITY.md` and `RELEASING.md` all described how the in-place
+updater verified downloads before replacing anything.
 
-Delta updates, background download, release-note rendering in-app.
+The documentation described a code path that could not execute. That is worse
+than a missing feature: a reader has no way to tell the difference, and the claim
+was load-bearing for trust.
+
+## The design questions
+
+**How often is "daily"?** Not once per launch. A laptop that sleeps and wakes all
+day would check twenty times. The last-check timestamp lives on disk, so the
+clock survives a restart, and the timer ticks hourly and usually decides it is not
+due yet. That is what makes the schedule survive the way laptops are actually
+used.
+
+**How much may an unprompted check do?** Not spend bandwidth without asking. A
+check the user asked for goes straight to download, verify, stage, confirm. The
+daily one asks first, with the release notes as a third option. Neither replaces
+the running app without an explicit confirmation.
+
+**What changes in the promise?** The README said Hangar makes no network request
+the user did not ask for. Turning the check on by default makes that false, so
+the sentence changed with the default rather than after someone noticed.
+
+## What was kept exactly as it was
+
+The verification chain, because it was already right: `spctl`, the pinned
+`certificate leaf[subject.OU]` requirement, `ditto` for the copy, and a detached
+helper that waits for exit, moves the installed app aside, swaps, relaunches, and
+restores on failure. It only needed calling.
+
+## Proof
+
+`UpdateScheduleTests`: off at zero hours, due when it has never run, not due
+inside the window, due outside it, and the stamp surviving a restart. The install
+path itself was verified by hand against an ad-hoc re-signed bundle, which both
+gates rejected.
+
+`ConfigCodingTests.testDefaults` had asserted the old default and was updated
+deliberately, which is the correct outcome: the test was right about the old
+behaviour and the behaviour changed on purpose.

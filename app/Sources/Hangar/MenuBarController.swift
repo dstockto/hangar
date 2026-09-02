@@ -184,53 +184,52 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(action("Quit Hangar", #selector(quit), key: "q"))
     }
 
-    /// product → env → host. Leaf labels drop the product and environment the
-    /// path already states; the full alias and hostname live in the tooltip.
+    /// The cascade, one submenu per grouping level the fleet actually uses.
+    /// `FleetGrouping` decides which levels exist, so a fleet organised by one
+    /// tag gets one level rather than one real level and two empty ones.
     private func addFleet(to menu: NSMenu) {
         guard !store.instances.isEmpty else {
             menu.addItem(status("No hosts found."))
             return
         }
-        let byProduct = Dictionary(grouping: store.instances) {
-            $0.product.isEmpty ? "untagged" : $0.product
+        for node in FleetGrouping.tree(store.instances,
+                                       groupBy: store.config.groupingKeys) {
+            menu.addItem(item(for: node))
         }
-        for product in byProduct.keys.sorted() {
-            let productItem = NSMenuItem(title: product, action: nil, keyEquivalent: "")
-            let productMenu = NSMenu()
-            let byEnv = Dictionary(grouping: byProduct[product] ?? []) {
-                $0.env.isEmpty ? "untagged" : $0.env
-            }
-            for env in byEnv.keys.sorted() {
-                let envItem = NSMenuItem(title: env, action: nil, keyEquivalent: "")
-                let envMenu = NSMenu()
-                let hosts = (byEnv[env] ?? []).sorted {
-                    ($0.aliasStem, $0.id) < ($1.aliasStem, $1.id)
-                }
-                for instance in hosts {
-                    let alias = store.alias(for: instance) ?? instance.aliasStem
-                    let label = instance.leafLabel(alias: alias)
-                    let item = NSMenuItem(title: label, action: #selector(openHost(_:)),
-                                          keyEquivalent: "")
-                    item.target = self
-                    item.representedObject = instance.id
-                    item.image = Brand.Glyph.template(
-                        instance.state == "running" ? "RunningIcon" : "StoppedIcon", size: 12)
-                    if instance.state != "running" {
-                        item.attributedTitle = NSAttributedString(
-                            string: "\(label)  (\(instance.state))",
-                            attributes: [.foregroundColor: Brand.Color.textSecondary,
-                                         .font: NSFont.menuFont(ofSize: 0)])
-                    }
-                    item.toolTip = "ssh \(alias)\n\(instance.host ?? instance.id)"
-                        + "\n\u{2318}-click to edit ssh user or key"
-                    envMenu.addItem(item)
-                }
-                envItem.submenu = envMenu
-                productMenu.addItem(envItem)
-            }
-            productItem.submenu = productMenu
-            menu.addItem(productItem)
+    }
+
+    private func item(for node: FleetGrouping.Node) -> NSMenuItem {
+        switch node {
+        case .group(let title, let children):
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            for child in children { submenu.addItem(self.item(for: child)) }
+            item.submenu = submenu
+            item.image = Brand.Glyph.template("ProductIcon", size: 12)
+            return item
+        case .host(let instance):
+            return hostItem(instance)
         }
+    }
+
+    private func hostItem(_ instance: Instance) -> NSMenuItem {
+        let alias = store.alias(for: instance) ?? instance.aliasStem
+        let label = instance.leafLabel(alias: alias)
+        let item = NSMenuItem(title: label, action: #selector(openHost(_:)),
+                              keyEquivalent: "")
+        item.target = self
+        item.representedObject = instance.id
+        item.image = Brand.Glyph.template(
+            instance.state == "running" ? "RunningIcon" : "StoppedIcon", size: 12)
+        if instance.state != "running" {
+            item.attributedTitle = NSAttributedString(
+                string: "\(label)  (\(instance.state))",
+                attributes: [.foregroundColor: Brand.Color.textSecondary,
+                             .font: NSFont.menuFont(ofSize: 0)])
+        }
+        item.toolTip = "ssh \(alias)\n\(instance.host ?? instance.id)"
+            + "\n\u{2318}-click to edit ssh user or key"
+        return item
     }
 
     private func sshConfigItem() -> NSMenuItem {
@@ -253,6 +252,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let item = NSMenuItem(title: "Settings\u{2026}", action: nil, keyEquivalent: ",")
         let submenu = NSMenu()
         submenu.addItem(profileMenuItem())
+        let daily = action("Check for Updates Daily", #selector(toggleDailyUpdates), key: "")
+        daily.state = (store.config.checkUpdatesOnLaunch ?? true) ? .on : .off
+        submenu.addItem(daily)
         submenu.addItem(updateChannelItem())
         let login = action("Open Hangar at Login", #selector(toggleLoginItem), key: "")
         login.state = LoginItem.isEnabled ? .on : .off
@@ -261,6 +263,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         submenu.addItem(.separator())
         submenu.addItem(action("Setup Check\u{2026}", #selector(showSetup), key: ""))
         submenu.addItem(action("Check for Updates\u{2026}", #selector(checkUpdates), key: ""))
+        // The version belongs next to the thing that changes it, so "is there
+        // anything newer" can be answered without opening About.
+        var versionRuns: [StatusRun] = [.text("Version "), .mono(Updates.bundleVersion)]
+        if let update = availableUpdate() {
+            versionRuns += [.text("  \u{2192}  "), .mono(update.version), .text(" available")]
+        } else if let checked = Updates.lastCheck {
+            versionRuns.append(.text("  ·  checked \(MenuBarController.ago(checked))"))
+        }
+        submenu.addItem(statusRow(versionRuns, tier: .faint))
         submenu.addItem(.separator())
         submenu.addItem(action("Edit Configuration\u{2026}", #selector(editConfig), key: ""))
         submenu.addItem(status("~/.hangar/config.json"))
@@ -466,6 +477,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return item
     }
 
+    /// "2 min ago", for the line under Check for Updates.
+    static func ago(_ date: Date) -> String {
+        let elapsed = Date().timeIntervalSince(date)
+        if elapsed < 90 { return "just now" }
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = elapsed < 3600 ? [.minute]
+            : (elapsed < 86400 ? [.hour] : [.day])
+        formatter.maximumUnitCount = 1
+        guard let age = formatter.string(from: elapsed) else { return "recently" }
+        return "\(age) ago"
+    }
+
     private func sectionHeader(_ title: String, symbol: String? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
@@ -493,6 +517,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func showSetup() { onShowSetup() }
     @objc private func checkUpdates() { onCheckUpdates() }
     @objc private func openSource() { NSWorkspace.shared.open(Updates.repoURL) }
+
+    @objc private func toggleDailyUpdates() {
+        var config = store.config
+        let turningOn = !(config.checkUpdatesOnLaunch ?? true)
+        config.checkUpdatesOnLaunch = turningOn
+        try? HangarConfig.write(config)
+        store.reloadConfig()
+        Notifier.show(
+            title: turningOn ? "Checking for updates daily" : "Automatic checks off",
+            body: turningOn
+                ? "At most once every \(store.config.updateCheckHours ?? 24) hours"
+                : "Use Check for Updates when you want one",
+            seconds: 3)
+    }
 
     @objc private func pickChannel(_ sender: NSMenuItem) {
         var config = store.config

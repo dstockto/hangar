@@ -11,6 +11,9 @@ final class FleetStore: ObservableObject {
         var instances: [Instance]
         var region: String
         var fetchedAt: Date
+        /// The fleet's real tag keys, captured before normalization. Persisted so
+        /// the setup screen can offer them without waiting for a refresh.
+        var tagCatalog: TagCatalog?
     }
 
     enum Status: Equatable {
@@ -27,6 +30,8 @@ final class FleetStore: ObservableObject {
     @Published private(set) var lastSyncMessage: String?
     /// Advice for the current failure, derived from the profile that was tried.
     @Published private(set) var credentialAdvice: CredentialAdvice.Advice?
+    /// Which tag keys this fleet actually uses, for the setup screen's picker.
+    @Published private(set) var tagCatalog: TagCatalog = .empty
 
     /// Search-ready fleet, rebuilt only when the fleet or config changes.
     /// Everything the panel needs per keystroke is precomputed here.
@@ -133,11 +138,13 @@ final class FleetStore: ObservableObject {
         instances = config.tagMapping.normalize(cache.instances)
         region = cache.region
         fetchedAt = cache.fetchedAt
+        tagCatalog = cache.tagCatalog ?? .empty
         rebuildIndex()
     }
 
     private func saveCache() {
-        let cache = Cache(instances: instances, region: region, fetchedAt: Date())
+        let cache = Cache(instances: instances, region: region, fetchedAt: Date(),
+                          tagCatalog: tagCatalog)
         guard let data = try? JSONEncoder().encode(cache) else { return }
         // The cache is the whole fleet: ids, private addresses, every tag. It gets
         // the same 0600 the config and the ssh include get, from creation.
@@ -161,6 +168,9 @@ final class FleetStore: ObservableObject {
                 EC2.Filter(name: "instance-state-name",
                            values: ["pending", "running", "stopping", "stopped"])
             ])
+            // Catalogued before normalization, which adds the canonical keys
+            // whether the fleet uses them or not.
+            tagCatalog = TagCatalog.discover(from: fetched)
             // Tags are mapped to Hangar's canonical keys here, so every screen
             // below this line reads "product" and "env" regardless of how the
             // fleet spells them.
@@ -327,6 +337,63 @@ final class FleetStore: ObservableObject {
 
     func existingOverride(scope: OverrideScope) -> HangarConfig.Override? {
         config.override(for: scope.match)
+    }
+
+    // MARK: - Tag mapping
+
+    /// Points one idea at one of the fleet's own tag keys, then rebuilds
+    /// everything downstream of it: the grouping, the aliases, and the ssh
+    /// include. No refresh needed, because the tags are already in hand.
+    func useTagKey(_ key: String?, for concept: TagCatalog.Concept) -> String {
+        var updated = config
+        var mapping = updated.tagMapping
+        mapping.use(key, for: concept)
+        updated.tags = mapping
+        do {
+            try HangarConfig.write(updated)
+        } catch {
+            return "Could not write \(HangarConfig.path)"
+        }
+        config = updated
+        instances = mapping.normalize(instances)
+        rebuildIndex()
+        if config.syncSSHConfigOnRefresh ?? true { syncSSHConfig(announce: false) }
+        guard let key, !key.isEmpty else {
+            return "\(concept.title) is no longer read from a tag"
+        }
+        return "\(concept.title) now reads the \(key) tag"
+    }
+
+    /// What the current mapping resolves for each idea against this fleet.
+    func resolvedTagKey(for concept: TagCatalog.Concept) -> String? {
+        config.tagMapping.resolvedKey(for: concept, in: tagCatalog)
+    }
+
+    // MARK: - Menu levels
+
+    /// The menubar levels, in order.
+    var groupingKeys: [String] { config.groupingKeys }
+
+    /// Replaces the level list wholesale. Add, remove and reorder all come
+    /// through here, so there is one place that writes and rebuilds.
+    @discardableResult
+    func setGroupingKeys(_ keys: [String]) -> String {
+        var updated = config
+        updated.groupBy = keys
+        do {
+            try HangarConfig.write(updated)
+        } catch {
+            return "Could not write \(HangarConfig.path)"
+        }
+        config = updated
+        rebuildIndex()
+        if keys.isEmpty { return "The menu now lists every host flat" }
+        let produced = FleetGrouping.depth(instances, groupBy: keys)
+        if produced < keys.count {
+            return "\(keys.joined(separator: " \u{203A} ")). "
+                + "\(keys.count - produced) of them no host carries yet."
+        }
+        return "Menu levels: \(keys.joined(separator: " \u{203A} "))"
     }
 
     /// Probes candidate logins in parallel and returns the first that authenticates.

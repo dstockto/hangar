@@ -98,6 +98,9 @@ public struct HangarConfig: Codable, Sendable {
     public var tags: TagMapping?
     /// How often the background update check runs. Zero or nil turns it off.
     public var updateCheckHours: Int?
+    /// One menubar submenu level per tag key, in order. Any tag key works, not
+    /// only the ones Hangar maps. Nil keeps the default product, env, env_name.
+    public var groupBy: [String]?
 
     public init(profile: String? = nil, region: String? = nil, terminal: String? = nil,
                 ssh: SSHSettings? = nil, overrides: [Override]? = nil,
@@ -105,7 +108,7 @@ public struct HangarConfig: Codable, Sendable {
                 syncSSHConfigOnRefresh: Bool? = nil, healthyWithinHours: Int? = nil,
                 updateChannel: String? = nil, checkUpdatesOnLaunch: Bool? = nil,
                 launchAtLogin: Bool? = nil, tags: TagMapping? = nil,
-                updateCheckHours: Int? = nil) {
+                updateCheckHours: Int? = nil, groupBy: [String]? = nil) {
         self.profile = profile
         self.region = region
         self.terminal = terminal
@@ -120,6 +123,7 @@ public struct HangarConfig: Codable, Sendable {
         self.launchAtLogin = launchAtLogin
         self.tags = tags
         self.updateCheckHours = updateCheckHours
+        self.groupBy = groupBy
     }
 
     enum CodingKeys: String, CodingKey {
@@ -132,6 +136,7 @@ public struct HangarConfig: Codable, Sendable {
         case launchAtLogin = "launch_at_login"
         case tags
         case updateCheckHours = "update_check_hours"
+        case groupBy = "group_by"
     }
 
     public static var home: String {
@@ -158,6 +163,10 @@ public struct HangarConfig: Codable, Sendable {
     /// The configured mapping, or the defaults when the config predates it.
     public var tagMapping: TagMapping { tags ?? .standard }
 
+    /// The menubar levels, widest first. An empty list is a deliberate choice:
+    /// a flat list of every host, which is the right answer for a small fleet.
+    public var groupingKeys: [String] { groupBy ?? FleetGrouping.defaultLevels }
+
     public static var sshIncludePath: String {
         NSString(string: "~/.ssh/config.d/hangar").expandingTildeInPath
     }
@@ -180,7 +189,8 @@ public struct HangarConfig: Codable, Sendable {
             checkUpdatesOnLaunch: true,
             launchAtLogin: false,
             tags: .standard,
-            updateCheckHours: 24)
+            updateCheckHours: 24,
+            groupBy: FleetGrouping.defaultLevels)
     }
 
     /// Loads the config, writing a documented starter file on first run. A config

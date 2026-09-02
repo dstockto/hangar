@@ -132,6 +132,66 @@ final class SearchPerformanceTests: XCTestCase {
         XCTAssertEqual(SearchPerformanceTests.fleet.count, 249)
     }
 
+    /// The landing page claims search stays under a millisecond per keystroke at
+    /// ten thousand hosts. That is measured on a release build, which is what
+    /// ships; this suite runs unoptimized and is roughly an order of magnitude
+    /// slower, so an absolute threshold here would either be meaningless or
+    /// wrong. What matters and what a refactor can actually break is the shape
+    /// of the curve, so this asserts that instead: forty times the hosts must
+    /// not cost more than sixty times the work.
+    func testSearchScalesLinearlyWithFleetSize() {
+        func fleet(_ count: Int) -> [SearchEntry] {
+            let products = ["payments", "search", "media", "identity", "billing",
+                            "infra", "risk", "shop"]
+            let envs = ["prod", "qa", "uat", "sb", "dev"]
+            let roles = ["web", "db", "etl", "xfer", "worker", "scheduler",
+                         "reports", "ci", "grafana", "cache"]
+            return (0..<count).map { i in
+                let role = roles[i % roles.count]
+                let env = envs[i % envs.count]
+                let product = products[i % products.count]
+                let id = "i-0\(String(format: "%015x", i))"
+                let instance = Fixture.instance(
+                    ["product": product, "env": env, "Name": role,
+                     "hostname": "\(id).\(role).\(env).\(product).example.com"], id: id)
+                return SearchEntry(instance: instance, alias: instance.aliasStem + "-\(i)")
+            }
+        }
+
+        func typeOut(_ query: String, _ pool: [SearchEntry]) -> Double {
+            var results = pool
+            var last = ""
+            let start = Date()
+            for end in 1...query.count {
+                let typed = String(query.prefix(end))
+                let needle = Fuzzy.Query(typed)
+                let source = (typed.hasPrefix(last) && !last.isEmpty) ? results : pool
+                var scored: [(SearchEntry, Int)] = []
+                scored.reserveCapacity(source.count)
+                for entry in source {
+                    if let score = entry.score(for: needle) { scored.append((entry, score)) }
+                }
+                scored.sort { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.alias < $1.0.alias }
+                results = scored.map(\.0)
+                last = typed
+            }
+            return Date().timeIntervalSince(start) * 1000
+        }
+
+        let small = fleet(250)
+        let large = fleet(10_000)
+        _ = typeOut("payments prod web", small)   // warm the caches
+        _ = typeOut("payments prod web", large)
+
+        let smallMs = typeOut("payments prod web", small)
+        let largeMs = typeOut("payments prod web", large)
+        let ratio = largeMs / max(smallMs, 0.0001)
+
+        XCTAssertLessThan(ratio, 60.0,
+                          String(format: "40x the hosts cost %.1fx the time (%.2f ms vs %.2f ms)",
+                                 ratio, largeMs, smallMs))
+    }
+
     func testTypingStaysImperceptible() {
         let full = timeTyping("payments-prod-web", incremental: false)
         let incremental = timeTyping("payments-prod-web", incremental: true)

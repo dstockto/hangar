@@ -11,6 +11,8 @@ enum Updates {
     /// from the app itself, not only from wherever someone found the download.
     static let repoURL = URL(string: "https://github.com/goriparthi/hangar")!
     static let issuesURL = URL(string: "https://github.com/goriparthi/hangar/issues")!
+    /// The project page, which is where a person who is not reading code goes.
+    static let homepageURL = URL(string: "https://goriparthi.github.io/hangar/")!
     static let releasesURL = URL(string:
         "https://api.github.com/repos/goriparthi/hangar/releases/latest")!
     // Beta channel: the list endpoint is the only one that includes prereleases

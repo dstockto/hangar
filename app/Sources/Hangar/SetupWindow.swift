@@ -22,6 +22,11 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private var loginToggle: NSButton!
     private var updateToggle: NSButton!
     private var channelPopup: NSPopUpButton!
+    private var tagsStack: NSStackView!
+    private var tagsCard: NSView!
+    private var tagPopups: [TagCatalog.Concept: NSPopUpButton] = [:]
+    private var levelsStack: NSStackView!
+    private var levelsCard: NSView!
     private var closeHint: NSTextField!
     private var openButton: NSButton!
     private var recheckButton: NSButton!
@@ -73,6 +78,59 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         checksStack.orientation = .vertical
         checksStack.alignment = .leading
         checksStack.spacing = Brand.Metric.space8
+
+        // The tag picker. Hidden until a fetch has told us which keys exist,
+        // because an empty picker teaches nothing.
+        tagsStack = NSStackView()
+        tagsStack.orientation = .vertical
+        tagsStack.alignment = .leading
+        tagsStack.spacing = Brand.Metric.space8
+        tagsStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let tagsCard = NSView()
+        tagsCard.wantsLayer = true
+        tagsCard.layer?.cornerRadius = 8
+        tagsCard.layer?.backgroundColor = Brand.Color.surfaceRaised.cgColor
+        tagsCard.translatesAutoresizingMaskIntoConstraints = false
+        tagsCard.addSubview(tagsStack)
+        NSLayoutConstraint.activate([
+            tagsStack.topAnchor.constraint(equalTo: tagsCard.topAnchor,
+                                           constant: Brand.Metric.space12),
+            tagsStack.bottomAnchor.constraint(equalTo: tagsCard.bottomAnchor,
+                                              constant: -Brand.Metric.space12),
+            tagsStack.leadingAnchor.constraint(equalTo: tagsCard.leadingAnchor,
+                                               constant: Brand.Metric.space12),
+            tagsStack.trailingAnchor.constraint(equalTo: tagsCard.trailingAnchor,
+                                                constant: -Brand.Metric.space12),
+        ])
+        tagsCard.isHidden = true
+        self.tagsCard = tagsCard
+
+        // Menu levels, composed by the user. Same card treatment.
+        levelsStack = NSStackView()
+        levelsStack.orientation = .vertical
+        levelsStack.alignment = .leading
+        levelsStack.spacing = Brand.Metric.space4
+        levelsStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let levelsCard = NSView()
+        levelsCard.wantsLayer = true
+        levelsCard.layer?.cornerRadius = 8
+        levelsCard.layer?.backgroundColor = Brand.Color.surfaceRaised.cgColor
+        levelsCard.translatesAutoresizingMaskIntoConstraints = false
+        levelsCard.addSubview(levelsStack)
+        NSLayoutConstraint.activate([
+            levelsStack.topAnchor.constraint(equalTo: levelsCard.topAnchor,
+                                             constant: Brand.Metric.space12),
+            levelsStack.bottomAnchor.constraint(equalTo: levelsCard.bottomAnchor,
+                                                constant: -Brand.Metric.space12),
+            levelsStack.leadingAnchor.constraint(equalTo: levelsCard.leadingAnchor,
+                                                 constant: Brand.Metric.space12),
+            levelsStack.trailingAnchor.constraint(equalTo: levelsCard.trailingAnchor,
+                                                  constant: -Brand.Metric.space12),
+        ])
+        levelsCard.isHidden = true
+        self.levelsCard = levelsCard
 
         let disclosure = NSTextField(wrappingLabelWithString:
             "Reads ~/.aws/config, ~/.aws/credentials, the SSO token cache, and EC2 "
@@ -172,8 +230,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         updateRow.orientation = .horizontal
         updateRow.spacing = Brand.Metric.space8
 
-        let root = NSStackView(views: [header, scroll, disclosure, toggles,
-                                       updateRow, closeHint, buttonRow])
+        let root = NSStackView(views: [header, scroll, tagsCard, levelsCard,
+                                       disclosure, toggles, updateRow, closeHint,
+                                       buttonRow])
         root.orientation = .vertical
         root.alignment = .leading
         root.spacing = Brand.Metric.space12
@@ -199,6 +258,10 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             scroll.widthAnchor.constraint(equalTo: root.widthAnchor,
                                           constant: -Brand.Metric.space32),
             scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 392),
+            tagsCard.widthAnchor.constraint(equalTo: root.widthAnchor,
+                                            constant: -Brand.Metric.space32),
+            levelsCard.widthAnchor.constraint(equalTo: root.widthAnchor,
+                                              constant: -Brand.Metric.space32),
             disclosure.widthAnchor.constraint(equalTo: root.widthAnchor,
                                               constant: -Brand.Metric.space32),
             buttonRow.widthAnchor.constraint(equalTo: root.widthAnchor,
@@ -282,8 +345,207 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             body.stringValue = "Resolve the item marked below, then re-check."
         }
         render(checks)
+        renderTagPicker()
+        renderLevels()
         recheckButton.isEnabled = true
         running = false
+    }
+
+    /// One row per idea: what it is for, and a menu of the tag keys this fleet
+    /// actually has. Only shown once a fetch has produced a catalog.
+    private func renderTagPicker() {
+        tagsStack.subviews.forEach { $0.removeFromSuperview() }
+        tagPopups = [:]
+
+        let catalog = store.tagCatalog
+        guard !catalog.isEmpty else {
+            tagsCard.isHidden = true
+            return
+        }
+        tagsCard.isHidden = false
+
+        let title = NSTextField(labelWithString: "Which of your tags mean what")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = Brand.Color.textPrimary
+        tagsStack.addView(title, in: .top)
+
+        let subtitle = NSTextField(wrappingLabelWithString:
+            "Hangar found \(catalog.keys.count) tag keys across \(catalog.fleetSize) "
+            + "hosts. Point each one at the tag you use; it takes effect immediately.")
+        subtitle.font = .systemFont(ofSize: 11)
+        subtitle.textColor = Brand.Color.textSecondary
+        subtitle.preferredMaxLayoutWidth = 520
+        tagsStack.addView(subtitle, in: .top)
+
+        let grid = NSGridView()
+        grid.rowSpacing = Brand.Metric.space4
+        grid.columnSpacing = Brand.Metric.space12
+
+        for concept in TagCatalog.Concept.allCases {
+            // Name and purpose in one cell. They were two columns and said the
+            // same thing twice, which pushed the menu into a narrow middle
+            // column and left the eye travelling to read one row.
+            let label = NSTextField(labelWithString: concept.title)
+            label.font = .systemFont(ofSize: 12, weight: .medium)
+            label.textColor = Brand.Color.textPrimary
+
+            let purpose = NSTextField(labelWithString: concept.explanation)
+            purpose.font = .systemFont(ofSize: 10)
+            purpose.textColor = Brand.Color.textSecondary
+
+            let described = NSStackView(views: [label, purpose])
+            described.orientation = .vertical
+            described.alignment = .leading
+            described.spacing = 0
+
+            let popup = NSPopUpButton()
+            popup.controlSize = .small
+            popup.font = Brand.Font.metadata
+            popup.addItem(withTitle: "Not used")
+            popup.menu?.addItem(.separator())
+            for key in catalog.keys {
+                let sample = key.samples.prefix(2).joined(separator: ", ")
+                let detail = key.distinctValues == 1
+                    ? "\(key.instances) hosts, one value"
+                    : "\(key.instances) hosts, \(key.distinctValues) values"
+                popup.addItem(withTitle: "\(key.name)   \(detail)"
+                              + (sample.isEmpty ? "" : "   \(sample)"))
+                popup.lastItem?.representedObject = key.name
+            }
+
+            // Open showing what is actually in effect, or a conservative guess
+            // when nothing resolves yet.
+            let inEffect = store.resolvedTagKey(for: concept)
+            let shown = inEffect ?? catalog.suggestion(for: concept)
+            if let shown, let index = popup.itemArray.firstIndex(where: {
+                ($0.representedObject as? String) == shown
+            }) {
+                popup.selectItem(at: index)
+            } else {
+                popup.selectItem(at: 0)
+            }
+            popup.target = self
+            popup.action = #selector(tagKeyChanged(_:))
+            popup.identifier = NSUserInterfaceItemIdentifier(concept.rawValue)
+            popup.setAccessibilityLabel("\(concept.title) tag")
+            tagPopups[concept] = popup
+
+            grid.addRow(with: [described, popup])
+        }
+        grid.column(at: 0).xPlacement = .leading
+        grid.column(at: 1).xPlacement = .fill
+        grid.rowSpacing = Brand.Metric.space8
+        tagsStack.addView(grid, in: .top)
+    }
+
+    /// The menubar cascade, as an ordered list the user composes. One level is a
+    /// perfectly good answer, and so is none.
+    private func renderLevels() {
+        levelsStack.subviews.forEach { $0.removeFromSuperview() }
+        let catalog = store.tagCatalog
+        guard !catalog.isEmpty else {
+            levelsCard.isHidden = true
+            return
+        }
+        levelsCard.isHidden = false
+
+        let title = NSTextField(labelWithString: "Menu levels")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = Brand.Color.textPrimary
+        levelsStack.addView(title, in: .top)
+
+        let keys = store.groupingKeys
+        let summary = NSTextField(wrappingLabelWithString: keys.isEmpty
+            ? "The menu lists every host flat. Add a level to group them."
+            : "Hosts nest in this order: "
+              + keys.joined(separator: " \u{203A} ")
+              + ". One level is enough; remove any you do not want.")
+        summary.font = .systemFont(ofSize: 11)
+        summary.textColor = Brand.Color.textSecondary
+        summary.preferredMaxLayoutWidth = 520
+        levelsStack.addView(summary, in: .top)
+
+        for (index, key) in keys.enumerated() {
+            let carried = store.instances.contains { !$0.tagValue(for: key).isEmpty }
+            let label = NSTextField(labelWithString: "\(index + 1).  \(key)")
+            label.font = Brand.Font.shortcut
+            label.textColor = carried ? Brand.Color.textPrimary
+                                      : Brand.Color.textSecondary
+
+            let note = NSTextField(labelWithString: carried ? "" : "no host carries this")
+            note.font = .systemFont(ofSize: 10)
+            note.textColor = Brand.Color.statePending
+
+            let up = NSButton(title: "\u{2191}", target: self, action: #selector(moveLevelUp(_:)))
+            up.tag = index
+            up.isEnabled = index > 0
+            let remove = NSButton(title: "Remove", target: self,
+                                  action: #selector(removeLevel(_:)))
+            remove.tag = index
+            for button in [up, remove] {
+                button.bezelStyle = .rounded
+                button.controlSize = .small
+                button.font = Brand.Font.metadata
+            }
+
+            let row = NSStackView(views: [label, note, NSView(), up, remove])
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = Brand.Metric.space8
+            levelsStack.addView(row, in: .top)
+            row.widthAnchor.constraint(equalTo: levelsStack.widthAnchor).isActive = true
+        }
+
+        let add = NSPopUpButton()
+        add.controlSize = .small
+        add.font = Brand.Font.metadata
+        add.addItem(withTitle: "Add a level\u{2026}")
+        add.menu?.addItem(.separator())
+        for entry in catalog.keys where !keys.contains(entry.name) {
+            add.addItem(withTitle: "\(entry.name)   \(entry.instances) hosts, "
+                        + "\(entry.distinctValues) values")
+            add.lastItem?.representedObject = entry.name
+        }
+        add.target = self
+        add.action = #selector(addLevel(_:))
+        add.isEnabled = (add.numberOfItems > 2)
+        levelsStack.addView(add, in: .top)
+    }
+
+    @objc private func addLevel(_ sender: NSPopUpButton) {
+        guard let key = sender.selectedItem?.representedObject as? String else { return }
+        applyLevels(store.groupingKeys + [key])
+    }
+
+    @objc private func removeLevel(_ sender: NSButton) {
+        var keys = store.groupingKeys
+        guard keys.indices.contains(sender.tag) else { return }
+        keys.remove(at: sender.tag)
+        applyLevels(keys)
+    }
+
+    @objc private func moveLevelUp(_ sender: NSButton) {
+        var keys = store.groupingKeys
+        let index = sender.tag
+        guard index > 0, keys.indices.contains(index) else { return }
+        keys.swapAt(index, index - 1)
+        applyLevels(keys)
+    }
+
+    private func applyLevels(_ keys: [String]) {
+        let message = store.setGroupingKeys(keys)
+        Notifier.show(title: "Menu levels updated", body: message, seconds: 3)
+        renderLevels()
+    }
+
+    @objc private func tagKeyChanged(_ sender: NSPopUpButton) {
+        guard let raw = sender.identifier?.rawValue,
+              let concept = TagCatalog.Concept(rawValue: raw) else { return }
+        let key = sender.selectedItem?.representedObject as? String
+        let message = store.useTagKey(key, for: concept)
+        Notifier.show(title: "Tag mapping updated", body: message, seconds: 3)
+        // The tagging check and the host count both depend on this.
+        Task { await runChecks() }
     }
 
     private func render(_ checks: [Preflight.Check]) {

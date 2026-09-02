@@ -55,23 +55,31 @@ final class AboutWindow: NSObject, NSWindowDelegate {
         blurb.alignment = .center
         blurb.preferredMaxLayoutWidth = 300
 
-        // The repository link: mark plus text, as one centered clickable row.
-        let link = LinkButton(title: "github.com/goriparthi/hangar",
-                              image: Mark.github(size: 14),
-                              url: Updates.repoURL)
+        // Two clickable rows, each a mark plus its text, centered as a unit.
+        let homepage = LinkButton(title: "goriparthi.github.io/hangar",
+                                  image: Brand.Glyph.symbol("globe", size: 14),
+                                  url: Updates.homepageURL)
+        let repository = LinkButton(title: "github.com/goriparthi/hangar",
+                                    image: Mark.github(size: 14),
+                                    url: Updates.repoURL)
+        let links = NSStackView(views: [homepage, repository])
+        links.orientation = .vertical
+        links.alignment = .centerX
+        links.spacing = Brand.Metric.space4
 
         let copyright = NSTextField(labelWithString: "MIT licensed")
         copyright.font = .systemFont(ofSize: 10)
         copyright.textColor = Brand.Color.textSecondary.withAlphaComponent(0.7)
         copyright.alignment = .center
 
-        let stack = NSStackView(views: [icon, name, version, tagline, blurb, link, copyright])
+        let stack = NSStackView(views: [icon, name, version, tagline, blurb, links,
+                                        copyright])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = Brand.Metric.space8
         stack.setCustomSpacing(Brand.Metric.space16, after: icon)
         stack.setCustomSpacing(Brand.Metric.space16, after: blurb)
-        stack.setCustomSpacing(Brand.Metric.space16, after: link)
+        stack.setCustomSpacing(Brand.Metric.space16, after: links)
         stack.edgeInsets = NSEdgeInsets(top: Brand.Metric.space24, left: Brand.Metric.space24,
                                         bottom: Brand.Metric.space24, right: Brand.Metric.space24)
         stack.translatesAutoresizingMaskIntoConstraints = false
