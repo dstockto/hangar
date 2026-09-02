@@ -17,7 +17,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private var headline: NSTextField!
     private var body: NSTextField!
     private var checksStack: NSStackView!
-    private var checksContainer: NSView!
+    private var content: NSView!
+    private var document: NSView!
+    private var footer: NSStackView!
     private var syncToggle: NSButton!
     private var loginToggle: NSButton!
     private var updateToggle: NSButton!
@@ -49,7 +51,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private func build() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 580),
-            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered, defer: false)
         window.title = "Hangar Setup"
         window.isReleasedWhenClosed = false
         window.delegate = self
@@ -191,29 +194,6 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         header.alignment = .top
         header.spacing = Brand.Metric.space16
 
-        // The stack cannot be the documentView directly: a scroll view gives its
-        // document no width, so every row collapses to its intrinsic size and the
-        // wrapping labels render as nothing. A flipped container pinned to the clip
-        // view's width fixes both the width and the top-down row order.
-        let container = FlippedView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        checksStack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(checksStack)
-
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-        scroll.documentView = container
-        self.checksContainer = container
-
-        NSLayoutConstraint.activate([
-            checksStack.topAnchor.constraint(equalTo: container.topAnchor),
-            checksStack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            checksStack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            checksStack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
-            container.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-        ])
-
         let leftButtons = NSStackView(views: [sourceButton])
         leftButtons.orientation = .horizontal
         let rightButtons = NSStackView(views: [recheckButton, openButton])
@@ -230,45 +210,120 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         updateRow.orientation = .horizontal
         updateRow.spacing = Brand.Metric.space8
 
-        let root = NSStackView(views: [header, scroll, tagsCard, levelsCard,
-                                       disclosure, toggles, updateRow, closeHint,
-                                       buttonRow])
-        root.orientation = .vertical
-        root.alignment = .leading
-        root.spacing = Brand.Metric.space12
-        root.edgeInsets = NSEdgeInsets(top: Brand.Metric.space16,
-                                       left: Brand.Metric.space16,
-                                       bottom: Brand.Metric.space16,
-                                       right: Brand.Metric.space16)
-        root.translatesAutoresizingMaskIntoConstraints = false
+        // Everything that grows with the fleet scrolls. The toggles and the buttons
+        // are pinned below it, because a window taller than the screen with the
+        // settings and Open Hangar off the bottom edge cannot be finished.
+        let scrollable = NSStackView(views: [header, checksStack, tagsCard, levelsCard,
+                                             disclosure])
+        scrollable.orientation = .vertical
+        scrollable.alignment = .leading
+        scrollable.spacing = Brand.Metric.space12
+        scrollable.edgeInsets = NSEdgeInsets(top: Brand.Metric.space16,
+                                             left: Brand.Metric.space16,
+                                             bottom: Brand.Metric.space16,
+                                             right: Brand.Metric.space16)
+        scrollable.translatesAutoresizingMaskIntoConstraints = false
+
+        // The stack cannot be the documentView directly: a scroll view gives its
+        // document no width, so every row collapses to its intrinsic size and the
+        // wrapping labels render as nothing. A flipped container pinned to the clip
+        // view's width fixes both the width and the top-down row order.
+        let container = FlippedView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(scrollable)
+
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.documentView = container
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            scrollable.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollable.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollable.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollable.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            container.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+        ])
+
+        let footer = NSStackView(views: [toggles, updateRow, closeHint, buttonRow])
+        footer.orientation = .vertical
+        footer.alignment = .leading
+        footer.spacing = Brand.Metric.space12
+        footer.edgeInsets = NSEdgeInsets(top: Brand.Metric.space12,
+                                         left: Brand.Metric.space16,
+                                         bottom: Brand.Metric.space16,
+                                         right: Brand.Metric.space16)
+        footer.translatesAutoresizingMaskIntoConstraints = false
+
+        let divider = NSBox()
+        divider.boxType = .separator
+        divider.translatesAutoresizingMaskIntoConstraints = false
 
         let content = NSView()
-        content.addSubview(root)
+        content.addSubview(scroll)
+        content.addSubview(divider)
+        content.addSubview(footer)
         NSLayoutConstraint.activate([
-            root.topAnchor.constraint(equalTo: content.topAnchor),
-            root.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            root.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            root.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: content.topAnchor),
+            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 180),
+            divider.topAnchor.constraint(equalTo: scroll.bottomAnchor),
+            divider.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            divider.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            footer.topAnchor.constraint(equalTo: divider.bottomAnchor),
+            footer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            footer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             icon.widthAnchor.constraint(equalToConstant: 44),
             icon.heightAnchor.constraint(equalToConstant: 44),
             lockup.widthAnchor.constraint(equalToConstant: 154),
             lockup.heightAnchor.constraint(equalToConstant: 35),
-            header.widthAnchor.constraint(equalTo: root.widthAnchor,
+            header.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
                                           constant: -Brand.Metric.space32),
-            scroll.widthAnchor.constraint(equalTo: root.widthAnchor,
-                                          constant: -Brand.Metric.space32),
-            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 392),
-            tagsCard.widthAnchor.constraint(equalTo: root.widthAnchor,
+            checksStack.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
+                                               constant: -Brand.Metric.space32),
+            tagsCard.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
                                             constant: -Brand.Metric.space32),
-            levelsCard.widthAnchor.constraint(equalTo: root.widthAnchor,
+            levelsCard.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
                                               constant: -Brand.Metric.space32),
-            disclosure.widthAnchor.constraint(equalTo: root.widthAnchor,
+            disclosure.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
                                               constant: -Brand.Metric.space32),
-            buttonRow.widthAnchor.constraint(equalTo: root.widthAnchor,
+            buttonRow.widthAnchor.constraint(equalTo: footer.widthAnchor,
                                              constant: -Brand.Metric.space32),
         ])
+
         window.contentView = content
+        // Resizable vertically only: the wrapping labels are laid out for this width.
+        window.contentMinSize = NSSize(width: 600, height: 360)
+        window.contentMaxSize = NSSize(width: 600, height: 20_000)
+        self.content = content
+        self.document = container
+        self.footer = footer
         self.window = window
+    }
+
+    /// Grow to fit the checks and the cards, but never past the screen. The cards
+    /// only exist after a fetch, so the honest height is not known at build time.
+    private func fitToScreen() {
+        content.layoutSubtreeIfNeeded()
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
+        let ceiling = max(window.contentMinSize.height, visible - 80)
+        let needed = min(document.frame.height + footer.fittingSize.height + 1, ceiling)
+        var frame = window.frame
+        let current = window.contentRect(forFrameRect: frame).height
+        // Only grow, or pull back a window that no longer fits: a height the user
+        // chose by dragging is left alone.
+        guard needed > current + 1 || current > ceiling + 1 else { return }
+        let delta = needed - current
+        frame.origin.y -= delta
+        frame.size.height += delta
+        if let screen = window.screen ?? NSScreen.main {
+            frame.origin.y = max(frame.origin.y, screen.visibleFrame.minY)
+        }
+        window.setFrame(frame, display: true, animate: false)
     }
 
     func show() {
@@ -347,6 +402,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         render(checks)
         renderTagPicker()
         renderLevels()
+        fitToScreen()
         recheckButton.isEnabled = true
         running = false
     }
@@ -536,6 +592,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         let message = store.setGroupingKeys(keys)
         Notifier.show(title: "Menu levels updated", body: message, seconds: 3)
         renderLevels()
+        fitToScreen()
     }
 
     @objc private func tagKeyChanged(_ sender: NSPopUpButton) {
