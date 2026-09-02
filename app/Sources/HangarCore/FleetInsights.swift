@@ -16,12 +16,24 @@ public struct FleetInsights: Sendable, Equatable {
         public var missingName: Int = 0
         /// Reachable only by private address, because no hostname tag was found.
         public var missingHostname: Int = 0
-        /// Alias stems two or more instances share, with how many share them.
-        public var duplicateAliases: [String: Int] = [:]
+        /// Names two or more hosts share, with how many share them. Not a
+        /// fault: `SSHConfigWriter` numbers them `-1`, `-2` by launch time and
+        /// gives each an id-suffixed alias as well, so ssh always reaches the
+        /// host you asked for. It is worth knowing because those numbers move
+        /// when an instance is replaced, and the id alias is the stable one.
+        public var sharedNames: [String: Int] = [:]
 
+        /// Shared names are deliberately not part of this: they are handled,
+        /// and counting them as dirt made a well-tagged fleet look broken.
         public var isClean: Bool {
             missingProduct == 0 && missingEnv == 0 && missingName == 0
-                && missingHostname == 0 && duplicateAliases.isEmpty
+                && missingHostname == 0
+        }
+
+        /// What actually wants attention, for the panel's headline.
+        public var problems: Int {
+            [missingProduct, missingEnv, missingName, missingHostname]
+                .filter { $0 > 0 }.count
         }
     }
 
@@ -122,7 +134,7 @@ public struct FleetInsights: Sendable, Equatable {
             exposureCounts[env] = exposure
         }
 
-        insights.hygiene.duplicateAliases = aliasCounts.filter { $0.value > 1 }
+        insights.hygiene.sharedNames = aliasCounts.filter { $0.value > 1 }
 
         insights.placement = groups.map { key, group in
             var resolved = group

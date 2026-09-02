@@ -48,6 +48,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
 
         statusItem.isVisible = true
+        // So a notice can appear beneath this item rather than mid-screen.
+        Notifier.anchor = { [weak statusItem] in statusItem?.button?.window?.frame }
         statusItem.button?.imagePosition = .imageOnly
         updateStatusImage()
 

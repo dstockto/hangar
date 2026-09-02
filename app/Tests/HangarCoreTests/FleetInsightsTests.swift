@@ -40,16 +40,21 @@ final class FleetInsightsTests: XCTestCase {
         XCTAssertEqual(insights.hygiene.missingName, 1)
         XCTAssertEqual(insights.hygiene.missingHostname, 1)
         XCTAssertFalse(insights.hygiene.isClean)
+        XCTAssertEqual(insights.hygiene.problems, 4)
     }
 
-    func testDuplicateAliasesAreNamedWithTheirCount() {
-        // Two hosts that produce one alias: ssh would reach whichever ssh picks.
+    func testSharedNamesAreReportedWithoutBeingCalledDirty() {
+        // Two hosts whose tags produce one stem. SSHConfigWriter numbers them,
+        // so this is information, not a fault, and it must not make an
+        // otherwise well-tagged fleet report as unclean.
         let insights = FleetInsights.compute([
             host("payments", "prod", "web", id: "i-0000000000000000a"),
             host("payments", "prod", "web", id: "i-0000000000000000b"),
             host("payments", "prod", "db"),
         ], now: now)
-        XCTAssertEqual(insights.hygiene.duplicateAliases, ["payments-prod-web": 2])
+        XCTAssertEqual(insights.hygiene.sharedNames, ["payments-prod-web": 2])
+        XCTAssertTrue(insights.hygiene.isClean, "shared names are handled, not dirt")
+        XCTAssertEqual(insights.hygiene.problems, 0)
     }
 
     func testACleanFleetSaysSo() {
@@ -57,7 +62,7 @@ final class FleetInsightsTests: XCTestCase {
             host("payments", "prod", "web-1"), host("payments", "prod", "web-2"),
         ], now: now)
         XCTAssertTrue(insights.hygiene.isClean)
-        XCTAssertTrue(insights.hygiene.duplicateAliases.isEmpty)
+        XCTAssertTrue(insights.hygiene.sharedNames.isEmpty)
     }
 
     // MARK: - Placement

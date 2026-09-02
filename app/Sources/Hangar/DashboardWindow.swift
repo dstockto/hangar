@@ -194,6 +194,17 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         let insights = FleetInsights.compute(hosts)
 
         panels.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        // One host open: show its record instead of fleet statistics about a
+        // sample of one. Everything on it came from the same DescribeInstances
+        // response; there is no second call behind this screen.
+        if hosts.count == 1, let host = hosts.first {
+            for panel in [hostPanel(host), hostTagsPanel(host)] {
+                panels.addArrangedSubview(panel)
+                panel.widthAnchor.constraint(equalTo: panels.widthAnchor).isActive = true
+            }
+            renderSidebar(insights)
+            return
+        }
         if !focus.isEmpty {
             let scope = NSTextField(labelWithString:
                 "Showing \(focus). Click the centre circle to go back to the fleet.")
@@ -335,15 +346,25 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
             rows.append((.note, "No hostname tag, reached by private address",
                          "\(hygiene.missingHostname) hosts"))
         }
-        for (alias, count) in hygiene.duplicateAliases.sorted(by: { $0.key < $1.key }) {
-            rows.append((.warn, "Alias \(alias) is shared", "\(count) hosts"))
+        // Reported, not flagged: Hangar numbers these and ssh reaches the right
+        // host either way. The number is what moves when an instance is
+        // replaced, which is the part worth knowing.
+        let shared = hygiene.sharedNames.sorted { $0.key < $1.key }
+        for (name, count) in shared.prefix(6) {
+            rows.append((.note, "\(name) numbered \(name)-1 … \(name)-\(count)",
+                         "\(count) hosts"))
         }
-        if rows.isEmpty {
-            rows.append((.ok, "Every host has the tags Hangar maps", ""))
+        if shared.count > 6 {
+            rows.append((.note, "and \(shared.count - 6) more names Hangar numbers", ""))
+        }
+        if hygiene.isClean {
+            rows.insert((.ok, "Every host has the tags Hangar maps", ""), at: 0)
         }
         return panel(title: "Tag hygiene", symbol: "tag",
-                     headline: hygiene.isClean ? "Clean"
-                                               : count(rows.count, "thing") + " to fix",
+                     headline: hygiene.isClean
+                        ? (shared.isEmpty ? "Clean"
+                           : "Clean  ·  " + count(shared.count, "name") + " Hangar numbers")
+                        : count(hygiene.problems, "thing") + " to fix",
                      rows: rows)
     }
 
@@ -419,6 +440,58 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         return panel(title: "Change and exposure", symbol: "chart.line.uptrend.xyaxis",
                      headline: count(history.count, "refresh", "refreshes") + " recorded",
                      rows: rows)
+    }
+
+    /// Everything DescribeInstances said about one host, which is more than
+    /// Hangar has ever shown and costs nothing extra to show.
+    private func hostPanel(_ host: Instance) -> NSView {
+        let alias = store.alias(for: host) ?? host.aliasStem
+        var rows: [(RowKind, String, String)] = [
+            (host.state == "running" ? .ok : .note, "State", host.state),
+            (.family, "Instance type", host.type),
+            (.note, "Instance id", host.id),
+            (.zone, "Availability zone", host.availabilityZone ?? "unknown"),
+            (.note, "Private address", host.privateIP ?? "none"),
+        ]
+        if let publicIP = host.publicIP, !publicIP.isEmpty {
+            rows.append((.address, "Public address", publicIP))
+        }
+        if let hostname = host.tags["hostname"], !hostname.isEmpty {
+            rows.append((.note, "Hostname tag", hostname))
+        }
+        rows.append((.clock, "Launched", launchDescription(host)))
+        if host.isASG {
+            rows.append((.scaling, "Autoscaling group", host.asg))
+        } else {
+            rows.append((.scaling, "Autoscaling group", "none, this one is a pet"))
+        }
+        rows.append((.note, "ssh alias", alias))
+        return panel(title: "Host", symbol: "shippingbox", headline: alias, rows: rows)
+    }
+
+    /// Every tag, because the one you need is always the one a summary dropped.
+    private func hostTagsPanel(_ host: Instance) -> NSView {
+        let rows: [(RowKind, String, String)] = host.tags.keys.sorted().map { key in
+            (.tag, key, host.tags[key] ?? "")
+        }
+        return panel(title: "Tags", symbol: "tag",
+                     headline: count(rows.count, "tag"),
+                     rows: rows.isEmpty ? [(.note, "This instance carries no tags", "")]
+                                        : rows)
+    }
+
+    /// "3 days ago, 14 August" beats a raw ISO timestamp for the question people
+    /// actually ask, which is how long this box has been up.
+    private func launchDescription(_ host: Instance) -> String {
+        guard let launched = ISO8601DateFormatter().date(from: host.launchTime) else {
+            return host.launchTime.isEmpty ? "unknown" : host.launchTime
+        }
+        let relative = RelativeDateTimeFormatter()
+        relative.unitsStyle = .full
+        let absolute = DateFormatter()
+        absolute.dateFormat = "d MMMM yyyy"
+        return "\(relative.localizedString(for: launched, relativeTo: Date())), "
+            + absolute.string(from: launched)
     }
 
     /// The card chrome in one place, so every tile and panel matches.

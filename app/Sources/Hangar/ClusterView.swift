@@ -34,8 +34,10 @@ final class ClusterView: NSView {
         var slice: CGFloat = 0
         /// Distance from the hub, set by the tier.
         var band: CGFloat = 0
-        /// Set when the node is a single host, so it can be coloured by state.
+        /// Set when the node is a single host, so it can be coloured by state
+        /// and opened for its metadata.
         var state: String?
+        var instanceID: String?
         /// The second line of the tooltip: a hostname, or nothing for a group.
         var detail: String?
         /// Hosts drawn around this node, at angles fixed by their instance id so
@@ -59,6 +61,7 @@ final class ClusterView: NSView {
     private var hubLabel = "EC2"
     private var hubTotal = 0
     private var timer: Timer?
+    private var hostLevel = false
     private var entrance: CGFloat = 1
     private var ringRadius: CGFloat = 0
     private var hovered: Int?
@@ -67,7 +70,9 @@ final class ClusterView: NSView {
     /// How many groups get a name drawn. Beyond this the ring is more label than
     /// picture; the hovered node is always named on top of these.
     private var labelBudget: Int {
-        max(6, Int(min(bounds.width, bounds.height) / 46))
+        // At host level every circle is named: the name is the whole point of
+        // the row, and they are short enough to fit around the ring.
+        hostLevel ? nodes.count : max(6, Int(min(bounds.width, bounds.height) / 46))
     }
 
     override var isFlipped: Bool { true }
@@ -101,8 +106,8 @@ final class ClusterView: NSView {
         self.instances = instances
         self.groupingKeys = keys
         self.region = region
-        if case .group = focus, !instances.contains(where: { inFocus($0) }) {
-            // The group went away between refreshes; do not strand the view on it.
+        if !focus.isFleet, !instances.contains(where: { inFocus($0) }) {
+            // What was open went away between refreshes; do not strand the view.
             focus = .fleet
         }
         rebuild()
@@ -113,11 +118,15 @@ final class ClusterView: NSView {
     }
 
     private func rebuild() {
-        switch focus {
-        case .fleet: buildGroups(instances)
-        case .group: buildHosts(instances.filter { inFocus($0) })
+        let visible = instances.filter { inFocus($0) }
+        // A level still to descend means circles are groups; past the last one,
+        // or with a single host open, they are hosts.
+        if focus.hostID == nil, focus.nextKey(groupingKeys) != nil, visible.count > 1 {
+            buildGroups(visible)
+        } else {
+            buildHosts(visible)
         }
-        onFocusChange?(instances.filter { inFocus($0) }, focusLabel)
+        onFocusChange?(visible, focusLabel)
     }
 
     private var focusLabel: String { focus.label }
@@ -126,6 +135,7 @@ final class ClusterView: NSView {
     private func buildHosts(_ members: [Instance]) {
         hubTotal = members.count
         hubLabel = focusLabel.isEmpty ? "EC2" : "\(focusLabel)  ·  back"
+        hostLevel = true
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
         nodes = members.enumerated().map { index, instance in
             let angle = CGFloat(index) / CGFloat(max(1, members.count)) * .pi * 2
@@ -140,6 +150,7 @@ final class ClusterView: NSView {
                                           y: centre.y + sin(angle) * 120),
                         radius: 15,
                         state: instance.state,
+                        instanceID: instance.id,
                         detail: instance.host ?? instance.id,
                         hostAngles: [])
         }
@@ -148,36 +159,36 @@ final class ClusterView: NSView {
     }
 
     private func buildGroups(_ instances: [Instance]) {
+        hostLevel = false
         hubTotal = instances.count
         hubLabel = region.isEmpty ? "EC2" : "EC2 · \(region)"
-        let keys = groupingKeys
-        let productKey = keys.first ?? TagMapping.Canonical.product
-        let envKey = keys.count > 1 ? keys[1] : TagMapping.Canonical.env
+        // The level being shown is the next one down the configured cascade, so
+        // the picture drills the same way the menubar menu does: product, then
+        // environment, then the hosts themselves.
+        let levelKey = focus.nextKey(groupingKeys) ?? TagMapping.Canonical.product
+        let deeper = focus.path.count + 1 < groupingKeys.count
+            ? groupingKeys[focus.path.count + 1] : nil
 
         var byGroup: [String: [Instance]] = [:]
         for instance in instances {
-            let product = value(instance, productKey)
-            let env = value(instance, envKey)
-            byGroup["\(product)\u{0}\(env)", default: []].append(instance)
+            byGroup[value(instance, levelKey), default: []].append(instance)
         }
 
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
         // Sorted by tier first, so each band forms an arc rather than being
         // scattered around the ring, then by name so the order never changes
         // between refreshes.
+        // Sorted by how close to production the value reads, then by name, so
+        // each band forms an arc and the order never changes between refreshes.
         let ordered = byGroup.keys.sorted { left, right in
-            let leftEnv = left.split(separator: "\u{0}", omittingEmptySubsequences: false)
-            let rightEnv = right.split(separator: "\u{0}", omittingEmptySubsequences: false)
-            let leftTier = EnvironmentTier.of(leftEnv.count > 1 ? String(leftEnv[1]) : "")
-            let rightTier = EnvironmentTier.of(rightEnv.count > 1 ? String(rightEnv[1]) : "")
+            let leftTier = EnvironmentTier.of(left), rightTier = EnvironmentTier.of(right)
             if leftTier != rightTier { return leftTier.rawValue < rightTier.rawValue }
             return left < right
         }
         nodes = ordered.enumerated().map { index, key in
             let members = byGroup[key] ?? []
-            let parts = key.split(separator: "\u{0}", omittingEmptySubsequences: false)
-            let product = parts.first.map(String.init) ?? ""
-            let env = parts.count > 1 ? String(parts[1]) : ""
+            let product = key
+            let env = deeper.map { _ in "" } ?? ""
             // Seeded on a circle rather than at random: the same fleet settles
             // into the same picture, which is what makes it comparable.
             let angle = CGFloat(index) / CGFloat(max(1, ordered.count)) * .pi * 2
@@ -186,9 +197,9 @@ final class ClusterView: NSView {
             let running = members.count { $0.state == "running" }
             let stopped = members.count { $0.state == "stopped" }
             return Node(
-                label: env.isEmpty ? product : "\(product) · \(env)",
-                product: product.isEmpty ? "untagged" : product,
-                env: env.isEmpty ? nil : env,
+                label: key.isEmpty ? "untagged" : key,
+                product: key.isEmpty ? "untagged" : key,
+                env: nil,
                 count: members.count, running: running, stopped: stopped,
                 other: members.count - running - stopped,
                 position: seed,
@@ -198,7 +209,7 @@ final class ClusterView: NSView {
                 radius: min(52, 9 + sqrt(CGFloat(members.count)) * 6),
                 // Distance from the hub: production innermost, each tier a step
                 // further out. That is where the varying lengths come from.
-                tier: EnvironmentTier.of(env).rawValue,
+                tier: EnvironmentTier.of(key).rawValue,
                 hostAngles: members.map { instance in
                     (angle: CGFloat(ClusterView.hash(instance.id) % 3600) / 3600 * .pi * 2,
                      state: instance.state)
@@ -317,7 +328,7 @@ final class ClusterView: NSView {
     /// can be placed past them rather than through them.
     private func hostReach(_ node: Node) -> CGFloat {
         guard !node.hostAngles.isEmpty else { return 0 }
-        let usable = max(0.04, node.slice - 0.06)
+        let usable = min(max(0.04, node.slice - 0.06), 0.44)
         let perArc = max(1, min(node.hostAngles.count, Int(usable * node.band / 9)))
         let arcs = Int(ceil(Double(node.hostAngles.count) / Double(perArc)))
         return 9 + CGFloat(max(0, arcs - 1)) * 7 + 4
@@ -389,7 +400,10 @@ final class ClusterView: NSView {
                 let members = node.hostAngles.filter { $0.state == state }
                 guard !members.isEmpty else { continue }
                 let all = node.hostAngles.count
-                let usable = max(0.04, node.slice - 0.06)
+                // Capped as well as bounded by the slice: with six products on
+                // the ring each slice is sixty degrees, and a halo spread that
+                // wide stopped reading as a halo and became a second circle.
+                let usable = min(max(0.04, node.slice - 0.06), 0.44)
                 for host in members {
                     guard let position = node.hostAngles.firstIndex(where: {
                         $0.angle == host.angle && $0.state == host.state
@@ -568,18 +582,22 @@ final class ClusterView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
         if hypot(point.x - centre.x, point.y - centre.y) <= 42 {
-            guard focus != .fleet else { return }
-            focus = .fleet
+            guard !focus.isFleet else { return }
+            focus = focus.leaving()
             rebuild()
             return
         }
-        guard case .fleet = focus,
-              let index = nodes.firstIndex(where: { node in
-                  let drawn = drawPosition(node)
-                  return hypot(drawn.x - point.x, drawn.y - point.y) <= node.drawRadius
-              })
-        else { return }
-        focus = .group(product: nodes[index].product, env: nodes[index].env)
+        guard let index = nodes.firstIndex(where: { node in
+            let drawn = drawPosition(node)
+            return hypot(drawn.x - point.x, drawn.y - point.y) <= node.drawRadius
+        }) else { return }
+        // A group opens one level down; a host opens itself, which is where the
+        // metadata appears.
+        if let id = nodes[index].instanceID {
+            focus = focus.opening(host: id)
+        } else {
+            focus = focus.entering(nodes[index].product == "untagged" ? "" : nodes[index].product)
+        }
         hovered = nil
         rebuild()
     }

@@ -7,6 +7,11 @@ import AppKit
 enum Notifier {
     private static var hud: NSPanel?
 
+    /// Where the menubar item is, so a notice can appear under the thing it came
+    /// from. Set by the menubar controller; without it the notice falls back to
+    /// the top right corner, which is still the app's own end of the screen.
+    static var anchor: (() -> NSRect?)?
+
     /// Takes the HUD down now. A modal alert does not run the main queue, so a HUD
     /// still up when one opens would sit under it until the alert was dismissed.
     static func dismiss() {
@@ -29,16 +34,20 @@ enum Notifier {
             detail.font = Brand.Font.shortcut
             detail.textColor = Brand.Color.textSecondary
             detail.alignment = .center
-            detail.lineBreakMode = .byTruncatingMiddle
-            detail.maximumNumberOfLines = 2
+            // Wrapped rather than truncated: a long reason used to stretch the
+            // notice into a banner across the whole screen, which read as an
+            // operating system alert rather than as this app saying something.
+            detail.lineBreakMode = .byWordWrapping
+            detail.maximumNumberOfLines = 3
+            detail.preferredMaxLayoutWidth = 300
             views.append(detail)
         }
 
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .centerX
-        stack.spacing = 3
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 20, bottom: 14, right: 20)
+        stack.spacing = 5
+        stack.edgeInsets = NSEdgeInsets(top: 18, left: 22, bottom: 18, right: 22)
 
         let container = NSView()
         container.wantsLayer = true
@@ -78,7 +87,7 @@ enum Notifier {
         ])
 
         let fitting = stack.fittingSize
-        let width = min(max(fitting.width, 220), 520)
+        let width = min(max(fitting.width, 240), 360)
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: fitting.height),
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
@@ -89,9 +98,15 @@ enum Notifier {
         panel.contentView = container
         panel.ignoresMouseEvents = true
 
-        if let frame = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: frame.midX - width / 2,
-                                         y: frame.minY + frame.height * 0.18))
+        // Under the menubar item, not across the middle of the screen.
+        if let screen = NSScreen.main?.visibleFrame {
+            let height = panel.frame.height
+            var x = screen.maxX - width - 12
+            if let item = Notifier.anchor?() {
+                x = min(screen.maxX - width - 12,
+                        max(screen.minX + 12, item.midX - width / 2))
+            }
+            panel.setFrameOrigin(NSPoint(x: x, y: screen.maxY - height - 10))
         }
         panel.alphaValue = 0
         panel.orderFrontRegardless()
