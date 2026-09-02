@@ -624,7 +624,7 @@ final class ClusterView: NSView {
     private func refreshAccessibilityChildren() {
         ClusterActions.clear()
         let children: [Any] = nodes.enumerated().map { index, node in
-            let element = ClusterNodeElement()
+            let element = ClusterNodeElement { [weak self] in self?.open(index) }
             element.setAccessibilityParent(self)
             element.setAccessibilityRole(.button)
             let described = node.state == nil
@@ -636,14 +636,17 @@ final class ClusterView: NSView {
             let rect = NSRect(x: drawn.x - node.drawRadius, y: drawn.y - node.drawRadius,
                               width: node.drawRadius * 2, height: node.drawRadius * 2)
             element.setAccessibilityFrameInParentSpace(rect)
-            element.onPress = { [weak self] in self?.open(index) }
             return element
         } + [hubElement()]
         setAccessibilityChildren(children)
     }
 
     private func hubElement() -> NSAccessibilityElement {
-        let element = ClusterNodeElement()
+        let element = ClusterNodeElement { [weak self] in
+            guard let self, !self.focus.isFleet else { return }
+            self.focus = self.focus.leaving()
+            self.rebuild()
+        }
         element.setAccessibilityParent(self)
         element.setAccessibilityRole(.button)
         let title = focus.isFleet
@@ -653,11 +656,6 @@ final class ClusterView: NSView {
         element.setAccessibilityTitle(title)
         element.setAccessibilityFrameInParentSpace(
             NSRect(x: bounds.midX - 40, y: bounds.midY - 40, width: 80, height: 80))
-        element.onPress = { [weak self] in
-            guard let self, !self.focus.isFleet else { return }
-            self.focus = self.focus.leaving()
-            self.rebuild()
-        }
         return element
     }
 
@@ -690,14 +688,12 @@ final class ClusterView: NSView {
 /// Sendable` waivers to pretend otherwise.
 @MainActor
 final class ClusterNodeElement: NSAccessibilityElement {
-    nonisolated(unsafe) private var token = 0
+    /// Immutable, so the nonisolated press can read it without a waiver.
+    private let token: Int
 
-    var onPress: (() -> Void)? {
-        get { ClusterActions.action(for: token) }
-        set {
-            if token == 0 { token = ClusterActions.nextToken() }
-            ClusterActions.set(newValue, for: token)
-        }
+    init(onPress: @escaping () -> Void) {
+        token = ClusterActions.register(onPress)
+        super.init()
     }
 
     override nonisolated func accessibilityPerformPress() -> Bool {
@@ -705,6 +701,9 @@ final class ClusterNodeElement: NSAccessibilityElement {
         Task { @MainActor in ClusterActions.action(for: token)?() }
         return true
     }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
 
     override nonisolated func isAccessibilityElement() -> Bool { true }
 }
@@ -715,13 +714,10 @@ enum ClusterActions {
     private static var actions: [Int: () -> Void] = [:]
     private static var counter = 0
 
-    static func nextToken() -> Int {
+    static func register(_ action: @escaping () -> Void) -> Int {
         counter += 1
+        actions[counter] = action
         return counter
-    }
-
-    static func set(_ action: (() -> Void)?, for token: Int) {
-        actions[token] = action
     }
 
     static func action(for token: Int) -> (() -> Void)? { actions[token] }
