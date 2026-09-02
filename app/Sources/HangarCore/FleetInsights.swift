@@ -166,3 +166,47 @@ public struct FleetInsights: Sendable, Equatable {
         return ageBuckets.count - 1
     }
 }
+
+/// How close to production an environment name reads.
+///
+/// Used to give the cluster depth that means something: production sits nearest
+/// the hub, the further out a ring is the further it is from anything that
+/// pages someone. The names are a heuristic over other people's conventions,
+/// so anything unrecognised sits at the outside rather than being guessed into
+/// the middle.
+public enum EnvironmentTier: Int, Sendable, CaseIterable {
+    case production = 0
+    case staging = 1
+    case testing = 2
+    case development = 3
+    case unknown = 4
+
+    public static func of(_ env: String) -> EnvironmentTier {
+        let name = env.lowercased()
+        if name.contains("prod") || name.contains("prd") || name == "live" {
+            return .production
+        }
+        if name.contains("stag") || name.contains("stg") || name.contains("uat")
+            || name.contains("preprod") || name.contains("pre-prod") {
+            return .staging
+        }
+        if name.contains("qa") || name.contains("test") || name.contains("demo") {
+            return .testing
+        }
+        if name.contains("dev") || name.contains("sandbox") || name.contains("sb")
+            || name.contains("local") {
+            return .development
+        }
+        return .unknown
+    }
+
+    public var label: String {
+        switch self {
+        case .production:  return "production"
+        case .staging:     return "staging"
+        case .testing:     return "test"
+        case .development: return "development"
+        case .unknown:     return "other"
+        }
+    }
+}

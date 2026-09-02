@@ -723,7 +723,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func showAbout() {
+    @objc private func showAbout() { showAboutWindow() }
+
+    /// Also reached from the app menu bar's About item, so both routes open the
+    /// same window rather than the standard panel.
+    func showAboutWindow() {
         let window = AboutWindow { [weak self] in self?.about = nil }
         about = window
         window.show()

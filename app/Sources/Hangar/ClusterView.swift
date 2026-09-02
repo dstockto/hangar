@@ -23,8 +23,17 @@ final class ClusterView: NSView {
         var stopped: Int
         var other: Int
         var position: CGPoint
-        var velocity: CGVector = .zero
         var radius: CGFloat
+        /// How far out this node sits, from its environment's distance from
+        /// production. The varying lengths are the depth in the picture.
+        var tier: Int = 0
+        /// Set by the layout: the drawn radius after any shrink to fit, the
+        /// angle from the hub, and the slice of the ring this node owns.
+        var drawRadius: CGFloat = 0
+        var angle: CGFloat = 0
+        var slice: CGFloat = 0
+        /// Distance from the hub, set by the tier.
+        var band: CGFloat = 0
         /// Set when the node is a single host, so it can be coloured by state.
         var state: String?
         /// The second line of the tooltip: a hostname, or nothing for a group.
@@ -50,12 +59,10 @@ final class ClusterView: NSView {
     private var hubLabel = "EC2"
     private var hubTotal = 0
     private var timer: Timer?
-    private var settleFrames = 0
+    private var entrance: CGFloat = 1
+    private var ringRadius: CGFloat = 0
     private var hovered: Int?
     private var tracking: NSTrackingArea?
-
-    /// Two seconds at sixty frames, then it holds still.
-    private static let framesToSettle = 120
 
     /// How many groups get a name drawn. Beyond this the ring is more label than
     /// picture; the hovered node is always named on top of these.
@@ -81,8 +88,8 @@ final class ClusterView: NSView {
         if window == nil {
             timer?.invalidate()
             timer = nil
-        } else if timer == nil, settleFrames < ClusterView.framesToSettle {
-            restart()
+        } else if timer == nil {
+            solveLayout()
         }
     }
 
@@ -155,14 +162,25 @@ final class ClusterView: NSView {
         }
 
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        nodes = byGroup.keys.sorted().enumerated().map { index, key in
+        // Sorted by tier first, so each band forms an arc rather than being
+        // scattered around the ring, then by name so the order never changes
+        // between refreshes.
+        let ordered = byGroup.keys.sorted { left, right in
+            let leftEnv = left.split(separator: "\u{0}", omittingEmptySubsequences: false)
+            let rightEnv = right.split(separator: "\u{0}", omittingEmptySubsequences: false)
+            let leftTier = EnvironmentTier.of(leftEnv.count > 1 ? String(leftEnv[1]) : "")
+            let rightTier = EnvironmentTier.of(rightEnv.count > 1 ? String(rightEnv[1]) : "")
+            if leftTier != rightTier { return leftTier.rawValue < rightTier.rawValue }
+            return left < right
+        }
+        nodes = ordered.enumerated().map { index, key in
             let members = byGroup[key] ?? []
             let parts = key.split(separator: "\u{0}", omittingEmptySubsequences: false)
             let product = parts.first.map(String.init) ?? ""
             let env = parts.count > 1 ? String(parts[1]) : ""
             // Seeded on a circle rather than at random: the same fleet settles
             // into the same picture, which is what makes it comparable.
-            let angle = CGFloat(index) / CGFloat(max(1, byGroup.count)) * .pi * 2
+            let angle = CGFloat(index) / CGFloat(max(1, ordered.count)) * .pi * 2
             let seed = CGPoint(x: centre.x + cos(angle) * 140,
                                y: centre.y + sin(angle) * 110)
             let running = members.count { $0.state == "running" }
@@ -178,6 +196,9 @@ final class ClusterView: NSView {
                 // twice the size. Floored so a single host is still clickable
                 // and capped so one huge group cannot eat the view.
                 radius: min(52, 9 + sqrt(CGFloat(members.count)) * 6),
+                // Distance from the hub: production innermost, each tier a step
+                // further out. That is where the varying lengths come from.
+                tier: EnvironmentTier.of(env).rawValue,
                 hostAngles: members.map { instance in
                     (angle: CGFloat(ClusterView.hash(instance.id) % 3600) / 3600 * .pi * 2,
                      state: instance.state)
@@ -202,85 +223,113 @@ final class ClusterView: NSView {
         return value
     }
 
-    // MARK: - Simulation
+    // MARK: - Layout
 
-    private func restart() {
-        settleFrames = 0
-        timer?.invalidate()
+    /// Groups sit on one ring around the hub, each given an angular slice wide
+    /// enough for its own circle plus a gap. Solved rather than simulated: a
+    /// force layout drifted, overlapped at two dozen groups, and drew a
+    /// different picture every launch. This one cannot overlap, and the same
+    /// fleet lands in the same place every time.
+    private func solveLayout() {
         guard !nodes.isEmpty else { needsDisplay = true; return }
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            // Solved, not animated: the same final picture without the motion.
-            for _ in 0..<ClusterView.framesToSettle { step() }
-            needsDisplay = true
-            return
-        }
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
-    }
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        let usable = min(bounds.width, bounds.height) / 2
+        let outer = max(96, usable - (nodes.map(\.radius).max() ?? 20) - 34)
+        // Production sits nearest the hub and each tier steps outward, which is
+        // where the varying lengths come from. Only the tiers actually present
+        // get a band, so a fleet with one environment is still a clean ring.
+        let tiers = Set(nodes.map(\.tier)).sorted()
+        let inner = tiers.count > 1 ? max(76, outer * 0.62) : outer
+        let step = tiers.count > 1 ? (outer - inner) / CGFloat(tiers.count - 1) : 0
+        let bandOf = Dictionary(uniqueKeysWithValues: tiers.enumerated().map {
+            ($0.element, inner + step * CGFloat($0.offset))
+        })
 
-    private func tick() {
-        guard let window, window.isVisible, !isHiddenOrHasHiddenAncestor else { return }
-        guard settleFrames < ClusterView.framesToSettle else {
-            timer?.invalidate()
-            timer = nil
-            return
+        // Angles are solved against the innermost band, so a node that sits
+        // further out has more room than it needs rather than less. That is what
+        // keeps varying lengths from reintroducing overlap.
+        var scale: CGFloat = 1
+        for _ in 0..<14 {
+            let needed = nodes.reduce(CGFloat(0)) { total, node in
+                total + 2 * asin(min(0.9, (node.radius * scale + 9) / inner))
+            }
+            if needed <= .pi * 2 { break }
+            scale *= 0.9
         }
-        settleFrames += 1
-        step()
+
+        let slices = nodes.map { node in
+            2 * asin(min(0.9, (node.radius * scale + 9) / inner))
+        }
+        let leftover = max(0, (.pi * 2) - slices.reduce(0, +))
+        let share = leftover / CGFloat(nodes.count)
+        var angle: CGFloat = -.pi / 2
+        for index in nodes.indices {
+            let slice = slices[index] + share
+            let mid = angle + slice / 2
+            let band = bandOf[nodes[index].tier] ?? outer
+            nodes[index].drawRadius = nodes[index].radius * scale
+            nodes[index].angle = mid
+            nodes[index].slice = slice
+            nodes[index].band = band
+            nodes[index].position = CGPoint(x: centre.x + cos(mid) * band,
+                                            y: centre.y + sin(mid) * band)
+            angle += slice
+        }
+        ringRadius = outer
         needsDisplay = true
     }
 
-    /// Repulsion between every pair, a pull to the centre, and a light spring
-    /// between nodes of the same product so a product reads as one cluster.
-    private func step() {
-        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        // The ring is sized by what has to fit on it, not by the view: two dozen
-        // groups pulled onto one small circle became a pile that repulsion then
-        // shoved off the edges. Circumference first, then clamped to the view.
-        let needed = nodes.reduce(0) { $0 + $1.radius * 2 + 34 }
-        let orbit = min(max(96, needed / (2 * .pi)),
-                        min(bounds.width, bounds.height) * 0.40)
-        for index in nodes.indices {
-            let toCentre = CGVector(dx: centre.x - nodes[index].position.x,
-                                    dy: centre.y - nodes[index].position.y)
-            let distance = max(1, hypot(toCentre.dx, toCentre.dy))
-            // A spring to the orbit, not to the centre: positive pull when the
-            // node is outside it, a push when it has drifted over the hub.
-            let pull = (distance - orbit) * 0.02
-            var force = CGVector(dx: toCentre.dx / distance * pull,
-                                 dy: toCentre.dy / distance * pull)
-            for other in nodes.indices where other != index {
-                let dx = nodes[index].position.x - nodes[other].position.x
-                let dy = nodes[index].position.y - nodes[other].position.y
-                let distance = max(24, (dx * dx + dy * dy).squareRoot())
-                let wanted = nodes[index].radius + nodes[other].radius + 78
-                let push = distance < wanted ? (wanted - distance) * 0.22 : 900 / (distance * distance)
-                force.dx += dx / distance * push
-                force.dy += dy / distance * push
-                if nodes[index].product == nodes[other].product {
-                    force.dx -= dx * 0.006
-                    force.dy -= dy * 0.006
+    /// The one piece of motion left: everything slides out from the hub once,
+    /// then holds. Nothing drifts afterwards.
+    private func restart() {
+        timer?.invalidate()
+        timer = nil
+        solveLayout()
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            entrance = 1
+            needsDisplay = true
+            return
+        }
+        entrance = 0
+        let started = Date()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                guard let window = self.window, window.isVisible else { return }
+                let t = min(1, Date().timeIntervalSince(started) / 0.55)
+                // Ease out, so it arrives rather than stops.
+                self.entrance = CGFloat(1 - pow(1 - t, 3))
+                self.needsDisplay = true
+                if t >= 1 {
+                    self.timer?.invalidate()
+                    self.timer = nil
                 }
             }
-            nodes[index].velocity.dx = (nodes[index].velocity.dx + force.dx) * 0.86
-            nodes[index].velocity.dy = (nodes[index].velocity.dy + force.dy) * 0.86
-            nodes[index].position.x += nodes[index].velocity.dx
-            nodes[index].position.y += nodes[index].velocity.dy
-        }
-        // Kept inside the view, with room for the host ring and the label.
-        for index in nodes.indices {
-            let margin = nodes[index].radius + 26
-            nodes[index].position.x = min(max(margin, nodes[index].position.x),
-                                          bounds.width - margin)
-            nodes[index].position.y = min(max(margin, nodes[index].position.y),
-                                          bounds.height - margin)
         }
     }
 
     override func layout() {
         super.layout()
-        restart()
+        solveLayout()
+    }
+
+    /// How far this node's host dots reach beyond its own circle, so a label
+    /// can be placed past them rather than through them.
+    private func hostReach(_ node: Node) -> CGFloat {
+        guard !node.hostAngles.isEmpty else { return 0 }
+        let usable = max(0.04, node.slice - 0.06)
+        let perArc = max(1, min(node.hostAngles.count, Int(usable * node.band / 9)))
+        let arcs = Int(ceil(Double(node.hostAngles.count) / Double(perArc)))
+        return 9 + CGFloat(max(0, arcs - 1)) * 7 + 4
+    }
+
+    /// Where a node is right now, which during the entrance is somewhere between
+    /// the hub and its solved place on the ring.
+    private func drawPosition(_ node: Node) -> CGPoint {
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        let reach = node.band * entrance
+        return CGPoint(x: centre.x + cos(node.angle) * reach,
+                       y: centre.y + sin(node.angle) * reach)
     }
 
     // MARK: - Drawing
@@ -304,23 +353,23 @@ final class ClusterView: NSView {
         }
 
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        let hubRadius: CGFloat = 34
+        let hubRadius: CGFloat = 40
 
-        // Spokes first, so every circle sits on top of its own line.
+        // Spokes first, so every circle sits on top of its own line. They run
+        // straight out from the hub along each group's own angle, so a spoke
+        // cannot cross another circle.
         for node in nodes {
             let tint = node.state.map { Brand.Color.state(for: $0) }
                 ?? Brand.Color.category(for: node.product)
             context.setStrokeColor(tint.withAlphaComponent(0.35).cgColor)
-            let delta = CGVector(dx: node.position.x - centre.x,
-                                 dy: node.position.y - centre.y)
-            let distance = max(1, hypot(delta.dx, delta.dy))
-            let unit = CGVector(dx: delta.dx / distance, dy: delta.dy / distance)
+            let unit = CGVector(dx: cos(node.angle), dy: sin(node.angle))
+            let reach = node.band * entrance
             // Trimmed at both ends so the line touches neither circle.
-            let from = CGPoint(x: centre.x + unit.dx * (hubRadius + 2),
-                               y: centre.y + unit.dy * (hubRadius + 2))
-            let to = CGPoint(x: node.position.x - unit.dx * (node.radius + 2),
-                             y: node.position.y - unit.dy * (node.radius + 2))
-            guard distance > hubRadius + node.radius + 6 else { continue }
+            let from = CGPoint(x: centre.x + unit.dx * (hubRadius + 3),
+                               y: centre.y + unit.dy * (hubRadius + 3))
+            let to = CGPoint(x: centre.x + unit.dx * (reach - node.drawRadius - 3),
+                             y: centre.y + unit.dy * (reach - node.drawRadius - 3))
+            guard reach > hubRadius + node.drawRadius + 8 else { continue }
             // Weight carries the same fact as the circle's size, quietly.
             context.setLineWidth(max(0.6, min(2.4, sqrt(CGFloat(node.count)) * 0.5)))
             context.move(to: from)
@@ -328,19 +377,36 @@ final class ClusterView: NSView {
             context.strokePath()
         }
 
-        // Hosts, batched by state so the whole ring is a few fills rather
-        // than one per host.
+        // Hosts, batched by state so a ring of them is a few fills rather than
+        // one per host. Each host sits inside its own group's slice of the ring,
+        // measured from the hub, which is what makes overlap impossible rather
+        // than merely unlikely.
         for state in ["running", "stopped", "pending", "terminated"] {
             let colour = Brand.Color.state(for: state)
-            context.setFillColor(colour.withAlphaComponent(0.85).cgColor)
+            context.setFillColor(colour.withAlphaComponent(0.9).cgColor)
             let path = CGMutablePath()
             for node in nodes {
-                let ring = node.radius + 12
-                for host in node.hostAngles where host.state == state {
-                    let point = CGPoint(x: node.position.x + cos(host.angle) * ring,
-                                        y: node.position.y + sin(host.angle) * ring)
-                    path.addEllipse(in: CGRect(x: point.x - 2.2, y: point.y - 2.2,
-                                               width: 4.4, height: 4.4))
+                let members = node.hostAngles.filter { $0.state == state }
+                guard !members.isEmpty else { continue }
+                let all = node.hostAngles.count
+                let usable = max(0.04, node.slice - 0.06)
+                for host in members {
+                    guard let position = node.hostAngles.firstIndex(where: {
+                        $0.angle == host.angle && $0.state == host.state
+                    }) else { continue }
+                    // Two arcs when one would crowd, both inside the wedge.
+                    let perArc = max(1, min(all, Int(usable * node.band / 9)))
+                    let arc = position / perArc
+                    let withinArc = position % perArc
+                    let countInArc = min(perArc, all - arc * perArc)
+                    let spread = countInArc == 1 ? 0
+                        : usable * (CGFloat(withinArc) / CGFloat(countInArc - 1) - 0.5)
+                    let angle = node.angle + spread
+                    let distance = node.band + node.drawRadius + 9 + CGFloat(arc) * 7
+                    let point = CGPoint(x: centre.x + cos(angle) * distance * entrance,
+                                        y: centre.y + sin(angle) * distance * entrance)
+                    path.addEllipse(in: CGRect(x: point.x - 2.4, y: point.y - 2.4,
+                                               width: 4.8, height: 4.8))
                 }
             }
             context.addPath(path)
@@ -348,9 +414,9 @@ final class ClusterView: NSView {
         }
 
         for (index, node) in nodes.enumerated() {
-            let rect = CGRect(x: node.position.x - node.radius,
-                              y: node.position.y - node.radius,
-                              width: node.radius * 2, height: node.radius * 2)
+            let drawn = drawPosition(node)
+            let rect = CGRect(x: drawn.x - node.drawRadius, y: drawn.y - node.drawRadius,
+                              width: node.drawRadius * 2, height: node.drawRadius * 2)
             // A host is coloured by its state, a group by its product. Neither
             // colour is load bearing: the count sits inside every group circle,
             // the name is on it or one hover away, and the panels below say the
@@ -365,12 +431,12 @@ final class ClusterView: NSView {
 
             let label = node.state == nil ? "\(node.count)" : ""
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold),
                 .foregroundColor: Brand.Color.textPrimary,
             ]
             let size = (label as NSString).size(withAttributes: attributes)
-            (label as NSString).draw(at: CGPoint(x: node.position.x - size.width / 2,
-                                                 y: node.position.y - size.height / 2),
+            (label as NSString).draw(at: CGPoint(x: drawn.x - size.width / 2,
+                                                 y: drawn.y - size.height / 2),
                                      withAttributes: attributes)
 
         }
@@ -386,7 +452,7 @@ final class ClusterView: NSView {
 
         let total = "\(hubTotal)"
         let totalAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .semibold),
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 19, weight: .semibold),
             .foregroundColor: Brand.Color.textPrimary,
         ]
         let totalSize = (total as NSString).size(withAttributes: totalAttributes)
@@ -394,7 +460,7 @@ final class ClusterView: NSView {
                                              y: centre.y - totalSize.height / 2 - 6),
                                  withAttributes: totalAttributes)
         let hostsWord: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
             .foregroundColor: Brand.Color.textSecondary,
         ]
         let word = hubTotal == 1 ? "host" : "hosts"
@@ -405,7 +471,7 @@ final class ClusterView: NSView {
 
         let hubName = hubLabel
         let hubAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
             .foregroundColor: Brand.Color.textSecondary,
         ]
         let hubSize = (hubName as NSString).size(withAttributes: hubAttributes)
@@ -425,15 +491,36 @@ final class ClusterView: NSView {
         for (index, node) in nodes.enumerated() where named.contains(index) || index == hovered {
             let name = node.label
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
                 .foregroundColor: index == hovered ? Brand.Color.textPrimary
                                                    : Brand.Color.textSecondary,
             ]
             let size = (name as NSString).size(withAttributes: attributes)
-            let origin = CGPoint(x: node.position.x - size.width / 2,
-                                 y: node.position.y + node.radius + 18)
-            let pill = CGRect(x: origin.x - 5, y: origin.y - 2,
+            // Pushed out past this node's hosts, then pushed out again until it
+            // clears every other circle. A label sitting on a neighbour is the
+            // one thing a ring of them cannot survive.
+            var outward = node.band * entrance + node.drawRadius
+                + hostReach(node) + 14 + size.height / 2
+            var origin = CGPoint.zero
+            var pill = CGRect.zero
+            for _ in 0..<8 {
+                let anchor = CGPoint(x: centre.x + cos(node.angle) * outward,
+                                     y: centre.y + sin(node.angle) * outward)
+                origin = CGPoint(x: anchor.x - size.width / 2,
+                                 y: anchor.y - size.height / 2)
+                pill = CGRect(x: origin.x - 5, y: origin.y - 2,
                               width: size.width + 10, height: size.height + 4)
+                let clash = nodes.contains { other in
+                    let drawn = drawPosition(other)
+                    let circle = CGRect(x: drawn.x - other.drawRadius - 3,
+                                        y: drawn.y - other.drawRadius - 3,
+                                        width: other.drawRadius * 2 + 6,
+                                        height: other.drawRadius * 2 + 6)
+                    return circle.intersects(pill)
+                }
+                if !clash { break }
+                outward += size.height + 4
+            }
             context.setFillColor(Brand.Color.panel.withAlphaComponent(0.82).cgColor)
             context.addPath(CGPath(roundedRect: pill, cornerWidth: 5, cornerHeight: 5,
                                    transform: nil))
@@ -457,7 +544,8 @@ final class ClusterView: NSView {
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let found = nodes.firstIndex { node in
-            hypot(node.position.x - point.x, node.position.y - point.y) <= node.radius + 12
+            let drawn = drawPosition(node)
+            return hypot(drawn.x - point.x, drawn.y - point.y) <= node.drawRadius + 8
         }
         guard found != hovered else { return }
         hovered = found
@@ -479,7 +567,7 @@ final class ClusterView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        if hypot(point.x - centre.x, point.y - centre.y) <= 36 {
+        if hypot(point.x - centre.x, point.y - centre.y) <= 42 {
             guard focus != .fleet else { return }
             focus = .fleet
             rebuild()
@@ -487,7 +575,8 @@ final class ClusterView: NSView {
         }
         guard case .fleet = focus,
               let index = nodes.firstIndex(where: { node in
-                  hypot(node.position.x - point.x, node.position.y - point.y) <= node.radius
+                  let drawn = drawPosition(node)
+                  return hypot(drawn.x - point.x, drawn.y - point.y) <= node.drawRadius
               })
         else { return }
         focus = .group(product: nodes[index].product, env: nodes[index].env)

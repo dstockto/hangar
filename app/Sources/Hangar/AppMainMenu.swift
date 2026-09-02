@@ -29,16 +29,48 @@ enum AppMainMenu {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About Hangar",
-                        action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
-                        keyEquivalent: "")
+                        action: #selector(AppDelegate.menuShowAbout), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Check for Updates\u{2026}",
+                        action: #selector(AppDelegate.menuCheckUpdates), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Hangar",
                         action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
+        // Closing a window leaves Hangar in the menu bar; this is the item that
+        // actually ends it, and it is the only one that does.
         appMenu.addItem(withTitle: "Quit Hangar",
                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
+
+        // The actions that matter, in the menu bar as well as the menubar item.
+        // A nil target sends these down the responder chain to AppDelegate,
+        // which is where the windows and the store already live.
+        let fleetItem = NSMenuItem()
+        let fleetMenu = NSMenu(title: "Fleet")
+        let open = fleetMenu.addItem(withTitle: "Open Hangar",
+                                     action: #selector(AppDelegate.menuOpenPanel),
+                                     keyEquivalent: "h")
+        open.keyEquivalentModifierMask = [.command, .shift]
+        fleetMenu.addItem(withTitle: "Refresh Fleet",
+                          action: #selector(AppDelegate.menuRefreshFleet),
+                          keyEquivalent: "r")
+        fleetMenu.addItem(.separator())
+        fleetMenu.addItem(withTitle: "Fleet Dashboard",
+                          action: #selector(AppDelegate.menuShowDashboard),
+                          keyEquivalent: "d")
+        fleetMenu.addItem(withTitle: "Setup Check",
+                          action: #selector(AppDelegate.menuShowSetup),
+                          keyEquivalent: "")
+        fleetMenu.addItem(.separator())
+        fleetMenu.addItem(withTitle: "Write SSH Aliases Now",
+                          action: #selector(AppDelegate.menuWriteAliases),
+                          keyEquivalent: "")
+        fleetMenu.addItem(withTitle: "Reveal Log in Finder",
+                          action: #selector(AppDelegate.menuRevealLog),
+                          keyEquivalent: "")
+        fleetItem.submenu = fleetMenu
+        main.addItem(fleetItem)
 
         // Standard editing, so the text fields in these windows behave normally.
         let editItem = NSMenuItem()
@@ -69,6 +101,16 @@ enum AppMainMenu {
         windowItem.submenu = windowMenu
         main.addItem(windowItem)
         NSApp.windowsMenu = windowMenu
+
+        let helpItem = NSMenuItem()
+        let helpMenu = NSMenu(title: "Help")
+        helpMenu.addItem(withTitle: "Hangar Help",
+                         action: #selector(AppDelegate.menuShowSetup), keyEquivalent: "?")
+        helpMenu.addItem(withTitle: "Source on GitHub",
+                         action: #selector(AppDelegate.menuOpenSource), keyEquivalent: "")
+        helpItem.submenu = helpMenu
+        main.addItem(helpItem)
+        NSApp.helpMenu = helpMenu
 
         return main
     }

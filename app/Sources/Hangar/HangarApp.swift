@@ -351,6 +351,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    /// Closing the dashboard or the setup screen puts Hangar back in the menu
+    /// bar; it does not end it. Quit Hangar, in the menu bar item or the app
+    /// menu, is the only thing that does.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    // MARK: - Menu bar actions
+    //
+    // Reached through the responder chain from the app's menu bar, which exists
+    // only while a window is open. Each one is the same call the menubar item
+    // makes, so the two menus cannot drift apart.
+
+    @objc func menuOpenPanel() { openPanel() }
+    @objc func menuRefreshFleet() { Task { @MainActor in await store.refresh() } }
+    @objc func menuShowDashboard() { showDashboard() }
+    @objc func menuShowSetup() { showSetup() }
+    @objc func menuCheckUpdates() { checkForUpdates(quietly: false) }
+    @objc func menuWriteAliases() { store.syncSSHConfig() }
+    @objc func menuRevealLog() {
+        NSWorkspace.shared.activateFileViewerSelecting(
+            [URL(fileURLWithPath: HangarConfig.logPath)])
+    }
+    @objc func menuShowAbout() { menuBar.showAboutWindow() }
+    @objc func menuOpenSource() { NSWorkspace.shared.open(Updates.repoURL) }
+
     func applicationWillTerminate(_ notification: Notification) {
         Log.info(.app, "quitting")
         hotKeys.unregisterAll()
