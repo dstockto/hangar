@@ -268,7 +268,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         }
         // The number grows with the card, so a tall column does not leave four
         // small numbers stranded at the top of four large boxes.
-        for case let card as NSView in cards.arrangedSubviews {
+        for card in cards.arrangedSubviews {
             card.setContentHuggingPriority(.init(1), for: .vertical)
         }
     }

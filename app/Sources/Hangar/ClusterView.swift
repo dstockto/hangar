@@ -176,9 +176,6 @@ final class ClusterView: NSView {
         // the picture drills the same way the menubar menu does: product, then
         // environment, then the hosts themselves.
         let levelKey = focus.nextKey(groupingKeys) ?? TagMapping.Canonical.product
-        let deeper = focus.path.count + 1 < groupingKeys.count
-            ? groupingKeys[focus.path.count + 1] : nil
-
         var byGroup: [String: [Instance]] = [:]
         for instance in instances {
             byGroup[value(instance, levelKey), default: []].append(instance)
@@ -197,8 +194,6 @@ final class ClusterView: NSView {
         }
         nodes = ordered.enumerated().map { index, key in
             let members = byGroup[key] ?? []
-            let product = key
-            let env = deeper.map { _ in "" } ?? ""
             // Seeded on a circle rather than at random: the same fleet settles
             // into the same picture, which is what makes it comparable.
             let angle = CGFloat(index) / CGFloat(max(1, ordered.count)) * .pi * 2
@@ -692,7 +687,9 @@ final class ClusterNodeElement: NSAccessibilityElement {
     var onPress: (() -> Void)?
 
     override func accessibilityPerformPress() -> Bool {
-        onPress?()
+        // The press arrives on a nonisolated path, and everything it touches is
+        // main-actor state.
+        MainActor.assumeIsolated { onPress?() }
         return true
     }
 
