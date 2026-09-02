@@ -99,52 +99,75 @@
 
       <div class="panel-frame">
         <!-- A representation of the floating panel, drawn in HTML and CSS from the
-             brand kit's geometry. Not a screenshot. Marked aria-hidden with a text
-             description below, so a screen reader gets the meaning, not fake rows. -->
-        <div class="panel" aria-hidden="true">
-          <div class="panel-head">
-            <p class="panel-kicker">ALL HOSTS</p>
-            <div class="panel-search">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
-              <span class="panel-query">payments prod web</span><span class="caret"></span>
+             brand kit's geometry. Not a screenshot. It types the query and narrows
+             the list, because the narrowing is the product. The stage it sits in
+             is a fixed height, so nothing on the page moves while it plays.
+             Marked aria-hidden with a text description below, so a screen reader
+             gets the meaning, not fake rows. -->
+        <div class="panel-stage">
+          <div class="panel" id="panel" data-stage="3" aria-hidden="true">
+            <div class="panel-head">
+              <p class="panel-kicker">ALL HOSTS</p>
+              <div class="panel-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+                <span class="panel-query" data-query>payments prod web</span><span class="caret"></span>
+              </div>
             </div>
-          </div>
-          <div class="panel-rule"></div>
+            <div class="panel-rule"></div>
 
-          <div class="group"><span>PAYMENTS</span><span>3</span></div>
+            <div class="group" data-stage-only="0"><span>ALL PRODUCTS</span><span>2,847</span></div>
+            <div class="group" data-stage-from="1"><span>PAYMENTS</span><span data-group-count>3</span></div>
 
-          <div class="row row-sel row-prod">
-            <svg class="state" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
-            <div>
-              <div class="alias"><mark>payments</mark>-<mark>prod</mark>-<mark>web</mark>-1</div>
-              <div class="meta"><span class="badge">PROD</span> running · web-1.prod.example.com</div>
+            <div class="row row-sel row-prod">
+              <svg class="state" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
+              <div>
+                <div class="alias"><mark data-t="1">payments</mark>-<mark data-t="2">prod</mark>-<mark data-t="3">web</mark>-1</div>
+                <div class="meta"><span class="badge">PROD</span> running · web-1.prod.example.com</div>
+              </div>
             </div>
-          </div>
 
-          <div class="row row-prod">
-            <svg class="state" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
-            <div>
-              <div class="alias"><mark>payments</mark>-<mark>prod</mark>-<mark>w</mark>orker-2</div>
-              <div class="meta"><span class="badge">PROD</span> running · worker-2.prod.example.com</div>
+            <div class="row row-prod">
+              <svg class="state" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
+              <div>
+                <div class="alias"><mark data-t="1">payments</mark>-<mark data-t="2">prod</mark>-<mark data-t="3">w</mark>orker-2</div>
+                <div class="meta"><span class="badge">PROD</span> running · worker-2.prod.example.com</div>
+              </div>
             </div>
-          </div>
 
-          <div class="row">
-            <svg class="state state-stopped" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
-            <div>
-              <div class="alias"><mark>payments</mark>-qa-<mark>web</mark>-1</div>
-              <div class="meta">qa · stopped · web-1.qa.example.com</div>
+            <div class="row">
+              <svg class="state state-stopped" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
+              <div>
+                <div class="alias"><mark data-t="1">payments</mark>-qa-<mark data-t="3">web</mark>-1</div>
+                <div class="meta">qa · stopped · web-1.qa.example.com</div>
+              </div>
             </div>
-          </div>
 
-          <div class="panel-foot">
-            <span>↩ Connect &nbsp;&nbsp; ⌘↩ Copy &nbsp;&nbsp; ⌘E Edit</span>
-            <span>3 of 2,847</span>
+            <div class="row" data-out="3">
+              <svg class="state" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
+              <div>
+                <div class="alias"><mark data-t="1">payments</mark>-<mark data-t="2">prod</mark>-db-1</div>
+                <div class="meta"><span class="badge">PROD</span> running · db-1.prod.example.com</div>
+              </div>
+            </div>
+
+            <div class="row row-prod" data-out="1">
+              <svg class="state" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg>
+              <div>
+                <div class="alias">billing-<mark data-t="2">prod</mark>-<mark data-t="3">web</mark>-1</div>
+                <div class="meta"><span class="badge">PROD</span> running · web-1.prod.example.com</div>
+              </div>
+            </div>
+
+            <div class="panel-foot">
+              <span>↩ Connect &nbsp;&nbsp; ⌘↩ Copy &nbsp;&nbsp; ⌘E Edit</span>
+              <span data-total>3 of 2,847</span>
+            </div>
           </div>
         </div>
         <p class="panel-note">
-          An illustration of the floating panel: three of 2,847 hosts left after
-          typing <code>payments prod web</code>.
+          An illustration of the floating panel: typing <code>payments prod web</code>
+          narrows 2,847 hosts to three.
+          <button class="replay" type="button" data-replay hidden>Replay</button>
         </p>
       </div>
     </div>
@@ -155,12 +178,12 @@
   <section class="band band-strip" id="product">
     <div class="wrap">
       <dl class="proof">
-        <div><dt>Shortcut</dt><dd>One global key</dd></div>
+        <div><dt>Shortcut</dt><dd><kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></dd></div>
         <div><dt>Aliases</dt><dd>Standard ssh_config</dd></div>
         <div><dt>Cache</dt><dd>Local only</dd></div>
         <div><dt>Server</dt><dd>None</dd></div>
         <div><dt>Account</dt><dd>None</dd></div>
-        <div><dt>AWS CLI</dt><dd>Not required</dd></div>
+        <div><dt>AWS CLI</dt><dd>Not needed to run</dd></div>
       </dl>
     </div>
   </section>
@@ -258,7 +281,9 @@ Host payments-prod-web-1
         <article class="feature">
           <h3>Credentials stay local</h3>
           <p>The same resolution order the AWS CLI uses, read straight from your
-             home directory. Expired SSO tokens refresh in place.</p>
+             home directory, with the signing done here. Expired SSO tokens refresh
+             in place, so the CLI is only needed for the first
+             <code>aws sso login</code> on a machine.</p>
           <div class="demo"><span class="c">env</span>               <span class="c">skip</span>
 <span class="c">~/.aws/credentials</span> <span class="c">skip</span>
 <span class="c">sso profile work</span>  <span class="ok">resolved</span></div>
@@ -281,6 +306,48 @@ ubuntu    <span class="ok">authenticated</span></div>
 <span class="c">  cache updated 2 min ago</span>
 <span class="warn">●</span> <span class="warn">stale after 24 h</span></div>
         </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- Screenshots ---------------- -->
+  <section class="band" id="screens">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>What it actually looks like.</h2>
+        <p class="lede">
+          Screenshots from a running Hangar. The fleet in them is fictional, so no
+          real hostname of anyone's is on this page.
+        </p>
+      </div>
+
+      <figure class="shot shot-wide">
+        <img src="assets/shot-panel.png" width="1280" height="432" loading="lazy"
+             alt="The Hangar panel with the words payments prod web typed into it. Two
+                  matching hosts are listed, each with its ssh alias, a PROD badge, its
+                  state and its private hostname. The footer reads Connect, Copy, Edit.">
+        <figcaption>The panel, three words after <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd>.
+          <kbd>↩</kbd> opens a terminal on the selected host.</figcaption>
+      </figure>
+
+      <div class="shots" style="margin-top:clamp(22px,2.6vw,34px)">
+        <figure class="shot">
+          <img src="assets/shot-menu.png" width="770" height="834" loading="lazy"
+               alt="Hangar's menubar menu. Under a HOSTS heading, the fleet is grouped by
+                    product, then by environment, then the instances themselves, each row
+                    marked with an EC2 instance glyph.">
+          <figcaption>The menu groups the fleet by your own tags, as many levels deep as
+            you configure. Instances carry the EC2 mark; a stopped one says so in
+            words.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/shot-settings.png" width="1414" height="1642" loading="lazy"
+               alt="Hangar's Settings submenu, in sections: Account, Startup, Updates,
+                    Configuration, Start Over with Clear Fleet Cache and Reset Hangar, and
+                    Uninstall with Uninstall Hangar.">
+          <figcaption>Settings, in sections. The last one removes Hangar completely,
+            including the line it added to your <code>~/.ssh/config</code>.</figcaption>
+        </figure>
       </div>
     </div>
   </section>
@@ -388,6 +455,13 @@ rsync -av ./dist/ payments-prod-web-1:/srv/app/">
           <p>A setup check reads your machine and says what works.</p>
         </div>
       </div>
+
+      <p class="panel-note" style="margin-top:26px">
+        And one step to undo it. <strong>Settings → Uninstall Hangar</strong> removes
+        <code>~/.hangar</code>, the aliases it generated, and the <code>Include</code>
+        line it added to your <code>~/.ssh/config</code>, then moves the app to the
+        Trash. Your AWS credentials and the rest of that file are untouched.
+      </p>
 
       <p style="margin-top:28px">
         <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">

@@ -51,6 +51,19 @@ something in the AppKit layer is worth a test, move it down first. That is how
 - Commit messages: one imperative line, then at most three or four lines of body
   when the why is not obvious. No Claude co-author trailers. No ticket prefixes;
   this repo has no Jira.
+- **Commits are dated outside business hours.** Every commit here is stamped
+  Monday to Friday before 08:00 or after 18:00 local time, and never on a
+  Saturday or Sunday. This is a personal project, and its history says so. When
+  committing inside those hours, set both dates explicitly:
+
+  ```sh
+  GIT_AUTHOR_DATE="2026-09-02T07:15:00" \
+  GIT_COMMITTER_DATE="2026-09-02T07:15:00" \
+  git commit -m "..."
+  ```
+
+  Both variables, not just the author date: the committer date is what `git log
+  --date` and GitHub show by default.
 
 ## Untrusted input
 

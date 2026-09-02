@@ -211,4 +211,32 @@ public struct SSHConfigWriter {
         try updated.write(toFile: path, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
     }
+
+    /// Takes the include back out, for an uninstall. Only lines Hangar would have
+    /// written are dropped; the rest of the file is the user's and is preserved.
+    /// Returns whether anything was removed.
+    @discardableResult
+    public static func removeIncludeLine(
+        from path: String = NSString(string: "~/.ssh/config").expandingTildeInPath
+    ) throws -> Bool {
+        guard let existing = try? String(contentsOfFile: path, encoding: .utf8) else { return false }
+        var lines = existing.components(separatedBy: .newlines)
+        let kept = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return !(trimmed.hasPrefix("Include") && trimmed.contains("config.d/hangar"))
+        }
+        guard kept.count != lines.count else { return false }
+        lines = kept
+        // The line was written with a blank line after it, so removing only the
+        // line would leave the file starting on an empty one.
+        while lines.first?.trimmingCharacters(in: .whitespaces).isEmpty == true {
+            lines.removeFirst()
+        }
+        try? FileManager.default.removeItem(atPath: path + ".hangar-backup")
+        try? FileManager.default.copyItem(atPath: path, toPath: path + ".hangar-backup")
+        try lines.joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        // replaceItemAt behind atomically: true keeps its own mode, so set it after.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        return true
+    }
 }

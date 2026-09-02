@@ -19,6 +19,10 @@ Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd>, type a few characters, press
 Signed and notarized by Apple. Open the DMG, drag Hangar to Applications, launch it.
 No Gatekeeper warning, no `xattr` command, no Homebrew, no Xcode.
 
+<img src="site/assets/shot-panel.png" alt="The Hangar panel with payments prod web typed into it, two matching hosts listed with their ssh aliases, PROD badges and hostnames" width="760">
+
+<sub>The panel, three words in. The fleet in every screenshot here is fictional.</sub>
+
 </div>
 
 ---
@@ -63,8 +67,17 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
 - **Fix a wrong login in place.** <kbd>⌘</kbd>-click a host to set its ssh user
   or key, with a **Detect Login** button that probes the usual cloud-image logins
   and keeps the one that authenticates.
+- **The whole fleet in the menu bar.** A `HOSTS` section groups the fleet by your
+  own tags, as many levels deep as you configure, down to the instances
+  themselves. A host that is not running says so rather than relying on its icon.
 - **Fleet health at a glance.** The menubar aircraft turns green while the cache
   is fresh, and says so when it is not.
+
+<div align="center">
+
+<img src="site/assets/shot-menu.png" alt="Hangar's menubar menu: a HOSTS heading over product groups, an environment submenu, and the instances under it" width="380">
+
+</div>
 
 ## Install
 
@@ -107,6 +120,19 @@ your settings, tag mapping and menu levels. **Settings → Reset Hangar** also
 forgets the config, the onboarding marker and the ssh aliases Hangar generated,
 so it starts as it does on a fresh install. Neither touches your own
 `~/.ssh/config`, your `known_hosts`, or anything under `~/.aws`.
+
+**Settings → Uninstall Hangar** goes further still: it removes `~/.hangar`
+entirely, removes the generated aliases, takes the `Include` line back out of your
+`~/.ssh/config` (keeping a `.hangar-backup` copy of it), stops Hangar opening at
+login, then quits and moves the app to the Trash. Your AWS credentials and the
+rest of your `~/.ssh/config` are untouched, and the app is in the Trash rather
+than deleted, so Put Back undoes it.
+
+<div align="center">
+
+<img src="site/assets/shot-settings.png" alt="Hangar's Settings submenu in sections: Account, Startup, Updates, Configuration, Start Over, and Uninstall" width="560">
+
+</div>
 
 Deleting the app and installing the DMG again also starts fresh: Hangar notices a
 newly installed bundle at a version that did not increase, drops the cache and
@@ -228,6 +254,12 @@ home directory:
 
 Expired SSO tokens are refreshed in place using the cached refresh token, so you
 are not sent back to `aws sso login` until the refresh token itself lapses.
+
+The `aws` CLI is not required to run Hangar: the signing, the `DescribeInstances`
+call and the SSO refresh are all implemented here, and nothing shells out to it.
+It is needed for the first `aws sso login` on a machine, because that is a browser
+sign-in Hangar does not perform, and for whatever your own `credential_process`
+happens to invoke.
 
 ## Security
 

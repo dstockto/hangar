@@ -39,8 +39,15 @@ whether to run it:
 **Settings → Reset Hangar** removes everything Hangar wrote: `~/.hangar/` and the
 generated `~/.ssh/config.d/hangar`. It does not remove the `Include` line from
 your `~/.ssh/config`, which is yours and is harmless pointing at nothing, and it
-never touches `~/.aws` or your keys. Deleting the app and that directory leaves
-nothing behind.
+never touches `~/.aws` or your keys.
+
+**Settings → Uninstall Hangar** does all of that, and additionally removes the
+one line Hangar added to `~/.ssh/config`, after copying the file to
+`~/.ssh/config.hangar-backup`. Only lines Hangar itself would have written are
+dropped; the rest of the file is rewritten byte for byte at mode 0600. It then
+unregisters the login item and moves the app bundle to `~/.Trash` via a detached
+`mv`, never `rm`, so the uninstall is reversible. `~/.aws` and your keys are still
+untouched.
 
 ## Untrusted input
 

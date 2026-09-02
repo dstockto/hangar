@@ -32,7 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onCheckUpdates: { [weak self] in self?.checkForUpdates(quietly: false) },
             availableUpdate: { [weak self] in self?.availableUpdate },
             onInstallUpdate: { [weak self] in self?.installUpdate() },
-            onReset: { [weak self] scope in self?.resetState(scope: scope) })
+            onReset: { [weak self] scope in self?.resetState(scope: scope) },
+            onUninstall: { [weak self] in self?.uninstall() })
 
         registerHotKeys()
         scheduleRefresh()
@@ -231,6 +232,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await store.refresh()
             if scope == .everything { self.showSetup() }
         }
+    }
+
+    /// Removes everything Hangar wrote, stops opening at login, then quits and
+    /// moves the bundle to the Trash. Confirmed once, because the Trash makes it
+    /// recoverable and the dialog says exactly what goes.
+    func uninstall() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Uninstall Hangar?"
+        alert.informativeText = HangarUninstall.description
+        alert.addButton(withTitle: "Uninstall Hangar")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // Staged before anything is removed, so a helper that cannot be written
+        // leaves the install intact rather than half gone.
+        let staged: () -> Void
+        switch Uninstaller.stageBundleRemoval() {
+        case .ready(let removal):
+            staged = removal
+        case .failed(let message):
+            let failure = NSAlert()
+            failure.alertStyle = .critical
+            failure.messageText = "Uninstall did not start"
+            failure.informativeText = message + "\n\nNothing was removed."
+            failure.runModal()
+            return
+        }
+
+        // Unregistering needs the bundle still in place, so it goes first.
+        LoginItem.set(false)
+        let outcome = HangarUninstall.perform()
+        guard outcome.failed.isEmpty else {
+            let failure = NSAlert()
+            failure.alertStyle = .critical
+            failure.messageText = "Uninstall did not finish"
+            failure.informativeText = outcome.failed.joined(separator: "\n")
+                + "\n\nHangar is still installed. Remove these by hand and try again."
+            failure.runModal()
+            return
+        }
+
+        hotKeys.unregisterAll()
+        refreshTimer?.invalidate()
+        updateTimer?.invalidate()
+        staged()
+        NSApp.terminate(nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -348,6 +348,14 @@ kbd {
 
 .panel-frame { position: relative; }
 
+/* A fixed stage for a panel that changes height while it narrows. The panel is
+   top-aligned inside it, so the animation never moves anything on the page. */
+.panel-stage {
+  min-height: 380px;
+  display: block;
+}
+@media (max-width: 940px) { .panel-stage { min-height: 0; } }
+
 .panel {
   width: 100%;
   max-width: 560px;
@@ -389,6 +397,8 @@ kbd {
   animation: blink 1.15s steps(2, start) infinite;
 }
 @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+/* Solid while a key is landing; it only blinks when the typing pauses. */
+.caret[data-typing] { animation: none; }
 @keyframes blink { 50% { opacity: 0; } }
 
 .panel-rule { height: 1px; background: var(--hairline); }
@@ -415,6 +425,22 @@ kbd {
   border-radius: 9px;
   margin-inline: 8px;
 }
+/* Rows leave when the query stops matching them: fade, lift, then collapse. The
+   height is already fixed above, which is what makes the collapse animatable. */
+.row {
+  transition: opacity 0.24s ease, height 0.26s ease, transform 0.24s ease,
+              margin-block 0.26s ease;
+}
+.row[data-gone] {
+  opacity: 0;
+  height: 0;
+  margin-block: 0;
+  transform: translateY(-6px);
+  overflow: hidden;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) { .row { transition: none; } }
+
 .row-sel { background: var(--selected); }
 .row::before {
   content: "";
@@ -441,12 +467,20 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A token highlights only once it has actually been typed. */
 .alias mark {
   background: transparent;
-  color: var(--accent);
-  font-weight: 700;
+  color: inherit;
+  font-weight: 500;
+  transition: color 0.18s ease;
 }
-.row-sel .alias mark { color: var(--text); }
+.alias mark[data-on] { color: var(--accent); font-weight: 700; }
+.row-sel .alias mark[data-on] { color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .alias mark { transition: none; } }
+
+/* One group heading per stage, both the same height, so swapping them moves
+   nothing. */
+.group[hidden] { display: none; }
 .meta {
   display: flex;
   align-items: center;
@@ -489,6 +523,45 @@ kbd {
   font-size: 11.5px;
   color: var(--muted);
   text-align: center;
+}
+
+/* Motion the visitor can ask for again, and that never runs forever on its own. */
+.replay {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.replay:hover { color: var(--text); border-color: var(--muted); }
+.replay:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Screenshots ---------- */
+
+.shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: clamp(18px, 2.4vw, 30px);
+  align-items: start;
+}
+.shot { margin: 0; }
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-lg);
+  background: #0b0e12;
+}
+.shot-wide { max-width: 720px; margin-inline: auto; }
+.shot figcaption {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 /* ---------- Proof strip ---------- */

@@ -16,6 +16,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let availableUpdate: () -> AppDelegate.Update?
     private let onInstallUpdate: () -> Void
     private let onReset: (HangarReset.Scope) -> Void
+    private let onUninstall: () -> Void
     private var observers: [AnyCancellable] = []
     private var editor: HostEditor?
     private var about: AboutWindow?
@@ -26,7 +27,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
          onCheckUpdates: @escaping () -> Void,
          availableUpdate: @escaping () -> AppDelegate.Update?,
          onInstallUpdate: @escaping () -> Void,
-         onReset: @escaping (HangarReset.Scope) -> Void) {
+         onReset: @escaping (HangarReset.Scope) -> Void,
+         onUninstall: @escaping () -> Void) {
         self.store = store
         self.onOpenPanel = onOpenPanel
         self.onReloadHotkeys = onReloadHotkeys
@@ -35,6 +37,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.availableUpdate = availableUpdate
         self.onInstallUpdate = onInstallUpdate
         self.onReset = onReset
+        self.onUninstall = onUninstall
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -172,7 +175,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Deviation from the copy deck, flagged in the handoff: the host cascade
         // is an existing feature, so it is preserved as its own section rather
         // than dropped to match the deck's ten items exactly.
-        menu.addItem(.separator())
         addFleet(to: menu)
 
         menu.addItem(.separator())
@@ -187,19 +189,47 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(action("Quit Hangar", #selector(quit), key: "q"))
     }
 
-    /// The cascade, one submenu per grouping level the fleet actually uses.
-    /// `FleetGrouping` decides which levels exist, so a fleet organised by one
-    /// tag gets one level rather than one real level and two empty ones.
+    /// The cascade, one submenu per grouping level the fleet actually uses,
+    /// under a heading so the top of the menu reads as a list of hosts rather
+    /// than as more menu. `FleetGrouping` decides which levels exist, so a fleet
+    /// organised by one tag gets one level rather than one real level and two
+    /// empty ones.
     private func addFleet(to menu: NSMenu) {
-        guard !store.instances.isEmpty else {
+        let section = FleetSection.classify(
+            hostCount: store.instances.count,
+            isRefreshing: store.status == .refreshing,
+            lastFetchFailed: { if case .failed = store.status { return true } else { return false } }(),
+            everReachedAWS: store.fetchedAt != nil)
+        // The section owns its separator, because .hidden draws neither.
+        guard section != .hidden else { return }
+        menu.addItem(.separator())
+        menu.addItem(fleetHeader())
+        switch section {
+        case .hosts:
+            for node in FleetGrouping.tree(store.instances,
+                                           groupBy: store.config.groupingKeys) {
+                menu.addItem(item(for: node))
+            }
+        case .empty:
             menu.addItem(status("No hosts found."))
-            return
-        }
-        for node in FleetGrouping.tree(store.instances,
-                                       groupBy: store.config.groupingKeys) {
-            menu.addItem(item(for: node))
+        case .looking:
+            menu.addItem(statusRow([.text("Looking for hosts\u{2026}")], tier: .faint))
+        case .neverFetched:
+            menu.addItem(statusRow([.text("No inventory yet. Refresh Fleet builds one.")],
+                                   tier: .faint))
+        case .hidden:
+            break
         }
     }
+
+    /// "Hosts", not "Instances": the rest of the app calls them hosts, and what
+    /// the row does is ssh to one.
+    private func fleetHeader() -> NSMenuItem {
+        let header = sectionHeader("Hosts")
+        header.image = Mark.instance(size: 11)
+        return header
+    }
+
 
     private func item(for node: FleetGrouping.Node) -> NSMenuItem {
         switch node {
@@ -222,8 +252,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                               keyEquivalent: "")
         item.target = self
         item.representedObject = instance.id
-        item.image = Brand.Glyph.template(
-            instance.state == "running" ? "RunningIcon" : "StoppedIcon", size: 12)
+        // The EC2 chip, the same mark as the count row, so every leaf reads as
+        // an instance. State is carried by the label below rather than by the
+        // glyph: a menu image cannot be tinted without losing the inversion
+        // macOS applies to a highlighted row.
+        item.image = Mark.instance(size: 12)
         if instance.state != "running" {
             item.attributedTitle = NSAttributedString(
                 string: "\(label)  (\(instance.state))",
@@ -301,6 +334,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let reset = action("Reset Hangar\u{2026}", #selector(resetEverything), key: "")
         reset.image = Brand.Glyph.symbol("exclamationmark.arrow.circlepath", size: 13)
         submenu.addItem(reset)
+
+        // Its own section rather than a third row under Start Over: a reset is
+        // something you do to keep using Hangar, an uninstall is not.
+        submenu.addItem(.separator())
+        submenu.addItem(sectionHeader("Uninstall", symbol: "trash"))
+        let uninstall = action("Uninstall Hangar\u{2026}", #selector(uninstallHangar), key: "")
+        uninstall.image = Brand.Glyph.symbol("trash", size: 13)
+        submenu.addItem(uninstall)
+        submenu.addItem(statusRow([.text("Removes Hangar's files and moves the app to the Trash")],
+                                  tier: .faint))
 
         item.submenu = submenu
         return item
@@ -680,6 +723,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func installUpdate() { onInstallUpdate() }
     @objc private func clearCache() { onReset(.cache) }
     @objc private func resetEverything() { onReset(.everything) }
+    @objc private func uninstallHangar() { onUninstall() }
 
     @objc private func quit() { NSApp.terminate(nil) }
 }
