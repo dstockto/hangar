@@ -61,6 +61,12 @@ is hand-edited. Neither is trusted just because it arrived over TLS.
   contains whitespace, refused outright when it contains a newline, CR, NUL or a
   double quote. A newline would let a tag append its own directive, and
   `ProxyCommand` is a directive ssh executes.
+- Anything used as a *name* on a `Host` line is held to `isSafeAlias`, which is
+  stricter still, because that line is a pattern list rather than a value.
+- Anything reaching an `ssh` argument vector followed by another argument needs
+  `--` before it. Use `SSHProbe` rather than building the vector by hand.
+- Anything written under `~/.hangar` goes through `PrivateFile`, which creates at
+  0600 rather than tightening afterwards.
 - Anything interpolated into a command handed to a terminal goes through `Shell`.
 - Region names go through `AWSRegion` before reaching an endpoint hostname.
 - A host that cannot be represented is skipped and **reported**, never silently
@@ -91,6 +97,20 @@ Kept because each one cost real debugging and would be easy to reintroduce.
 7. **A shared build directory across two toolchains.** See Commands above.
 8. **`text-transform: uppercase` on a product name.** It rendered "MACOS".
    Capitalisation can be part of a name.
+9. **An argument vector is not enough for `ssh`.** A hostname tag of
+   `-oProxyCommand=…` followed by a trailing argument is parsed as an option and
+   the command runs. `--` before the host is the only fix. See `SSHProbe`.
+10. **The `Host` line is a pattern list, not a value.** A tag of `*` produced a
+    catch-all that ssh accepted and that outranked the user's whole
+    `~/.ssh/config`, silently, because `ssh -G` validates it happily. Names on
+    that line go through `SSHConfigValue.isSafeAlias`, which is stricter than
+    `isEmittable`.
+11. **`replaceItemAt` keeps the destination's file mode.** A pre-existing 0644
+    ssh include stayed 0644 no matter how tight the temporary file was. Chmod
+    after the replace, not only before.
+12. **`createDirectory(attributes:)` does not tighten an existing directory.** A
+    hand-made `mkdir ~/.hangar` stayed at the umask. `PrivateFile.ensureDirectory`
+    sets the mode either way.
 
 ## Permissions and file modes
 

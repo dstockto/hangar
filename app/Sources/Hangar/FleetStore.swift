@@ -139,15 +139,9 @@ final class FleetStore: ObservableObject {
     private func saveCache() {
         let cache = Cache(instances: instances, region: region, fetchedAt: Date())
         guard let data = try? JSONEncoder().encode(cache) else { return }
-        let directory = (HangarConfig.cachePath as NSString).deletingLastPathComponent
-        try? FileManager.default.createDirectory(
-            atPath: directory, withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
-        try? data.write(to: URL(fileURLWithPath: HangarConfig.cachePath), options: .atomic)
         // The cache is the whole fleet: ids, private addresses, every tag. It gets
-        // the same 0600 the config and the ssh include get.
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: HangarConfig.cachePath)
+        // the same 0600 the config and the ssh include get, from creation.
+        PrivateFile.write(data, to: HangarConfig.cachePath)
     }
 
     // MARK: - Refresh
@@ -294,7 +288,7 @@ final class FleetStore: ObservableObject {
             ?? instance.host ?? instance.id
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = ["-G", target]
+        process.arguments = SSHProbe.effectiveSettingsArguments(target: target)
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
@@ -363,15 +357,8 @@ final class FleetStore: ObservableObject {
     /// in a terminal. Never prompts and never runs a remote command beyond `true`.
     nonisolated static func testConnection(host: String, user: String?,
                                            identityFile: String?) -> (ok: Bool, detail: String) {
-        var arguments = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
-                         "-o", "StrictHostKeyChecking=accept-new"]
-        if let identityFile, !identityFile.isEmpty {
-            arguments += ["-o", "IdentitiesOnly=yes",
-                          "-i", (identityFile as NSString).expandingTildeInPath]
-        }
-        if let user, !user.isEmpty { arguments += ["-l", user] }
-        arguments += [host, "true"]
-
+        let arguments = SSHProbe.arguments(host: host, user: user,
+                                           identityFile: identityFile)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         process.arguments = arguments

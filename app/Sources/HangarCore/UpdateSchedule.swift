@@ -18,15 +18,8 @@ public enum UpdateSchedule {
     }
 
     public static func recordCheck(at date: Date = Date(), path: String = stampPath) {
-        let directory = (path as NSString).deletingLastPathComponent
-        try? FileManager.default.createDirectory(
-            atPath: directory, withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
-        try? "\(date.timeIntervalSince1970)".write(toFile: path, atomically: true,
-                                                   encoding: .utf8)
         // Everything Hangar writes under ~/.hangar is 0600, including this.
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                               ofItemAtPath: path)
+        PrivateFile.write(Data("\(date.timeIntervalSince1970)".utf8), to: path)
     }
 
     /// `hours` of zero or less turns the schedule off entirely.

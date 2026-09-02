@@ -35,6 +35,31 @@ public enum SSHConfigValue {
     public static func comment(_ value: String) -> String {
         value.components(separatedBy: .newlines).joined(separator: " ")
     }
+
+    /// Whether a value may be used as a name on a `Host` line.
+    ///
+    /// Stricter than `isEmittable` on purpose, because the `Host` line is a
+    /// *pattern* list, not a value. A hostname tag of `*` becomes a catch-all
+    /// that ssh accepts, and since Hangar's Include sits above everything in
+    /// `~/.ssh/config` and ssh_config is first-match-wins, that one tag would
+    /// take over every host the user has. A wildcard DNS record in a tag does
+    /// the same thing by accident.
+    ///
+    /// A leading hyphen is refused too: such a name is parsed by `ssh` as an
+    /// option rather than a host wherever it reaches an argument vector.
+    public static func isSafeAlias(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= 253, !value.hasPrefix("-") else { return false }
+        return value.allSatisfy {
+            $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_")
+        }
+    }
+
+    /// Whether a value may be used as an ssh_config keyword. Keywords are bare
+    /// tokens; a keyword containing a space would write two ssh tokens.
+    public static func isSafeKeyword(_ value: String) -> Bool {
+        !value.isEmpty && value.count <= 64
+            && value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+    }
 }
 
 // MARK: - Shell
@@ -50,6 +75,45 @@ public enum Shell {
     /// would submit the line early and run whatever follows.
     public static func isSingleLine(_ value: String) -> Bool {
         value.rangeOfCharacter(from: CharacterSet(charactersIn: "\n\r\0")) == nil
+    }
+}
+
+// MARK: - Private files
+
+public enum PrivateFile {
+    /// Creates the file at 0600 before anything is written to it.
+    ///
+    /// `Data.write(options: .atomic)` creates its temporary file at the process
+    /// umask and only tightens it afterwards, which leaves a window on first
+    /// creation. Creating the destination first closes it, and the subsequent
+    /// write inherits the existing mode.
+    @discardableResult
+    public static func write(_ data: Data, to path: String) -> Bool {
+        let fm = FileManager.default
+        ensureDirectory((path as NSString).deletingLastPathComponent)
+        if !fm.fileExists(atPath: path) {
+            fm.createFile(atPath: path, contents: nil,
+                          attributes: [.posixPermissions: 0o600])
+        }
+        do {
+            try data.write(to: URL(fileURLWithPath: path))
+        } catch {
+            return false
+        }
+        // Belt and braces: a destination that already existed keeps its own mode,
+        // which may be looser than we want.
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        return true
+    }
+
+    /// Creates a directory at 0700, and tightens one that already exists.
+    /// `createDirectory(attributes:)` does not change an existing directory, so a
+    /// hand-made `mkdir ~/.hangar` would otherwise stay at the umask.
+    public static func ensureDirectory(_ path: String) {
+        let fm = FileManager.default
+        try? fm.createDirectory(atPath: path, withIntermediateDirectories: true,
+                                attributes: [.posixPermissions: 0o700])
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
     }
 }
 

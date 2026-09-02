@@ -1,7 +1,7 @@
 {
   "id": "security-no-unsanitized-ssh-writes",
-  "promise": "Every ssh_config directive is written through the sanitizing option() helper, never by string interpolation.",
-  "why": "A newline in a tag value could otherwise append ProxyCommand, which ssh executes on connect.",
-  "command": "! grep -nE 'lines\\\\.append\\\\(\"  [A-Z]' app/Sources/HangarCore/SSHConfigWriter.swift",
+  "promise": "Every ssh_config line, the Host pattern line included, is built from sanitized values rather than raw interpolation.",
+  "why": "A newline in a tag could append ProxyCommand, and a '*' on the Host line is a catch-all that outranks the user's own ~/.ssh/config.",
+  "command": "grep -q 'filter(SSHConfigValue.isSafeAlias)' app/Sources/HangarCore/SSHConfigWriter.swift && ! grep -nE 'lines\\.append\\([^)]*\\\\\\((instance|settings)\\.' app/Sources/HangarCore/SSHConfigWriter.swift | grep .",
   "expect": "exit 0"
 }

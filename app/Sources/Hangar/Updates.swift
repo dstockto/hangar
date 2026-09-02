@@ -170,7 +170,12 @@ enum Updates {
         }
 
         // Verify the copy that will actually be installed, not only the one on the
-        // image. A copy that damaged the bundle must not reach Applications.
+        // image. Both gates, so the documentation and the code agree, and so a
+        // staged copy that lost its stapled ticket is caught as well as one whose
+        // signature no longer matches.
+        guard run("/usr/sbin/spctl", ["-a", "-t", "exec", staged.path]).status == 0 else {
+            return fail("Update rejected: the staged copy is not accepted by Gatekeeper")
+        }
         guard run("/usr/bin/codesign",
                   ["--verify", "--deep", "--strict", "-R=\(requirement)", staged.path]).status == 0
         else {

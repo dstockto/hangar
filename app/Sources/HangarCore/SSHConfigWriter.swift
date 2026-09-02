@@ -37,7 +37,13 @@ public struct SSHConfigWriter {
                 if stem != Instance.slug(instance.id) {
                     aliases.append("\(stem)-\(instance.id.prefix(10))")
                 }
-                if let host = instance.host, host != alias { aliases.append(host) }
+                // Only names that cannot act as a pattern. `Host` is a pattern
+                // list, so an unfiltered "*" here would match every host the
+                // user has, and Hangar's Include sits above their own config.
+                if let host = instance.host, host != alias,
+                   SSHConfigValue.isSafeAlias(host) {
+                    aliases.append(host)
+                }
                 var seen = Set<String>()
                 entries.append(Entry(
                     aliases: aliases.filter { seen.insert($0).inserted },
@@ -92,7 +98,11 @@ public struct SSHConfigWriter {
                 meta.append("\(key)=\(SSHConfigValue.comment(value))")
             }
             lines.append("# hangar " + meta.joined(separator: " "))
-            lines.append("Host " + entry.aliases.joined(separator: " "))
+            // Every alias is checked again here rather than trusted from the
+            // caller: this is the one line in the file that is a pattern.
+            let names = entry.aliases.filter(SSHConfigValue.isSafeAlias)
+            guard !names.isEmpty else { continue }
+            lines.append("Host " + names.joined(separator: " "))
             lines.append(contentsOf: [
                 option("HostName", instance.host ?? instance.id),
                 option("User", settings.user),
@@ -109,7 +119,7 @@ public struct SSHConfigWriter {
                 option("StrictHostKeyChecking", settings.strictHostKeyChecking),
             ].compactMap { $0 })
             for (key, value) in (settings.extraOptions ?? [:]).sorted(by: { $0.key < $1.key })
-            where SSHConfigValue.isEmittable(key) {
+            where SSHConfigValue.isSafeKeyword(key) {
                 if let line = option(key, value) { lines.append(line) }
             }
             lines.append("")
@@ -147,6 +157,9 @@ public struct SSHConfigWriter {
         }
         _ = try fm.replaceItemAt(URL(fileURLWithPath: path),
                                  withItemAt: URL(fileURLWithPath: temporary))
+        // replaceItemAt keeps the destination's own metadata, so a file that was
+        // already 0644 would stay 0644 however tight the temporary file was.
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
 
         let count = entries(for: instances).count
         return SyncResult(path: path, hostCount: count,

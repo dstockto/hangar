@@ -152,10 +152,7 @@ public struct HangarConfig: Codable, Sendable {
         FileManager.default.fileExists(atPath: onboardedMarkerPath)
     }
     public static func markOnboarded() {
-        try? FileManager.default.createDirectory(
-            atPath: home, withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
-        FileManager.default.createFile(atPath: onboardedMarkerPath, contents: Data())
+        PrivateFile.write(Data(), to: onboardedMarkerPath)
     }
 
     /// The configured mapping, or the defaults when the config predates it.
@@ -192,8 +189,7 @@ public struct HangarConfig: Codable, Sendable {
     public static func load() throws -> HangarConfig {
         let fm = FileManager.default
         if !fm.fileExists(atPath: path) {
-            try fm.createDirectory(atPath: home, withIntermediateDirectories: true,
-                                   attributes: [.posixPermissions: 0o700])
+            PrivateFile.ensureDirectory(home)
             try write(standard())
             return standard()
         }
@@ -211,11 +207,10 @@ public struct HangarConfig: Codable, Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(config)
-        try FileManager.default.createDirectory(
-            atPath: home, withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700])
-        try data.write(to: URL(fileURLWithPath: path), options: .atomic)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        PrivateFile.ensureDirectory(home)
+        guard PrivateFile.write(data, to: path) else {
+            throw HangarError.malformedResponse("could not write \(path)")
+        }
     }
 
     /// Effective ssh settings for one instance, defaults merged with any matching

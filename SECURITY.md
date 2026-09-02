@@ -29,7 +29,10 @@ whether to run it:
 - **Runs `credential_process`** through `/bin/sh` when a profile configures one,
   exactly as the AWS CLI does. That command comes from your own `~/.aws/config`.
 - **Executes `ssh`, `hdiutil`, `codesign`, `spctl` and `ditto`** by absolute path,
-  with arguments passed as an argument vector rather than through a shell.
+  with arguments passed as an argument vector rather than through a shell. Where a
+  hostname is followed by another argument, `--` precedes it: an argument vector
+  alone does not stop `ssh` from reading a host that begins with `-o` as an
+  option.
 
 ## Untrusted input
 
@@ -39,6 +42,10 @@ as untrusted:
 - Values written into `ssh_config` are quoted, and any value containing a newline,
   carriage return, NUL, or double quote is dropped rather than written. That host
   is reported as skipped rather than silently omitted.
+- Names on a `Host` line are held to a stricter rule than values, because that
+  line is a pattern list: only letters, digits, dot, hyphen and underscore, and
+  never a leading hyphen. A tag of `*` would otherwise become a catch-all that
+  outranks every entry in the user's own `~/.ssh/config`.
 - Values interpolated into the `ssh` command handed to a terminal are shell-quoted,
   and a command containing a line break is refused.
 - Region names are validated before they reach an endpoint hostname.

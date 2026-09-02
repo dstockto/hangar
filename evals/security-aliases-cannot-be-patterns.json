@@ -1,0 +1,7 @@
+{
+  "id": "security-aliases-cannot-be-patterns",
+  "promise": "A hostname tag cannot become an ssh_config Host pattern or an ssh option.",
+  "why": "'*' as a tag took over every host the user had; a '-o' tag reached ssh as an option and ran ProxyCommand.",
+  "command": "scripts/test.sh --filter InjectionTests 2>&1 | grep -q 'with 0 failures'",
+  "expect": "exit 0"
+}
