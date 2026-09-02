@@ -1,3 +1,7 @@
+<!-- Provenance. This is the prompt that produced design/brand/Brand_Kit.md.
+     Kept because the brand kit is a generated artifact and a reader should be
+     able to see what it was generated from. See docs/ai-native-sdlc.md. -->
+
 You are a senior brand and product designer who specializes in developer tools and
 native macOS apps. Produce a complete, executable brand kit for an app called **Hangar**.
 Assume I will hand your output straight to an engineer and an illustrator, so be

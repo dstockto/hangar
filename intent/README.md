@@ -31,4 +31,5 @@ was followed prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.
 | 0003 | Configurable tag mapping | Shipped |
 | 0004 | Credential advice per profile type | Shipped |
 | 0005 | Automatic updates with in-place install | Shipped |
-| 0006 | Landing page | Built, deployment pending a Pages setting |
+| 0006 | Landing page | Shipped |
+| 0007 | Layered app icon | Open |

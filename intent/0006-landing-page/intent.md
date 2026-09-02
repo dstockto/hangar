@@ -5,8 +5,8 @@
 GitHub Pages was serving the repository root through Jekyll, which rendered
 `README.md` under a default theme. The hero's `<div align="center">` block
 suppressed Markdown parsing, so the page opened with literal `# Hangar`,
-`**Spotlight for your SSH hosts.**` and `### [Download Hangar](…)` as visible
-text. The hand-written page at `docs/index.html` was never served at all; its
+`**Spotlight for your SSH hosts.**` and a bracketed Download link with its raw
+URL beside it, all as visible text. The hand-written page at `docs/index.html` was never served at all; its
 assets returned 404.
 
 The result looked like an unfinished repository, which is the opposite of the

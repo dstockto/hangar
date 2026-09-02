@@ -24,7 +24,7 @@ mkdir -p "$DIST_DIR/assets"
     --output-format human-readable-text "$CATALOG" >/dev/null
 
 # TEMPORARY: the production icon is layered artwork that only Icon Composer can
-# assemble; see ICON_COMPOSER_MANUAL_STEP.md. Until Hangar.icon exists this renders
+# assemble; see app/Resources/app-icon/BUILD.md. Until Hangar.icon exists this renders
 # the flattened review preview so the bundle is not iconless.
 if [[ -f "$ICON_SRC/Hangar.icon" ]]; then
     info "Hangar.icon present; Icon Composer output takes precedence"

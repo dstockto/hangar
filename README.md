@@ -288,7 +288,7 @@ costs under 7 ms.
 ## Status
 
 Early but in daily use. The layered app icon is a
-[remaining manual step](ICON_COMPOSER_MANUAL_STEP.md); the bundle currently ships
+[remaining manual step](intent/0007-layered-app-icon/intent.md); the bundle currently ships
 a flattened icon.
 
 Releases are signed and notarized. See [RELEASING.md](RELEASING.md) for how a DMG

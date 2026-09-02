@@ -152,6 +152,15 @@ ship           CI, then a release cut through the cut-a-release skill
 evals          promises checked on every pull request; a breach starts a new intent
 ```
 
+## Provenance of generated artifacts
+
+Where an artifact in this repository was generated rather than written, the input
+that produced it is kept next to the account of the method, in `docs/prompts/`.
+`design/brand/Brand_Kit.md` is the case that exists today: it is a generated
+specification, and `docs/prompts/brand-kit.md` is what generated it. Keeping the
+input is the difference between an asset you can regenerate and an asset you are
+stuck with.
+
 ## Repository map
 
 ```
@@ -167,5 +176,6 @@ evals/                     product promises, checked in CI
 .github/workflows/         ci.yml, agent-evals.yml, pages.yml
 app/                       the application and its tests
 site/                      the landing page
-design/                    brand kit and wordmark
+design/                    brand kit and wordmark, source assets only
+docs/prompts/              inputs that produced generated artifacts
 ```
