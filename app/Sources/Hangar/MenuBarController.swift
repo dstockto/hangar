@@ -12,6 +12,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let onOpenPanel: () -> Void
     private let onReloadHotkeys: () -> Void
     private let onShowSetup: () -> Void
+    private let onShowDashboard: () -> Void
     private let onCheckUpdates: () -> Void
     private let availableUpdate: () -> AppDelegate.Update?
     private let onInstallUpdate: () -> Void
@@ -24,6 +25,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     init(store: FleetStore, onOpenPanel: @escaping () -> Void,
          onReloadHotkeys: @escaping () -> Void,
          onShowSetup: @escaping () -> Void,
+         onShowDashboard: @escaping () -> Void,
          onCheckUpdates: @escaping () -> Void,
          availableUpdate: @escaping () -> AppDelegate.Update?,
          onInstallUpdate: @escaping () -> Void,
@@ -33,6 +35,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.onOpenPanel = onOpenPanel
         self.onReloadHotkeys = onReloadHotkeys
         self.onShowSetup = onShowSetup
+        self.onShowDashboard = onShowDashboard
         self.onCheckUpdates = onCheckUpdates
         self.availableUpdate = availableUpdate
         self.onInstallUpdate = onInstallUpdate
@@ -178,6 +181,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         addFleet(to: menu)
 
         menu.addItem(.separator())
+        let dashboard = action("Fleet Dashboard\u{2026}", #selector(showDashboard), key: "d")
+        dashboard.image = Brand.Glyph.symbol("chart.bar.doc.horizontal", size: 13)
+        menu.addItem(dashboard)
         menu.addItem(sshConfigItem())
         menu.addItem(settingsItem())
         menu.addItem(.separator())
@@ -588,6 +594,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func showSetup() { onShowSetup() }
+    @objc private func showDashboard() { onShowDashboard() }
     @objc private func checkUpdates() { onCheckUpdates() }
     @objc private func openSource() { NSWorkspace.shared.open(Updates.repoURL) }
 

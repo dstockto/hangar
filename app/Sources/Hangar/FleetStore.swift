@@ -14,7 +14,20 @@ final class FleetStore: ObservableObject {
         /// The fleet's real tag keys, captured before normalization. Persisted so
         /// the setup screen can offer them without waiting for a refresh.
         var tagCatalog: TagCatalog?
+        /// A short history of host counts, one per successful refresh, so the
+        /// dashboard can say "223 to 209 since 14:02" rather than only what is
+        /// true this second. Optional, because a cache written before this
+        /// existed has to keep decoding.
+        var history: [Sample]?
     }
+
+    struct Sample: Codable, Equatable, Sendable {
+        var at: Date
+        var hosts: Int
+    }
+
+    /// About a day and a half at the default refresh, and a few hundred bytes.
+    static let historyLimit = 60
 
     enum Status: Equatable {
         case idle
@@ -32,6 +45,8 @@ final class FleetStore: ObservableObject {
     @Published private(set) var credentialAdvice: CredentialAdvice.Advice?
     /// Which tag keys this fleet actually uses, for the setup screen's picker.
     @Published private(set) var tagCatalog: TagCatalog = .empty
+    /// Host counts over the last few dozen refreshes, oldest first.
+    @Published private(set) var history: [Sample] = []
 
     /// Search-ready fleet, rebuilt only when the fleet or config changes.
     /// Everything the panel needs per keystroke is precomputed here.
@@ -139,12 +154,13 @@ final class FleetStore: ObservableObject {
         region = cache.region
         fetchedAt = cache.fetchedAt
         tagCatalog = cache.tagCatalog ?? .empty
+        history = cache.history ?? []
         rebuildIndex()
     }
 
     private func saveCache() {
         let cache = Cache(instances: instances, region: region, fetchedAt: Date(),
-                          tagCatalog: tagCatalog)
+                          tagCatalog: tagCatalog, history: history)
         guard let data = try? JSONEncoder().encode(cache) else { return }
         // The cache is the whole fleet: ids, private addresses, every tag. It gets
         // the same 0600 the config and the ssh include get, from creation.
@@ -180,6 +196,10 @@ final class FleetStore: ObservableObject {
             region = queryRegion
             fetchedAt = Date()
             rebuildIndex()
+            history.append(Sample(at: Date(), hosts: instances.count))
+            if history.count > FleetStore.historyLimit {
+                history.removeFirst(history.count - FleetStore.historyLimit)
+            }
             credentialSource = resolved.source
             credentialAdvice = nil
             status = .idle

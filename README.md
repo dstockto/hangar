@@ -159,6 +159,27 @@ newly installed bundle at a version that did not increase, drops the cache and
 runs the setup check. Your settings survive that, on the grounds that reinstalling
 to replace a damaged binary should not cost you your tag mapping.
 
+### Fleet dashboard
+
+**Fleet Dashboard** in the menubar, or <kbd>⌘</kbd><kbd>D</kbd> with the menu
+open. Everything on it is derived from the `DescribeInstances` response Hangar
+already has, so it costs no extra call and no extra IAM permission:
+
+- **Tag hygiene.** Hosts missing the tags your mapping points at, hosts with no
+  hostname tag, and aliases two instances would share.
+- **Placement and autoscaling.** Which zones each product and environment
+  occupies, single-zone groups called out, and how many hosts sit outside an
+  autoscaling group.
+- **Age and instance families.** Uptime buckets from launch time, and the type
+  mix with AWS's previous-generation families and burstables flagged.
+- **Change and exposure.** The host count against the last refresh, from a short
+  history kept beside the cache, and how many hosts hold a public address.
+
+Above them the fleet is drawn as a cluster: a node per product and environment,
+every host a particle around it, colour by state. It settles and then holds
+still, and it is skipped entirely when the system asks for reduced motion. The
+panels below say the same things in words.
+
 ### Logs
 
 Hangar writes `~/.hangar/logs/hangar.log`, `0600`, rotating at half a megabyte

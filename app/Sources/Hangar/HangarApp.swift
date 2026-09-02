@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKeys = HotKeyManager()
     private var refreshTimer: Timer?
     private var setup: SetupWindow?
+    private var dashboard: DashboardWindow?
     private var hotkeyProblems: [String] = []
     private var primaryCombination = "\u{2318}\u{21E7}H"
     private var updateTimer: Timer?
@@ -29,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onOpenPanel: { [weak self] in self?.openPanel() },
             onReloadHotkeys: { [weak self] in self?.registerHotKeys() },
             onShowSetup: { [weak self] in self?.showSetup() },
+            onShowDashboard: { [weak self] in self?.showDashboard() },
             onCheckUpdates: { [weak self] in self?.checkForUpdates(quietly: false) },
             availableUpdate: { [weak self] in self?.availableUpdate },
             onInstallUpdate: { [weak self] in self?.installUpdate() },
@@ -101,6 +103,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Becoming regular without reactivating leaves the window sitting behind
         // whatever is frontmost, which is the problem this is meant to fix.
         if wanted == .regular { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    /// One window, reused, for the same reason the setup window is.
+    func showDashboard() {
+        if let dashboard {
+            dashboard.show()
+            return
+        }
+        let window = DashboardWindow(store: store)
+        dashboard = window
+        window.show()
     }
 
     func showSetup() {
