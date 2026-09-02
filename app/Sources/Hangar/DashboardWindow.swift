@@ -17,6 +17,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     private var tabs: NSSegmentedControl!
     private var scroll: NSScrollView!
     private var sidebar: NSStackView!
+    private var cards: NSStackView!
     private var observers: [AnyCancellable] = []
 
     private static let frameName = "HangarDashboardWindow"
@@ -82,9 +83,18 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         document.addSubview(panels)
         scroll.documentView = document
 
-        sidebar = NSStackView()
+        cards = NSStackView()
+        cards.orientation = .vertical
+        cards.alignment = .leading
+        cards.distribution = .fillEqually
+        cards.spacing = Brand.Metric.space8
+        // Low hugging, so this is the part of the column that takes the slack.
+        cards.setContentHuggingPriority(.init(1), for: .vertical)
+
+        sidebar = NSStackView(views: [cards])
         sidebar.orientation = .vertical
         sidebar.alignment = .leading
+        sidebar.distribution = .fill
         sidebar.spacing = Brand.Metric.space8
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
@@ -127,13 +137,14 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
             sidebar.leadingAnchor.constraint(equalTo: content.leadingAnchor,
                                              constant: Brand.Metric.space16),
             sidebar.widthAnchor.constraint(equalToConstant: 214),
+            sidebar.bottomAnchor.constraint(equalTo: refresh.topAnchor,
+                                            constant: -Brand.Metric.space12),
+            cards.widthAnchor.constraint(equalTo: sidebar.widthAnchor),
 
             refresh.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             refresh.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             refresh.bottomAnchor.constraint(equalTo: content.bottomAnchor,
                                             constant: -Brand.Metric.space16),
-            refresh.topAnchor.constraint(greaterThanOrEqualTo: sidebar.bottomAnchor,
-                                         constant: Brand.Metric.space12),
 
             cluster.topAnchor.constraint(equalTo: content.topAnchor),
             cluster.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor,
@@ -203,9 +214,12 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     /// the bottom. Each one is a label, a number, and a colour that belongs to
     /// what it counts.
     private func renderSidebar(_ insights: FleetInsights) {
-        sidebar.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        cards.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in sidebar.arrangedSubviews where view !== cards {
+            view.removeFromSuperview()
+        }
 
-        let cards: [(String, String, String, String, NSColor)] = [
+        let tiles: [(String, String, String, String, NSColor)] = [
             ("shippingbox", "Total hosts", "\(insights.total)",
              store.region.isEmpty ? "" : store.region, Brand.Color.accent),
             ("play.circle", "Running", "\(insights.running)",
@@ -219,9 +233,11 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
              "\(insights.hygiene.isClean ? "tags clean" : "tags need a look")",
              Brand.Color.statePending),
         ]
-        for (symbol, label, value, note, tint) in cards {
-            sidebar.addArrangedSubview(statCard(symbol: symbol, label: label,
-                                                value: value, note: note, tint: tint))
+        for (symbol, label, value, note, tint) in tiles {
+            let card = statCard(symbol: symbol, label: label, value: value,
+                                note: note, tint: tint)
+            cards.addArrangedSubview(card)
+            card.widthAnchor.constraint(equalTo: cards.widthAnchor).isActive = true
         }
 
         let rail = StateRail()
@@ -238,6 +254,11 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
         for view in sidebar.arrangedSubviews {
             view.widthAnchor.constraint(equalTo: sidebar.widthAnchor).isActive = true
+        }
+        // The number grows with the card, so a tall column does not leave four
+        // small numbers stranded at the top of four large boxes.
+        for case let card as NSView in cards.arrangedSubviews {
+            card.setContentHuggingPriority(.init(1), for: .vertical)
         }
     }
 
