@@ -9,9 +9,15 @@ cannot author the layered, appearance-annotated format that tinting and the Clea
 appearance need.
 
 **Current state:** `Hangar.icon` does not exist yet, so `scripts/bundle.sh` falls
-back to a flattened `.icns` rendered from `preview-default-1024.png`. The brand
-kit labels that PNG a review reference rather than a rendering source, so the
-shipped icon is provisional. Tracked as
+back to a flattened `.icns` rendered from `preview-default-1024.png`. That PNG is
+no longer hand-made: `make icon` regenerates every preview from these same SVGs
+via `scripts/render-icon.swift`, at exact pixel sizes in sRGB. The shipped icon
+is still provisional, because a flattened render cannot carry the glass
+materials or the tinted and clear appearances that only Icon Composer authors.
+
+The artwork sits at 1.16x inside the canvas, applied as a transform within each
+layer SVG rather than by moving coordinates, so an Icon Composer import at full
+canvas size lands in the same place. Tracked as
 [intent/0007-layered-app-icon](../../../intent/0007-layered-app-icon/intent.md).
 
 ## Steps
@@ -25,9 +31,9 @@ shipped icon is provisional. Tracked as
 
    | Layer | Default | Dark | Mono | Material |
    |---|---|---|---|---|
-   | field | `#E7EDF1` | `#0E1115` | 12% white | Glass: low translucency, low refraction, automatic inner specular |
-   | aperture | `#CBE9FF` | `#163A52` | 24% white | Glass: medium translucency, low blur, low refraction, inside specular, clear opacity >= 62% |
-   | hangar-shell | `#273039` | `#39424B` | 52% white | Opaque, automatic outside specular only |
+   | field | `#E8F1F9` | `#0E1115` | 12% white | Glass: low translucency, low refraction, automatic inner specular |
+   | aperture | `#B8E0FF` | `#17435F` | 24% white | Glass: medium translucency, low blur, low refraction, inside specular, clear opacity >= 62% |
+   | hangar-shell | `#222B36` | `#39424B` | 52% white | Opaque, automatic outside specular only |
    | aircraft | `#006EAD` | `#57B9FF` | 100% white | Opaque, subtle automatic outside specular |
    | threshold | `#15191D` at 72% | `#F3F6F8` at 28% | 72% white | Glass: low translucency, low refraction, no shadow |
 

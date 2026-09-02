@@ -1,32 +1,97 @@
 {
-  "canvas": { "width": 1024, "height": 1024 },
-  "layerOrderBackToFront": ["field", "aperture", "hangar-shell", "aircraft", "threshold"],
+  "canvas": {
+    "width": 1024,
+    "height": 1024
+  },
+  "layerOrderBackToFront": [
+    "field",
+    "aperture",
+    "hangar-shell",
+    "aircraft",
+    "threshold"
+  ],
   "layers": {
     "field": {
       "file": "layers/field.svg",
-      "fills": { "default": "#E7EDF1", "dark": "#0E1115", "monoWhitePercent": 12 },
-      "material": { "glass": true, "translucency": "low", "refraction": "low", "specular": "automatic-inner", "authoredShadow": false }
+      "fills": {
+        "default": "#E8F1F9",
+        "dark": "#0E1115",
+        "monoWhitePercent": 12
+      },
+      "material": {
+        "glass": true,
+        "translucency": "low",
+        "refraction": "low",
+        "specular": "automatic-inner",
+        "authoredShadow": false
+      }
     },
     "aperture": {
       "file": "layers/aperture.svg",
-      "fills": { "default": "#CBE9FF", "dark": "#163A52", "monoWhitePercent": 24 },
-      "material": { "glass": true, "translucency": "medium", "refraction": "low", "specular": "inside", "minimumClearOpacity": 0.62, "authoredShadow": false }
+      "fills": {
+        "default": "#B8E0FF",
+        "dark": "#17435F",
+        "monoWhitePercent": 24
+      },
+      "material": {
+        "glass": true,
+        "translucency": "medium",
+        "refraction": "low",
+        "specular": "inside",
+        "minimumClearOpacity": 0.62,
+        "authoredShadow": false
+      }
     },
     "hangar-shell": {
       "file": "layers/hangar-shell.svg",
-      "fills": { "default": "#273039", "dark": "#39424B", "monoWhitePercent": 52 },
-      "material": { "glass": false, "opaque": true, "specular": "automatic-outside", "authoredShadow": false }
+      "fills": {
+        "default": "#222B36",
+        "dark": "#39424B",
+        "monoWhitePercent": 52
+      },
+      "material": {
+        "glass": false,
+        "opaque": true,
+        "specular": "automatic-outside",
+        "authoredShadow": false
+      }
     },
     "aircraft": {
       "file": "layers/aircraft.svg",
-      "fills": { "default": "#006EAD", "dark": "#57B9FF", "monoWhitePercent": 100 },
-      "material": { "glass": false, "opaque": true, "specular": "automatic-outside", "authoredShadow": false }
+      "fills": {
+        "default": "#0A80CE",
+        "dark": "#57B9FF",
+        "monoWhitePercent": 100
+      },
+      "material": {
+        "glass": false,
+        "opaque": true,
+        "specular": "automatic-outside",
+        "authoredShadow": false
+      }
     },
     "threshold": {
       "file": "layers/threshold.svg",
-      "fills": { "default": "#15191DB8", "dark": "#F3F6F847", "monoWhitePercent": 72 },
-      "material": { "glass": true, "translucency": "low", "refraction": "low", "specular": "none", "authoredShadow": false }
+      "fills": {
+        "default": "#15191DB8",
+        "dark": "#F3F6F847",
+        "monoWhitePercent": 72
+      },
+      "material": {
+        "glass": true,
+        "translucency": "low",
+        "refraction": "low",
+        "specular": "none",
+        "authoredShadow": false
+      }
     }
+  },
+  "artworkScale": {
+    "value": 1.16,
+    "about": [
+      512,
+      486
+    ],
+    "note": "Applied inside each layer SVG as a transform on the drawing, so an Icon Composer import at full canvas size gets the same geometry. The field layer is full bleed and is not scaled."
   }
 }
-
