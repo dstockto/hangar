@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotKeys()
         scheduleRefresh()
         scheduleUpdateChecks()
+        watchWindowsForActivationPolicy()
 
         // A fresh install gets the setup check once. It reads the machine and says
         // what works, which is more useful than a wizard asking questions whose
@@ -70,6 +71,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Notifier.show(title: "Hangar could not reach AWS", body: message, seconds: 5)
             }
         }
+    }
+
+    /// `.accessory` keeps Hangar out of the Dock and out of the app switcher,
+    /// which is right for a menubar utility and wrong for a window that is on
+    /// screen: command-tab is how someone gets back to a window they clicked
+    /// away from. So the policy follows the windows, and the Dock icon comes and
+    /// goes with them.
+    private func watchWindowsForActivationPolicy() {
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.willCloseNotification] {
+            NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main) { [weak self] _ in
+                // Deferred, so a closing window is already gone from NSApp.windows
+                // by the time it is counted.
+                Task { @MainActor in self?.updateActivationPolicy() }
+            }
+        }
+    }
+
+    private func updateActivationPolicy() {
+        // The floating panel is excluded: it is a nonactivating panel that
+        // dismisses the moment focus moves, so it has nothing to switch back to.
+        let hasWindow = NSApp.windows.contains { window in
+            window.isVisible && window.canBecomeMain && !(window is HangarPanel)
+        }
+        let wanted: NSApplication.ActivationPolicy = hasWindow ? .regular : .accessory
+        guard NSApp.activationPolicy() != wanted else { return }
+        NSApp.setActivationPolicy(wanted)
+        // Becoming regular without reactivating leaves the window sitting behind
+        // whatever is frontmost, which is the problem this is meant to fix.
+        if wanted == .regular { NSApp.activate(ignoringOtherApps: true) }
     }
 
     func showSetup() {

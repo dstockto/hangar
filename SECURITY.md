@@ -49,6 +49,16 @@ unregisters the login item and moves the app bundle to `~/.Trash` via a detached
 `mv`, never `rm`, so the uninstall is reversible. `~/.aws` and your keys are still
 untouched.
 
+## The one line in your ssh config
+
+Hangar owns `~/.ssh/config.d/hangar` and rewrites it on every sync. It adds
+exactly one line to `~/.ssh/config`, `Include ~/.ssh/config.d/hangar`, at the top
+of the file, and it does that automatically when it writes aliases because
+aliases no terminal can see are not a feature. Before that edit the file is
+copied to `~/.ssh/config.hangar-backup`, the result is written at `0600`, and the
+write is skipped when the line is already present. `"manage_ssh_include": false`
+turns it off. An uninstall removes that line and nothing else.
+
 ## What is logged
 
 `~/.hangar/logs/hangar.log`, at `0600` inside a `0700` directory, rotating at

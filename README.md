@@ -85,7 +85,9 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
 install. The app is signed with a Developer ID certificate and notarized by Apple,
 so Gatekeeper opens it without complaint on any Mac running macOS 14 or newer.
 
-Hangar puts a glyph in your menubar and nothing in your Dock. On first launch it
+Hangar puts a glyph in your menubar and nothing in your Dock, except while one
+of its windows is open: the Dock icon and the app switcher entry come and go with
+the window, so you can command-tab back to it. On first launch it
 runs a **setup check** that reads your machine and tells you exactly what works and
 what does not, with a fix button beside anything actionable:
 
@@ -93,13 +95,23 @@ what does not, with a fix button beside anything actionable:
 ✓ 3 AWS profiles found          default, work, sandbox
 ✓ Credentials resolved          SSO profile default
 ✓ 249 hosts indexed             6 products, 5 environments
-! SSH aliases not active yet    Add Include ~/.ssh/config.d/hangar   [Add Include Line]
+✓ SSH aliases active            223 aliases, Include line in ~/.ssh/config
 ✓ iTerm2 found                  Sessions open in iTerm2
 ✓ Shortcut ready                Press ⌘⇧H from any app
 ```
 
 Nothing to configure before it works. If a check fails it says why and what to run.
 You can reopen it any time from **Settings… → Setup Check**.
+
+**Write SSH config aliases** covers the whole job. Hangar writes
+`~/.ssh/config.d/hangar` and adds the one-line `Include` to your `~/.ssh/config`
+that makes those aliases work in `ssh`, `scp`, `rsync`, Ansible and anything else
+that reads ssh_config. It goes in at the top, because ssh_config is
+first-match-wins per keyword and a `Host *` block above it would beat every entry
+Hangar generates, and your file is copied to `~/.ssh/config.hangar-backup` first.
+Set `"manage_ssh_include": false` in `~/.hangar/config.json` if you would rather
+place that line yourself; Hangar will then stop putting it back, and the setup
+screen offers a button instead.
 
 Two options are offered there rather than assumed: **Write SSH config aliases** and
 **Open Hangar at login**. The login item is registered with `SMAppService`, so it

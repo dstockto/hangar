@@ -82,6 +82,11 @@ public struct HangarConfig: Codable, Sendable {
     public var hotkeys: [Hotkey]?
     public var refreshMinutes: Int?
     public var syncSSHConfigOnRefresh: Bool?
+    /// Whether Hangar keeps the one-line `Include` in ~/.ssh/config in step with
+    /// the aliases it writes. On by default: aliases no terminal can see are not
+    /// a feature with an optional extra step. Set false to manage that line
+    /// yourself, and Hangar will stop putting it back.
+    public var manageSSHInclude: Bool?
     /// How recent the cache must be for Hangar to consider the fleet healthy.
     public var healthyWithinHours: Int?
     /// Which releases Check for Updates offers: "stable" sees only full releases,
@@ -105,7 +110,8 @@ public struct HangarConfig: Codable, Sendable {
     public init(profile: String? = nil, region: String? = nil, terminal: String? = nil,
                 ssh: SSHSettings? = nil, overrides: [Override]? = nil,
                 hotkeys: [Hotkey]? = nil, refreshMinutes: Int? = nil,
-                syncSSHConfigOnRefresh: Bool? = nil, healthyWithinHours: Int? = nil,
+                syncSSHConfigOnRefresh: Bool? = nil, manageSSHInclude: Bool? = nil,
+                healthyWithinHours: Int? = nil,
                 updateChannel: String? = nil, checkUpdatesOnLaunch: Bool? = nil,
                 launchAtLogin: Bool? = nil, tags: TagMapping? = nil,
                 updateCheckHours: Int? = nil, groupBy: [String]? = nil) {
@@ -117,6 +123,7 @@ public struct HangarConfig: Codable, Sendable {
         self.hotkeys = hotkeys
         self.refreshMinutes = refreshMinutes
         self.syncSSHConfigOnRefresh = syncSSHConfigOnRefresh
+        self.manageSSHInclude = manageSSHInclude
         self.healthyWithinHours = healthyWithinHours
         self.updateChannel = updateChannel
         self.checkUpdatesOnLaunch = checkUpdatesOnLaunch
@@ -130,6 +137,7 @@ public struct HangarConfig: Codable, Sendable {
         case profile, region, terminal, ssh, overrides, hotkeys
         case refreshMinutes = "refresh_minutes"
         case syncSSHConfigOnRefresh = "sync_ssh_config_on_refresh"
+        case manageSSHInclude = "manage_ssh_include"
         case healthyWithinHours = "healthy_within_hours"
         case updateChannel = "update_channel"
         case checkUpdatesOnLaunch = "check_updates_on_launch"
@@ -192,6 +200,7 @@ public struct HangarConfig: Codable, Sendable {
             hotkeys: [Hotkey(keys: "cmd+shift+h", title: "All hosts", filter: [:])],
             refreshMinutes: 30,
             syncSSHConfigOnRefresh: true,
+            manageSSHInclude: true,
             healthyWithinHours: 24,
             updateChannel: "stable",
             checkUpdatesOnLaunch: true,

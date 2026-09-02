@@ -130,7 +130,10 @@ public struct SSHConfigWriter {
     public struct SyncResult: Sendable {
         public var path: String
         public var hostCount: Int
+        /// The line is absent and Hangar did not put it there.
         public var includeLineNeeded: Bool
+        /// Hangar added it during this sync.
+        public var includeLineAdded: Bool = false
         /// Instance ids left out because their hostname tag could not be written
         /// as a single ssh_config argument.
         public var omittedHosts: [String] = []
@@ -140,7 +143,9 @@ public struct SSHConfigWriter {
     /// it into place. A half-written or malformed file can never take effect.
     @discardableResult
     public func sync(instances: [Instance], region: String,
-                     to path: String = HangarConfig.sshIncludePath) throws -> SyncResult {
+                     to path: String = HangarConfig.sshIncludePath,
+                     ensuringInclude: Bool = false,
+                     includePath: String = userConfigPath) throws -> SyncResult {
         let text = render(instances: instances, region: region)
         let fm = FileManager.default
         let directory = (path as NSString).deletingLastPathComponent
@@ -165,8 +170,19 @@ public struct SSHConfigWriter {
         let skipped = omitted(from: instances).map(\.id)
         Log.info(.ssh, "aliases written",
                  ["hosts": "\(count)", "skipped": "\(skipped.count)"])
+
+        // Only after the aliases are in place: an include pointing at a file that
+        // failed to write would be a line added for nothing.
+        var added = false
+        var present = SSHConfigWriter.includeLinePresent(in: includePath)
+        if ensuringInclude && !present {
+            try SSHConfigWriter.addIncludeLine(to: includePath)
+            added = true
+            present = true
+        }
         return SyncResult(path: path, hostCount: count,
-                          includeLineNeeded: !SSHConfigWriter.includeLinePresent(),
+                          includeLineNeeded: !present,
+                          includeLineAdded: added,
                           omittedHosts: skipped)
     }
 
@@ -188,6 +204,11 @@ public struct SSHConfigWriter {
     }
 
     public static var includeLine: String { "Include ~/.ssh/config.d/hangar" }
+
+    /// The user's own ssh config, which Hangar reads and adds exactly one line to.
+    public static var userConfigPath: String {
+        NSString(string: "~/.ssh/config").expandingTildeInPath
+    }
 
     public static func includeLinePresent(
         in path: String = NSString(string: "~/.ssh/config").expandingTildeInPath

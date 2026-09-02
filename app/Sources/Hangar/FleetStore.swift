@@ -214,7 +214,11 @@ final class FleetStore: ObservableObject {
         }
         do {
             let writer = SSHConfigWriter(config: config)
-            let result = try writer.sync(instances: instances, region: region)
+            // The Include line comes with the aliases unless the user has said
+            // they manage it themselves. Writing aliases no terminal can see is
+            // not a feature with an optional extra step.
+            let result = try writer.sync(instances: instances, region: region,
+                                         ensuringInclude: config.manageSSHInclude ?? true)
             refreshManagedHosts()
             if !result.omittedHosts.isEmpty {
                 // Silence here would look like the hosts had been terminated.
@@ -225,8 +229,18 @@ final class FleetStore: ObservableObject {
                     ? "SSH config updated: ~/.ssh/config.d/hangar. Add the Include line to ~/.ssh/config."
                     : "SSH config updated: ~/.ssh/config.d/hangar"
             }
-        } catch {
+        } catch let error as HangarError {
             lastSyncMessage = FleetStore.presentable(error)
+            Log.error(.ssh, "sync failed", ["error": error.localizedDescription])
+        } catch {
+            // An Include that cannot be written does not fail the sync: the
+            // aliases are on disk and Hangar itself connects either way.
+            let text = FleetStore.presentable(error)
+            lastSyncMessage = SSHConfigWriter.includeLinePresent()
+                ? text
+                : "Aliases written. The Include line could not be added to "
+                    + "~/.ssh/config: \(text)"
+            Log.error(.ssh, "include line could not be added", ["error": text])
         }
     }
 
