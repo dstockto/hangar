@@ -712,6 +712,47 @@ kbd {
 .feature .demo .warn { color: var(--pending); }
 .feature .demo .acc { color: var(--accent); }
 
+/* ---------- Key flow ---------- */
+
+/* Two panes: what Hangar writes, and what happens when you connect. Reuses the
+   feature demo type treatment so the page has one code surface, not two. */
+.keyflow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: clamp(18px, 3vw, 34px);
+  align-items: start;
+}
+.keyflow .pane {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  padding: 24px;
+}
+.keyflow h3 { margin-bottom: 4px; }
+.keyflow .card-sub { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+.keyflow .demo {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--text);
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 13px 15px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.keyflow .demo .c { color: var(--muted); }
+.keyflow .demo .ok { color: var(--running); }
+.keyflow .demo .acc { color: var(--accent); }
+.keyflow .demo .you { color: var(--prod-danger); }
+.keyflow .note {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 /* ---------- Code surface ---------- */
 
 .code {

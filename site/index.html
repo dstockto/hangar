@@ -44,6 +44,7 @@
       <li><a href="#dashboard">Dashboard</a></li>
       <li><a href="#security">Security</a></li>
       <li><a href="#sources">Sources</a></li>
+      <li><a href="#key">Your key</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#docs">Documentation</a></li>
       <li><a class="nav-gh" href="https://github.com/goriparthi/hangar">
@@ -69,6 +70,7 @@
       <li><a href="#dashboard">Dashboard</a></li>
       <li><a href="#security">Security</a></li>
       <li><a href="#sources">Sources</a></li>
+      <li><a href="#key">Your key</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#docs">Documentation</a></li>
       <li><a href="https://github.com/goriparthi/hangar">GitHub</a></li>
@@ -250,6 +252,61 @@
             <li><span>A dashboard over the same response
               <span class="cost">no second call, no second permission</span></span></li>
           </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- The key ---------------- -->
+  <!-- An illustration, not a screenshot, and deliberately not a recreation of
+       1Password's own approval dialog: fabricating another vendor's consent UI
+       is not something this page should do. The terminal moment carries it. -->
+  <section class="band" id="key">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Your key never touches disk.</h2>
+        <p class="lede">
+          If an ssh agent is holding your key, Hangar finds it and uses it.
+          1Password, Secretive and anything on <code>SSH_AUTH_SOCK</code> go
+          through the same path. There is no CLI to install and nothing to
+          configure.
+        </p>
+      </div>
+
+      <div class="keyflow">
+        <div class="pane">
+          <h3>What Hangar writes</h3>
+          <p class="card-sub">Three lines, per host.</p>
+          <div class="demo"><span class="c"># ~/.ssh/config.d/hangar</span>
+Host payments-prod-sftp
+  HostName sftp.prod.example.com
+  IdentityAgent <span class="acc">"…/1password/t/agent.sock"</span>
+  IdentityFile ~/.hangar/keys/deploy.<span class="acc">pub</span>
+  IdentitiesOnly yes</div>
+          <p class="note">
+            <code>IdentityFile</code> names the <strong>public</strong> key. With
+            <code>IdentitiesOnly</code> that is how ssh is told which of the
+            agent's keys to offer, so a vault holding a dozen of them does not run
+            past <code>MaxAuthTries</code> and fail on a host that would have
+            worked.
+          </p>
+        </div>
+
+        <div class="pane">
+          <h3>What happens when you connect</h3>
+          <p class="card-sub">The vault signs; nothing is read.</p>
+          <div class="demo"><span class="c">$</span> ssh payments-prod-sftp
+
+  <span class="c">ssh asks the agent to sign</span>
+  <span class="you">1Password asks you to approve</span>
+  <span class="ok">✓ authorized with Touch ID</span>
+
+<span class="c">[deploy@sftp ~]$</span></div>
+          <p class="note">
+            Hangar never reads, exports or stores a private key. It asks the agent
+            what it holds the way ssh does, over the agent socket. The only thing
+            it writes is the public half, under <code>~/.hangar/keys</code>.
+          </p>
         </div>
       </div>
     </div>
