@@ -19,6 +19,13 @@ enum Notifier {
         hud = nil
     }
 
+    /// The widest the text column is allowed to get, and the space around it.
+    /// Both are needed as numbers rather than left to the layout: a stack view
+    /// reports a fitting width that leaves its own insets out, so sizing the
+    /// panel from that measurement printed the text against the card's edge.
+    private static let column: CGFloat = 300
+    private static let padding = NSEdgeInsets(top: 20, left: 26, bottom: 20, right: 26)
+
     static func show(title: String, body: String? = nil, seconds: TimeInterval = 1.6) {
         hud?.orderOut(nil)
 
@@ -26,6 +33,9 @@ enum Notifier {
         label.font = .systemFont(ofSize: 13, weight: .semibold)
         label.textColor = Brand.Color.textPrimary
         label.alignment = .center
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 2
+        label.preferredMaxLayoutWidth = Notifier.column
 
         var views: [NSView] = [label]
         if let body, !body.isEmpty {
@@ -39,15 +49,15 @@ enum Notifier {
             // operating system alert rather than as this app saying something.
             detail.lineBreakMode = .byWordWrapping
             detail.maximumNumberOfLines = 3
-            detail.preferredMaxLayoutWidth = 290
+            detail.preferredMaxLayoutWidth = Notifier.column
             views.append(detail)
         }
 
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .centerX
-        stack.spacing = 5
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 30, bottom: 18, right: 30)
+        stack.spacing = 6
+        stack.edgeInsets = Notifier.padding
 
         let container = NSView()
         container.wantsLayer = true
@@ -86,8 +96,13 @@ enum Notifier {
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
 
+        // The text column is measured, then the padding is added to it. The
+        // stack's own fitting width does not include its insets, so using it as
+        // the panel width left the wrapped body nothing to sit inside.
+        let text = views.map(\.intrinsicContentSize.width).max() ?? Notifier.column
+        let column = min(max(text, 210), Notifier.column)
+        let width = column + Notifier.padding.left + Notifier.padding.right
         let fitting = stack.fittingSize
-        let width = min(max(fitting.width, 260), 380)
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: fitting.height),
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
