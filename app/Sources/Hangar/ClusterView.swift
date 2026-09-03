@@ -82,7 +82,10 @@ final class ClusterView: NSView {
     private var labelBudget: Int {
         // At host level every circle is named: the name is the whole point of
         // the row, and they are short enough to fit around the ring.
-        hostLevel ? nodes.count : max(6, Int(min(bounds.width, bounds.height) / 46))
+        // Derived from the label's own size rather than a fixed number of
+        // points, so making the type bigger does not quietly pack more of it in.
+        hostLevel ? nodes.count
+                  : max(6, Int(min(bounds.width, bounds.height) / (ClusterView.labelSize * 3.8)))
     }
 
     override var isFlipped: Bool { true }
@@ -399,7 +402,7 @@ final class ClusterView: NSView {
         }
 
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        let hubRadius: CGFloat = 40
+        let hubRadius = ClusterView.hubRadius
 
         // Spokes first, so every circle sits on top of its own line. They run
         // straight out from the hub along each group's own angle, so a spoke
@@ -531,15 +534,19 @@ final class ClusterView: NSView {
                                             y: centre.y + 8),
                                 withAttributes: hostsWord)
 
+        // On a pill like every other label. Spokes leave the hub in all
+        // directions, so whatever is written just under it had lines running
+        // through the letters.
         let hubName = hubLabel
         let hubAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: ClusterView.labelSize, weight: .semibold),
             .foregroundColor: Brand.Color.textSecondary,
         ]
         let hubSize = (hubName as NSString).size(withAttributes: hubAttributes)
-        (hubName as NSString).draw(at: CGPoint(x: centre.x - hubSize.width / 2,
-                                               y: centre.y + hubRadius + 8),
-                                   withAttributes: hubAttributes)
+        let hubOrigin = CGPoint(x: centre.x - hubSize.width / 2,
+                                y: centre.y + hubRadius + 10)
+        drawLabelPill(context, origin: hubOrigin, size: hubSize)
+        (hubName as NSString).draw(at: hubOrigin, withAttributes: hubAttributes)
 
         // Group labels last, and on a pill: drawn inline they ended up underneath
         // the next node's circle, which is when a label is least readable.
@@ -550,6 +557,10 @@ final class ClusterView: NSView {
         let named = Set(nodes.indices
             .sorted { nodes[$0].count > nodes[$1].count }
             .prefix(labelBudget))
+        // Where labels have already landed. A pill has to clear these too, not
+        // only the circles: at fifteen points two names on neighbouring spokes
+        // reach far enough round the ring to sit on each other.
+        var placed: [CGRect] = []
         for (index, node) in nodes.enumerated() where named.contains(index) || index == highlighted {
             // A host that is not running says so in words. A host circle carries
             // its instance size inside it rather than its state, so without this
@@ -557,42 +568,98 @@ final class ClusterView: NSView {
             let name = node.state.map { $0 == "running" ? node.label : "\(node.label) · \($0)" }
                 ?? node.label
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                .font: NSFont.systemFont(ofSize: ClusterView.labelSize, weight: .medium),
                 .foregroundColor: index == highlighted ? Brand.Color.textPrimary
                                                        : Brand.Color.textSecondary,
             ]
             let size = (name as NSString).size(withAttributes: attributes)
-            // Pushed out past this node's hosts, then pushed out again until it
-            // clears every other circle. A label sitting on a neighbour is the
-            // one thing a ring of them cannot survive.
-            var outward = node.band * entrance + node.drawRadius
-                + hostReach(node) + 14 + size.height / 2
-            var origin = CGPoint.zero
-            var pill = CGRect.zero
-            for _ in 0..<8 {
-                let anchor = CGPoint(x: centre.x + cos(node.angle) * outward,
-                                     y: centre.y + sin(node.angle) * outward)
-                origin = CGPoint(x: anchor.x - size.width / 2,
-                                 y: anchor.y - size.height / 2)
-                pill = CGRect(x: origin.x - 5, y: origin.y - 2,
-                              width: size.width + 10, height: size.height + 4)
-                let clash = nodes.contains { other in
-                    let drawn = drawPosition(other)
-                    let circle = CGRect(x: drawn.x - other.drawRadius - 3,
-                                        y: drawn.y - other.drawRadius - 3,
-                                        width: other.drawRadius * 2 + 6,
-                                        height: other.drawRadius * 2 + 6)
-                    return circle.intersects(pill)
-                }
-                if !clash { break }
-                outward += size.height + 4
-            }
-            context.setFillColor(Brand.Color.panel.withAlphaComponent(0.82).cgColor)
-            context.addPath(CGPath(roundedRect: pill, cornerWidth: 5, cornerHeight: 5,
-                                   transform: nil))
-            context.fillPath()
+            let (origin, pill) = placeLabel(for: node, size: size, avoiding: placed)
+            placed.append(pill)
+            drawLabelPill(context, rect: pill)
             (name as NSString).draw(at: origin, withAttributes: attributes)
         }
+    }
+
+    static let hubRadius: CGFloat = 40
+
+    /// Where a node's label goes.
+    ///
+    /// Tried outward from the circle first, past its own hosts, stepping further
+    /// out while anything is in the way. When the ring reaches the edge of the
+    /// view there is nothing outside it to use, so the label flips to the inside
+    /// of the ring, which at host level is empty but for the hub. Losing a name
+    /// off the bottom of the window is worse than either.
+    private func placeLabel(for node: Node, size: CGSize,
+                            avoiding placed: [CGRect]) -> (origin: CGPoint, pill: CGRect) {
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        let field = bounds.insetBy(dx: 3, dy: 3)
+        let step = size.height + 4
+
+        var distances: [CGFloat] = []
+        let firstOut = node.band * entrance + node.drawRadius
+            + hostReach(node) + 14 + size.height / 2
+        for i in 0..<6 { distances.append(firstOut + CGFloat(i) * step) }
+        // Inward, stopping before the hub and its own label.
+        var inward = node.band * entrance - node.drawRadius - 12 - size.height / 2
+        while inward > ClusterView.hubRadius + 26 + size.height / 2 {
+            distances.append(inward)
+            inward -= step
+        }
+
+        var inside: (origin: CGPoint, pill: CGRect)?
+        var last: (origin: CGPoint, pill: CGRect)?
+        for distance in distances {
+            let anchor = CGPoint(x: centre.x + cos(node.angle) * distance,
+                                 y: centre.y + sin(node.angle) * distance)
+            let origin = CGPoint(x: anchor.x - size.width / 2,
+                                 y: anchor.y - size.height / 2)
+            let pill = CGRect(x: origin.x - ClusterView.pillInset.x,
+                              y: origin.y - ClusterView.pillInset.y,
+                              width: size.width + ClusterView.pillInset.x * 2,
+                              height: size.height + ClusterView.pillInset.y * 2)
+            last = (origin, pill)
+            guard field.contains(pill) else { continue }
+            if inside == nil { inside = (origin, pill) }
+            let hitsCircle = nodes.contains { other in
+                let drawn = drawPosition(other)
+                let circle = CGRect(x: drawn.x - other.drawRadius - 3,
+                                    y: drawn.y - other.drawRadius - 3,
+                                    width: other.drawRadius * 2 + 6,
+                                    height: other.drawRadius * 2 + 6)
+                return circle.intersects(pill)
+            }
+            let hitsHub = CGRect(x: centre.x - ClusterView.hubRadius - 4,
+                                 y: centre.y - ClusterView.hubRadius - 4,
+                                 width: ClusterView.hubRadius * 2 + 8,
+                                 height: ClusterView.hubRadius * 2 + 8).intersects(pill)
+            let hitsLabel = placed.contains { $0.insetBy(dx: -2, dy: -2).intersects(pill) }
+            if !hitsCircle, !hitsHub, !hitsLabel { return (origin, pill) }
+        }
+
+        guard let chosen = inside ?? last else { return (.zero, .zero) }
+        let dx = min(0, field.maxX - chosen.pill.maxX) + max(0, field.minX - chosen.pill.minX)
+        let dy = min(0, field.maxY - chosen.pill.maxY) + max(0, field.minY - chosen.pill.minY)
+        return (CGPoint(x: chosen.origin.x + dx, y: chosen.origin.y + dy),
+                chosen.pill.offsetBy(dx: dx, dy: dy))
+    }
+
+    /// Every label on this view sits on the same pill, so nothing behind it,
+    /// spoke or circle, reads through the letters.
+    static let labelSize: CGFloat = 15
+    private static let pillInset = (x: CGFloat(6), y: CGFloat(3))
+
+    private func drawLabelPill(_ context: CGContext, origin: CGPoint, size: CGSize) {
+        drawLabelPill(context, rect: CGRect(x: origin.x - ClusterView.pillInset.x,
+                                            y: origin.y - ClusterView.pillInset.y,
+                                            width: size.width + ClusterView.pillInset.x * 2,
+                                            height: size.height + ClusterView.pillInset.y * 2))
+    }
+
+    private func drawLabelPill(_ context: CGContext, rect: CGRect) {
+        context.setFillColor(Brand.Color.panel.withAlphaComponent(0.9).cgColor)
+        context.addPath(CGPath(roundedRect: rect, cornerWidth: 5, cornerHeight: 5,
+                               transform: nil))
+        context.fillPath()
     }
 
     // MARK: - Hover

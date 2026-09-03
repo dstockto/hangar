@@ -65,6 +65,23 @@ arc lands in a reserved band, rather than asserting the ten colours themselves.
 `8n`, `metal` is 192 as a deliberate approximation, and an unrecognised suffix
 sits at 3 so an unfamiliar family neither dominates the picture nor vanishes.
 
+## Labels
+
+Fifteen points, on a pill, and that includes the hub's own region label: spokes
+leave the hub in every direction, so anything written just under it had lines
+running through the letters.
+
+A label is placed by trying positions outward from its circle, past its own
+hosts, stepping further out while a circle, the hub, or an already placed label
+is in the way. When the ring reaches the edge of the view there is nothing
+outside it left to use, so the label flips to the inside of the ring, which at
+host level is empty but for the hub. The three ways a position can be wrong are
+not equally bad: overlapping is ugly, falling off the window loses the name, so
+the last resort is clamped back into view rather than dropped.
+
+How many groups are named comes from the label's own size rather than a fixed
+number of points, so making the type bigger does not quietly pack more of it in.
+
 ## Getting back out
 
 Three ways, all the same operation, so there is one implementation:
