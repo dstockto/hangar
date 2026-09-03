@@ -176,6 +176,10 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         let showingFleet = tabs.selectedSegment == 0
         cluster.isHidden = !showingFleet
         scroll.isHidden = showingFleet
+        // The picture is keyboard navigable, so it takes the keyboard when it is
+        // the thing on screen. Without this the arrows do nothing until someone
+        // finds it with Tab, which needs Full Keyboard Access turned on.
+        if showingFleet { window.makeFirstResponder(cluster) }
     }
 
     @objc private func refreshFleet() {

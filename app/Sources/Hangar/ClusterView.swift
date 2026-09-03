@@ -71,6 +71,10 @@ final class ClusterView: NSView {
     private var entrance: CGFloat = 1
     private var ringRadius: CGFloat = 0
     private var hovered: Int?
+    /// What the keyboard is on. Independent of `hovered`, which is the mouse.
+    private var selected: Int?
+    /// Either of them: what gets the brighter circle and a guaranteed label.
+    private var highlighted: Int? { hovered ?? selected }
     private var tracking: NSTrackingArea?
 
     /// How many groups get a name drawn. Beyond this the ring is more label than
@@ -159,6 +163,8 @@ final class ClusterView: NSView {
     func stepOut() {
         guard !focus.isFleet else { return }
         focus = focus.leaving()
+        hovered = nil
+        selected = nil
         rebuild()
     }
 
@@ -466,11 +472,18 @@ final class ClusterView: NSView {
             // same things in words.
             let tint = node.state.map { Brand.Color.state(for: $0) }
                 ?? Brand.Color.category(for: node.product)
-            context.setFillColor(tint.withAlphaComponent(index == hovered ? 0.38 : 0.24).cgColor)
+            context.setFillColor(tint.withAlphaComponent(index == highlighted ? 0.38 : 0.24).cgColor)
             context.fillEllipse(in: rect)
-            context.setStrokeColor(tint.withAlphaComponent(index == hovered ? 1 : 0.8).cgColor)
-            context.setLineWidth(index == hovered ? 2.5 : 1.5)
+            context.setStrokeColor(tint.withAlphaComponent(index == highlighted ? 1 : 0.8).cgColor)
+            context.setLineWidth(index == highlighted ? 2.5 : 1.5)
             context.strokeEllipse(in: rect)
+            // A ring outside the circle, so keyboard focus is visible as
+            // something other than a slightly brighter fill.
+            if index == selected, window?.firstResponder === self {
+                context.setStrokeColor(Brand.Color.accent.cgColor)
+                context.setLineWidth(2)
+                context.strokeEllipse(in: rect.insetBy(dx: -4, dy: -4))
+            }
 
             // A host circle shows how big the machine is; a group shows how
             // many. An empty circle after drilling in was a wasted one.
@@ -537,7 +550,7 @@ final class ClusterView: NSView {
         let named = Set(nodes.indices
             .sorted { nodes[$0].count > nodes[$1].count }
             .prefix(labelBudget))
-        for (index, node) in nodes.enumerated() where named.contains(index) || index == hovered {
+        for (index, node) in nodes.enumerated() where named.contains(index) || index == highlighted {
             // A host that is not running says so in words. A host circle carries
             // its instance size inside it rather than its state, so without this
             // the only thing saying the box is stopped is its colour.
@@ -545,8 +558,8 @@ final class ClusterView: NSView {
                 ?? node.label
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: index == hovered ? Brand.Color.textPrimary
-                                                   : Brand.Color.textSecondary,
+                .foregroundColor: index == highlighted ? Brand.Color.textPrimary
+                                                       : Brand.Color.textSecondary,
             ]
             let size = (name as NSString).size(withAttributes: attributes)
             // Pushed out past this node's hosts, then pushed out again until it
@@ -617,7 +630,55 @@ final class ClusterView: NSView {
     /// first click should also drill in: the circle is what the person aimed at.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    // MARK: - Keyboard
+    //
+    // The picture was navigable with a mouse and, through the accessibility
+    // tree, with VoiceOver. A sighted keyboard user had neither: arrows now
+    // move around the ring, Return opens what is selected, and Escape steps
+    // back out, which is the same move the hub makes.
+
+    override var acceptsFirstResponder: Bool { true }
+
+    /// Deliberately does not select anything. A focus ring drawn before anyone
+    /// has pressed a key is noise; the first arrow puts it on the first circle.
+    override func becomeFirstResponder() -> Bool { true }
+
+    override func resignFirstResponder() -> Bool {
+        selected = nil
+        needsDisplay = true
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 123, 126: step(-1)          // left, up
+        case 124, 125: step(1)           // right, down
+        case 36, 76, 49:                 // return, enter, space
+            guard let selected else { return }
+            open(selected)
+        case 53:                         // escape
+            // Only when there is somewhere to go, so at the fleet the key still
+            // does whatever the window would have done with it.
+            guard !focus.isFleet else { super.keyDown(with: event); return }
+            stepOut()
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    /// Around the ring, in the order the circles are drawn, wrapping at both
+    /// ends. Nodes are ordered by tier then name, which is the order they sit in.
+    private func step(_ delta: Int) {
+        guard !nodes.isEmpty else { return }
+        let from = selected ?? (delta > 0 ? -1 : 0)
+        selected = ((from + delta) % nodes.count + nodes.count) % nodes.count
+        needsDisplay = true
+    }
+
     override func mouseDown(with event: NSEvent) {
+        // So the arrows carry on from wherever the mouse just was, rather than
+        // from whatever the keyboard was last on.
+        window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
         if hypot(point.x - centre.x, point.y - centre.y) <= 42 {
@@ -628,6 +689,7 @@ final class ClusterView: NSView {
             let drawn = drawPosition(node)
             return hypot(drawn.x - point.x, drawn.y - point.y) <= node.drawRadius
         }) else { return }
+        selected = index
         // A group opens one level down; a host opens itself, which is where the
         // metadata appears.
         open(index)
@@ -688,6 +750,9 @@ final class ClusterView: NSView {
             focus = focus.entering(nodes[index].product == "untagged" ? "" : nodes[index].product)
         }
         hovered = nil
+        // The selection belonged to the circles that were on screen; the new
+        // level gets a fresh one rather than an index into something gone.
+        selected = nil
         rebuild()
     }
 
