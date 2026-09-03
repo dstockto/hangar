@@ -1,7 +1,8 @@
 # Hangar
 
-A native macOS menubar launcher that turns changing EC2 instances into stable,
-searchable SSH targets. Swift 6, AppKit, no package dependencies.
+A native macOS menubar launcher for every host you can ssh to: the hosts already
+in `~/.ssh/config`, any CSV you hand it, and an EC2 fleet turned into aliases that
+maintain themselves. Swift 6, AppKit, no package dependencies.
 
 This file is the institutional knowledge for the repo: conventions, commands,
 architecture, and the mistakes that have actually bitten. Read it before changing

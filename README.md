@@ -6,11 +6,13 @@
 
 **Spotlight for your SSH hosts.**
 
-A native macOS launcher that turns changing EC2 instances into stable, searchable
-SSH targets.
+A native macOS launcher for every host you can ssh to. It reads the hosts already
+in your ssh config, takes a CSV of any others, and turns an EC2 fleet that will
+not sit still into aliases that maintain themselves.
 
 Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd>, type a few characters, press
-<kbd>Return</kbd>, and you are on the box.
+<kbd>Return</kbd>, and you are on the box. No account, no server, and no AWS
+permission required.
 
 ### [Download Hangar](https://github.com/goriparthi/hangar/releases/latest)
 
@@ -27,10 +29,32 @@ No Gatekeeper warning, no `xattr` command, no Homebrew, no Xcode.
 
 ---
 
+## It works before you configure anything
+
+Hangar gathers hosts from four places and merges them, richest first. Every one is
+on by default, because a source that finds nothing costs nothing.
+
+**Hosts you already have.** On first launch Hangar reads `~/.ssh/config`, and the
+files it `Include`s, and puts every host in there behind the same shortcut as
+everything else. Your file is never rewritten: those hosts already resolve, and a
+second copy in Hangar's include would sit above yours and win. Patterns, `Match`
+blocks and git remotes are recognised and skipped.
+
+**Hosts on a spreadsheet.** Drop a CSV anywhere on the window. `alias` or
+`hostname` is enough; any column Hangar has no meaning for becomes a tag, so you
+can group the menu by `datacenter` or `owner`.
+
+**An AWS fleet.** One read-only `ec2:DescribeInstances` gives you aliases built
+from your own tags, so they survive the instance being replaced, plus a dashboard
+computed from the same response. If that call is denied, Systems Manager is tried
+on its own, and it finds on-prem hosts EC2 never could.
+
+The first two need no AWS account at all. The third is where it gets interesting.
+
 ## Thousands of hosts to the right one
 
-Autoscaling replaces instances and their hostnames go with them. The lookup is
-the work, and you do it again every time.
+A hand-kept ssh config goes stale, and an autoscaling group replaces the hostname
+you saved. Either way the lookup is the work, and you do it again every time.
 
 **Without Hangar.** Remember roughly what the box is called. Run
 `aws ec2 describe-instances --filters …` and read JSON to find it. Copy a

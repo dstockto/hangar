@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hangar: Your fleet, one keystroke away</title>
-<meta name="description" content="A native macOS launcher that turns changing EC2 instances into stable, searchable SSH targets. Press Command-Shift-H, find the host, connect.">
+<title>Hangar: Every SSH host, one keystroke away</title>
+<meta name="description" content="A native macOS launcher for every host you can ssh to. Reads the hosts already in your ssh config, takes a CSV, and turns changing EC2 instances into aliases that maintain themselves. No account, no server, no AWS permission required.">
 <link rel="canonical" href="https://goriparthi.github.io/hangar/">
 
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://goriparthi.github.io/hangar/">
-<meta property="og:title" content="Hangar: Your fleet, one keystroke away">
-<meta property="og:description" content="A native macOS launcher that turns changing EC2 instances into stable, searchable SSH targets.">
+<meta property="og:title" content="Hangar: Every SSH host, one keystroke away">
+<meta property="og:description" content="A native macOS launcher for every host you can ssh to. Works with the hosts you already have, and with an EC2 fleet that will not sit still.">
 <meta property="og:image" content="https://goriparthi.github.io/hangar/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -43,6 +43,7 @@
       <li><a href="#how">How it works</a></li>
       <li><a href="#dashboard">Dashboard</a></li>
       <li><a href="#security">Security</a></li>
+      <li><a href="#sources">Sources</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#docs">Documentation</a></li>
       <li><a class="nav-gh" href="https://github.com/goriparthi/hangar">
@@ -67,6 +68,7 @@
       <li><a href="#how">How it works</a></li>
       <li><a href="#dashboard">Dashboard</a></li>
       <li><a href="#security">Security</a></li>
+      <li><a href="#sources">Sources</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#docs">Documentation</a></li>
       <li><a href="https://github.com/goriparthi/hangar">GitHub</a></li>
@@ -82,10 +84,12 @@
     <div class="wrap hero-grid">
       <div>
         <p class="eyebrow"><span class="dot"></span> NATIVE macOS &nbsp;·&nbsp; SIGNED AND NOTARIZED</p>
-        <h1>Your fleet,<br>one keystroke away.</h1>
+        <h1>Every SSH host,<br>one keystroke away.</h1>
         <p class="lede">
-          Hangar turns changing EC2 instances into stable, searchable SSH targets.
-          Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd>, find the host, and connect.
+          Hangar reads the hosts already in your ssh config, takes a CSV of any
+          others, and turns an EC2 fleet that will not sit still into aliases that
+          maintain themselves. Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd>, find the
+          host, and connect.
         </p>
         <div class="hero-cta">
           <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">
@@ -95,7 +99,7 @@
         </div>
         <p class="hero-fine">
           <span>macOS 14+</span> · <span>No server</span> · <span>No account</span> ·
-          <span>No runtime dependencies</span>
+          <span>No AWS permission required</span>
         </p>
       </div>
 
@@ -182,11 +186,72 @@
       <dl class="proof">
         <div><dt>Shortcut</dt><dd><kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></dd></div>
         <div><dt>Aliases</dt><dd>Standard ssh_config</dd></div>
-        <div><dt>Cache</dt><dd>Local only</dd></div>
         <div><dt>Server</dt><dd>None</dd></div>
         <div><dt>Account</dt><dd>None</dd></div>
-        <div><dt>AWS CLI</dt><dd>Not needed to run</dd></div>
+        <div><dt>Sources</dt><dd>Four, merged</dd></div>
+        <div><dt>AWS</dt><dd>Optional</dd></div>
       </dl>
+    </div>
+  </section>
+
+  <!-- ---------------- The ladder ---------------- -->
+  <!-- Three rungs, each honest on its own. The first is what a reader with no AWS
+       account gets on first launch, which is the thing the old copy hid behind a
+       permission. -->
+  <section class="band" id="sources">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>It works before you configure anything.</h2>
+        <p class="lede">
+          Hangar gathers hosts from four places and merges them. Every one is on by
+          default, because a source that finds nothing costs nothing.
+        </p>
+      </div>
+
+      <div class="ladder">
+        <div class="card">
+          <h3>Hosts you already have</h3>
+          <p class="card-sub">Nothing to set up.</p>
+          <ol class="steps">
+            <li><span>Hangar reads <code>~/.ssh/config</code> on first launch
+              <span class="cost">every Host block, and the files it Includes</span></span></li>
+            <li><span>They become searchable and grouped
+              <span class="cost">behind the same shortcut as everything else</span></span></li>
+            <li><span>Your file is never rewritten
+              <span class="cost">those hosts already resolve; Hangar leaves them alone</span></span></li>
+            <li><span>Git remotes are recognised and skipped
+              <span class="cost">github.com is not a machine you ssh into</span></span></li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <h3>Hosts on a spreadsheet</h3>
+          <p class="card-sub">One drag.</p>
+          <ol class="steps">
+            <li><span>Drop a CSV anywhere on the window</span></li>
+            <li><span><code>alias</code> or <code>hostname</code> is enough
+              <span class="cost">user, port, product, env and role if you have them</span></span></li>
+            <li><span>Any other column becomes a tag
+              <span class="cost">group the menu by datacenter, or owner</span></span></li>
+            <li><span>A row that cannot be written safely is refused
+              <span class="cost">by line number, never silently dropped</span></span></li>
+          </ol>
+        </div>
+
+        <div class="card card-fleet">
+          <h3>An AWS fleet</h3>
+          <p class="card-sub">Where it gets interesting.</p>
+          <ol class="steps">
+            <li><span>One read-only <code>ec2:DescribeInstances</code></span></li>
+            <li><span>Aliases built from your tags
+              <span class="cost">so they survive the instance being replaced</span></span></li>
+            <li><span>Denied? Systems Manager is tried on its own
+              <span class="cost">and finds on-prem hosts EC2 never could</span></span></li>
+            <li><span>A dashboard over the same response
+              <span class="cost">no second call, no second permission</span></span></li>
+          </ol>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -196,9 +261,10 @@
       <div class="section-head">
         <h2>Thousands of hosts to the right one.</h2>
         <p class="lede">
-          Autoscaling replaces instances and their hostnames go with them. The
-          lookup is the work, and you do it again every time. Search stays under
-          half a millisecond per keystroke at ten thousand hosts.
+          A hand-kept ssh config goes stale and an autoscaling group replaces the
+          hostname you saved. Either way the lookup is the work, and you do it
+          again every time. Search stays under half a millisecond per keystroke at
+          ten thousand hosts.
         </p>
       </div>
 

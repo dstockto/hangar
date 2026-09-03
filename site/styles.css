@@ -654,6 +654,26 @@ kbd {
 }
 .steps .cost { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 
+/* The three rungs. Its own grid rather than .compare, whose middle column is an
+   auto-width slot for the arrow and would squeeze a card placed there. */
+.ladder {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: clamp(18px, 3vw, 34px);
+  align-items: stretch;
+}
+/* The rung that carries the depth, marked without shouting. */
+.card-fleet { border-color: var(--hairline-strong); }
+.card-fleet h3::after {
+  content: "";
+  display: block;
+  width: 26px;
+  height: 2px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
 .compare-arrow {
   align-self: center;
   color: var(--muted);
