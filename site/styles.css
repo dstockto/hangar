@@ -558,6 +558,13 @@ kbd {
   background: #0b0e12;
 }
 .shot-wide { max-width: 720px; margin-inline: auto; }
+/* A window capture of the dashboard is dense. At 960 the panel rows land at the
+   size the app draws them, rather than at half of it. */
+.shot-xl { max-width: 960px; margin-inline: auto; }
+.shot-stack { display: grid; gap: clamp(22px, 2.6vw, 34px); }
+/* Every .shots grid follows something, so the gap belongs here rather than on
+   each element that happens to precede one. */
+.shots { margin-top: clamp(22px, 2.6vw, 34px); }
 .shot figcaption {
   margin-top: 10px;
   font-size: 12.5px;

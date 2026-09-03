@@ -41,6 +41,7 @@
     <ul class="nav-links" id="nav-links">
       <li><a href="#product">Product</a></li>
       <li><a href="#how">How it works</a></li>
+      <li><a href="#dashboard">Dashboard</a></li>
       <li><a href="#security">Security</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#docs">Documentation</a></li>
@@ -64,6 +65,7 @@
     <ul>
       <li><a href="#product">Product</a></li>
       <li><a href="#how">How it works</a></li>
+      <li><a href="#dashboard">Dashboard</a></li>
       <li><a href="#security">Security</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#docs">Documentation</a></li>
@@ -330,7 +332,7 @@ ubuntu    <span class="ok">authenticated</span></div>
           <kbd>↩</kbd> opens a terminal on the selected host.</figcaption>
       </figure>
 
-      <div class="shots" style="margin-top:clamp(22px,2.6vw,34px)">
+      <div class="shots">
         <figure class="shot">
           <img src="assets/shot-menu.png" width="770" height="834" loading="lazy"
                alt="Hangar's menubar menu. Under a HOSTS heading, the fleet is grouped by
@@ -347,6 +349,77 @@ ubuntu    <span class="ok">authenticated</span></div>
                     Uninstall with Uninstall Hangar.">
           <figcaption>Settings, in sections. The last one removes Hangar completely,
             including the line it added to your <code>~/.ssh/config</code>.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- Fleet dashboard ---------------- -->
+  <section class="band" id="dashboard">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>The whole fleet, out of the call you already made.</h2>
+        <p class="lede">
+          Hangar lists your instances once and keeps the answer. The dashboard is
+          everything that one response can tell you, so it costs no second API
+          call and no second permission: <code>ec2:DescribeInstances</code>,
+          read only, is all Hangar ever asks for.
+        </p>
+      </div>
+
+      <div class="shot-stack">
+        <figure class="shot shot-xl">
+          <img src="assets/shot-dashboard.png" width="1440" height="936" loading="lazy"
+               alt="Hangar's fleet dashboard. An EC2 hub in the middle reads 110 hosts in
+                    us-west-2, with a circle for each of seven products around it carrying
+                    its own host count, individual hosts drawn as small dots beside each
+                    one, and four cards down the left counting total hosts, running,
+                    stopped and groups.">
+          <figcaption>Every product in the account, sized by how many hosts it has.
+            The fleet in these screenshots is fictional.</figcaption>
+        </figure>
+
+        <figure class="shot shot-xl">
+          <img src="assets/shot-envs.png" width="1440" height="936" loading="lazy"
+               alt="The dashboard after clicking the payments product: five environment
+                    circles around the hub, prod nearest to it with 24 hosts, then stage,
+                    qa, dev and perf stepping outward. The hub now reads Back to the
+                    fleet.">
+          <figcaption>Click a product for its environments. Production sits nearest the
+            hub and each tier steps outward; the hub is the way back.</figcaption>
+        </figure>
+
+        <figure class="shot shot-xl">
+          <img src="assets/shot-hosts.png" width="1440" height="936" loading="lazy"
+               alt="The dashboard after clicking the prod environment: 24 host circles
+                    around the hub, each drawn at a size taken from its instance type and
+                    carrying that size inside it, 8xl, 4xl, 2xl, xl, lg or md. Two are
+                    grey and labelled api-1 stopped and api-6 stopped.">
+          <figcaption>Click an environment for its hosts, each circle sized by its
+            instance type with the size written inside it. A host that is not running
+            says so.</figcaption>
+        </figure>
+
+        <figure class="shot shot-xl">
+          <img src="assets/shot-host.png" width="1440" height="1170" loading="lazy"
+               alt="The record for one host, payments-prod-web-2: state, launch time,
+                    instance type with vCPUs and architecture, instance id, availability
+                    zone, VPC, subnet, addresses, AMI, key pair, IAM instance profile,
+                    security groups, monitoring, root device, autoscaling group and ssh
+                    alias, with all seven of its tags listed below.">
+          <figcaption>Open a host for everything the response said about it, down to
+            every tag it carries.</figcaption>
+        </figure>
+
+        <figure class="shot shot-xl">
+          <img src="assets/shot-insights.png" width="1440" height="1170" loading="lazy"
+               alt="The Insights tab: tag hygiene reporting five hosts with no hostname
+                    tag, placement reporting eight single-zone groups and 34 hosts
+                    outside an autoscaling group, uptime buckets with the instance
+                    families that are burstable or previous generation, and a change and
+                    exposure panel.">
+          <figcaption>Tag hygiene, single-zone groups, hosts outside an autoscaling
+            group, uptime and public addresses. Counts, not advice.</figcaption>
         </figure>
       </div>
     </div>
@@ -403,7 +476,8 @@ rsync -av ./dist/ payments-prod-web-1:/srv/app/">
         <li><strong>Private keys are never read</strong>
             <span>Key material stays with ssh and your agent.</span></li>
         <li><strong>Read-only against AWS</strong>
-            <span>One <code>ec2:DescribeInstances</code> call, signed with SigV4.</span></li>
+            <span>One <code>ec2:DescribeInstances</code> call, signed with SigV4.
+                  That is the only IAM permission Hangar needs.</span></li>
         <li><strong>One generated file</strong>
             <span><code>~/.ssh/config.d/hangar</code>, written at 0600 after ssh
                   itself validates the syntax.</span></li>
