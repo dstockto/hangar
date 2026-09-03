@@ -356,19 +356,19 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
     private func hygienePanel(_ insights: FleetInsights) -> NSView {
         let hygiene = insights.hygiene
-        var rows: [(RowKind, String, String)] = []
+        var rows: [PanelRow] = []
         if hygiene.missingProduct > 0 {
-            rows.append((.tag, "No product tag", count(hygiene.missingProduct, "host")))
+            rows.append(PanelRow(.tag, "No product tag", count(hygiene.missingProduct, "host")))
         }
         if hygiene.missingEnv > 0 {
-            rows.append((.tag, "No env tag", count(hygiene.missingEnv, "host")))
+            rows.append(PanelRow(.tag, "No env tag", count(hygiene.missingEnv, "host")))
         }
         if hygiene.missingName > 0 {
-            rows.append((.warn, "No name tag, alias falls back to the instance id",
+            rows.append(PanelRow(.warn, "No name tag, alias falls back to the instance id",
                          count(hygiene.missingName, "host")))
         }
         if hygiene.missingHostname > 0 {
-            rows.append((.note, "No hostname tag, reached by private address",
+            rows.append(PanelRow(.note, "No hostname tag, reached by private address",
                          count(hygiene.missingHostname, "host")))
         }
         // Reported, not flagged: Hangar numbers these and ssh reaches the right
@@ -376,14 +376,14 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         // replaced, which is the part worth knowing.
         let shared = hygiene.sharedNames.sorted { $0.key < $1.key }
         for (name, count) in shared.prefix(6) {
-            rows.append((.note, "\(name) numbered \(name)-1 … \(name)-\(count)",
+            rows.append(PanelRow(.note, "\(name) numbered \(name)-1 … \(name)-\(count)",
                          self.count(count, "host")))
         }
         if shared.count > 6 {
-            rows.append((.note, "and \(shared.count - 6) more names Hangar numbers", ""))
+            rows.append(PanelRow(.note, "and \(shared.count - 6) more names Hangar numbers", ""))
         }
         if hygiene.isClean {
-            rows.insert((.ok, "Every host has the tags Hangar maps", ""), at: 0)
+            rows.insert(PanelRow(.ok, "Every host has the tags Hangar maps", ""), at: 0)
         }
         return panel(title: "Tag hygiene", symbol: "tag",
                      headline: hygiene.isClean
@@ -396,21 +396,21 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     private func placementPanel(_ insights: FleetInsights) -> NSView {
         let singleZone = insights.placement.filter(\.isSingleZone)
         let pets = insights.placement.reduce(0) { $0 + $1.pets }
-        var rows: [(RowKind, String, String)] = []
+        var rows: [PanelRow] = []
         for group in singleZone.prefix(6) {
-            rows.append((.zone, "\(group.product) · \(group.env) is only in \(group.zones.first ?? "?")",
+            rows.append(PanelRow(.zone, "\(group.product) · \(group.env) is only in \(group.zones.first ?? "?")",
                          count(group.count, "host")))
         }
         if singleZone.count > 6 {
-            rows.append((.note, "and \(singleZone.count - 6) more in one zone", ""))
+            rows.append(PanelRow(.note, "and \(singleZone.count - 6) more in one zone", ""))
         }
         for group in insights.placement.sorted(by: { $0.pets > $1.pets }).prefix(3)
         where group.pets > 0 {
-            rows.append((.scaling, "\(group.product) · \(group.env) outside an autoscaling group",
+            rows.append(PanelRow(.scaling, "\(group.product) · \(group.env) outside an autoscaling group",
                          "\(group.pets) of \(group.count)"))
         }
         if rows.isEmpty {
-            rows.append((.ok, "Every group spans more than one zone", ""))
+            rows.append(PanelRow(.ok, "Every group spans more than one zone", ""))
         }
         return panel(title: "Placement and autoscaling",
                      symbol: "point.3.connected.trianglepath.dotted",
@@ -420,18 +420,18 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     }
 
     private func agePanel(_ insights: FleetInsights) -> NSView {
-        var rows: [(RowKind, String, String)] = insights.ages
+        var rows: [PanelRow] = insights.ages
             .filter { $0.count > 0 }
             .map { bucket in
-                (bucket.label == "over 180 days" ? .warn : .clock,
-                 "Up \(bucket.label)", count(bucket.count, "host"))
+                PanelRow(bucket.label == "over 180 days" ? .warn : .clock,
+                         "Up \(bucket.label)", count(bucket.count, "host"))
             }
         let flagged = insights.families.filter { $0.isPreviousGeneration || $0.isBurstable }
         for family in flagged.prefix(5) {
             let note = [family.isPreviousGeneration ? "previous generation" : nil,
                         family.isBurstable ? "burstable" : nil]
                 .compactMap { $0 }.joined(separator: ", ")
-            rows.append((.family, "\(family.family), \(note)", count(family.count, "host")))
+            rows.append(PanelRow(.family, "\(family.family), \(note)", count(family.count, "host")))
         }
         let old = insights.ages.first { $0.label == "over 180 days" }?.count ?? 0
         return panel(title: "Age and instance families", symbol: "clock.arrow.circlepath",
@@ -441,7 +441,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     }
 
     private func deltaPanel(_ insights: FleetInsights) -> NSView {
-        var rows: [(RowKind, String, String)] = []
+        var rows: [PanelRow] = []
         let history = store.history
         if history.count >= 2, let last = history.last {
             let previous = history[history.count - 2]
@@ -449,18 +449,18 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
             let formatter = DateFormatter()
             formatter.dateFormat = "HH:mm"
             let word = change == 0 ? "no change" : (change > 0 ? "+\(change)" : "\(change)")
-            rows.append((change == 0 ? .note : .warn,
+            rows.append(PanelRow(change == 0 ? .note : .warn,
                          "Since \(formatter.string(from: previous.at)): \(previous.hosts) to \(last.hosts)",
                          word))
         } else {
-            rows.append((.note, "No history yet, the delta needs a second refresh", ""))
+            rows.append(PanelRow(.note, "No history yet, the delta needs a second refresh", ""))
         }
         for env in insights.exposure where env.withPublicAddress > 0 {
-            rows.append((.address, "Public address in \(env.env)",
+            rows.append(PanelRow(.address, "Public address in \(env.env)",
                          "\(env.withPublicAddress) of \(env.total)"))
         }
         if insights.exposure.allSatisfy({ $0.withPublicAddress == 0 }) {
-            rows.append((.ok, "No host carries a public address", ""))
+            rows.append(PanelRow(.ok, "No host carries a public address", ""))
         }
         return panel(title: "Change and exposure", symbol: "chart.line.uptrend.xyaxis",
                      headline: count(history.count, "refresh", "refreshes") + " recorded",
@@ -471,47 +471,50 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     /// Hangar has ever shown and costs nothing extra to show.
     private func hostPanel(_ host: Instance) -> NSView {
         let alias = store.alias(for: host) ?? host.aliasStem
-        var rows: [(RowKind, String, String)] = [
-            (host.state == "running" ? .ok : .note, "State",
-             host.stateReason.map { "\(host.state) · \($0)" } ?? host.state),
-            (.clock, "Launched", launchDescription(host)),
-            (.family, "Instance type", typeDescription(host)),
-            (.note, "Instance id", host.id),
-            (.zone, "Availability zone", host.availabilityZone ?? "unknown"),
+        // The rows someone opens a host to read are led: what it is, how big,
+        // where it is, and what to type to reach it. The rest is reference.
+        var rows: [PanelRow] = [
+            PanelRow(host.state == "running" ? .ok : .note, "State",
+                     host.stateReason.map { "\(host.state) · \($0)" } ?? host.state,
+                     lead: true),
+            PanelRow(.clock, "Launched", launchDescription(host)),
+            PanelRow(.family, "Instance type", typeDescription(host), lead: true),
+            PanelRow(.note, "Instance id", host.id),
+            PanelRow(.zone, "Availability zone", host.availabilityZone ?? "unknown"),
         ]
-        if let vpc = host.vpcID { rows.append((.zone, "VPC", vpc)) }
-        if let subnet = host.subnetID { rows.append((.zone, "Subnet", subnet)) }
-        rows.append((.note, "Private address", host.privateIP ?? "none"))
+        if let vpc = host.vpcID { rows.append(PanelRow(.zone, "VPC", vpc)) }
+        if let subnet = host.subnetID { rows.append(PanelRow(.zone, "Subnet", subnet)) }
+        rows.append(PanelRow(.note, "Private address", host.privateIP ?? "none", lead: true))
         if let dns = host.privateDNS, !dns.isEmpty {
-            rows.append((.note, "Private DNS", dns))
+            rows.append(PanelRow(.note, "Private DNS", dns))
         }
         if let publicIP = host.publicIP, !publicIP.isEmpty {
-            rows.append((.address, "Public address", publicIP))
+            rows.append(PanelRow(.address, "Public address", publicIP))
         }
         if let hostname = host.tags["hostname"], !hostname.isEmpty {
-            rows.append((.note, "Hostname tag", hostname))
+            rows.append(PanelRow(.note, "Hostname tag", hostname))
         }
-        if let image = host.imageID { rows.append((.note, "AMI", image)) }
+        if let image = host.imageID { rows.append(PanelRow(.note, "AMI", image)) }
         if let key = host.keyName, !key.isEmpty {
-            rows.append((.note, "Key pair", key))
+            rows.append(PanelRow(.note, "Key pair", key))
         }
         if let profile = host.iamProfile, !profile.isEmpty {
-            rows.append((.note, "IAM instance profile", profile))
+            rows.append(PanelRow(.note, "IAM instance profile", profile))
         }
         if let groups = host.securityGroups, !groups.isEmpty {
-            rows.append((.address, "Security groups", groups.joined(separator: ", ")))
+            rows.append(PanelRow(.address, "Security groups", groups.joined(separator: ", ")))
         }
         if let lifecycle = host.lifecycle, !lifecycle.isEmpty {
             // Worth knowing before you ssh in and start work on it.
-            rows.append((.warn, "Lifecycle", lifecycle))
+            rows.append(PanelRow(.warn, "Lifecycle", lifecycle))
         }
         if let monitoring = host.monitoring, !monitoring.isEmpty {
-            rows.append((.note, "Monitoring", monitoring))
+            rows.append(PanelRow(.note, "Monitoring", monitoring))
         }
-        if let root = host.rootDeviceType { rows.append((.note, "Root device", root)) }
-        rows.append((.scaling, "Autoscaling group",
+        if let root = host.rootDeviceType { rows.append(PanelRow(.note, "Root device", root)) }
+        rows.append(PanelRow(.scaling, "Autoscaling group",
                      host.isASG ? host.asg : "none, this one is a pet"))
-        rows.append((.note, "ssh alias", alias))
+        rows.append(PanelRow(.note, "ssh alias", alias, lead: true))
         return panel(title: "Host", symbol: "shippingbox", headline: alias, rows: rows)
     }
 
@@ -528,12 +531,12 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
     /// Every tag, because the one you need is always the one a summary dropped.
     private func hostTagsPanel(_ host: Instance) -> NSView {
-        let rows: [(RowKind, String, String)] = host.tags.keys.sorted().map { key in
-            (.tag, key, host.tags[key] ?? "")
+        let rows: [PanelRow] = host.tags.keys.sorted().map { key in
+            PanelRow(.tag, key, host.tags[key] ?? "")
         }
         return panel(title: "Tags", symbol: "tag",
                      headline: count(rows.count, "tag"),
-                     rows: rows.isEmpty ? [(.note, "This instance carries no tags", "")]
+                     rows: rows.isEmpty ? [PanelRow(.note, "This instance carries no tags", "")]
                                         : rows)
     }
 
@@ -577,6 +580,22 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     }
 
     /// A row's glyph says what kind of line it is before the words do.
+    /// One line in a panel. `lead` marks the rows someone opened the panel to
+    /// read, so they are not drawn at the same weight as "Root device".
+    struct PanelRow {
+        var kind: RowKind
+        var label: String
+        var value: String
+        var lead: Bool
+
+        init(_ kind: RowKind, _ label: String, _ value: String, lead: Bool = false) {
+            self.kind = kind
+            self.label = label
+            self.value = value
+            self.lead = lead
+        }
+    }
+
     enum RowKind {
         case ok, warn, note
         /// The subject of the row, when it has one worth a glyph: a zone, an
@@ -613,7 +632,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
     /// One card: a glyph, a heading, the number that matters, and the rows.
     private func panel(title: String, symbol: String, headline: String,
-                       rows: [(RowKind, String, String)]) -> NSView {
+                       rows: [PanelRow]) -> NSView {
         let glyph = NSImageView()
         glyph.image = Brand.Glyph.symbol(symbol, size: 14)
         glyph.contentTintColor = Brand.Color.accent
@@ -639,20 +658,27 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         stack.spacing = 3
         stack.setCustomSpacing(Brand.Metric.space8, after: number)
 
-        for (kind, left, right) in rows {
+        for entry in rows {
             let bullet = NSImageView()
-            bullet.image = Brand.Glyph.symbol(kind.symbol, size: kind.glyphSize)
-            bullet.contentTintColor = kind.tint
+            bullet.image = Brand.Glyph.symbol(entry.kind.symbol, size: entry.kind.glyphSize)
+            bullet.contentTintColor = entry.kind.tint
 
-            let label = NSTextField(labelWithString: left)
-            label.font = .systemFont(ofSize: 12)
-            label.textColor = Brand.Color.textPrimary
+            let label = NSTextField(labelWithString: entry.label)
+            label.font = .systemFont(ofSize: 12,
+                                     weight: entry.lead ? .medium : .regular)
+            label.textColor = entry.lead ? Brand.Color.textPrimary
+                                         : Brand.Color.textSecondary
             label.lineBreakMode = .byTruncatingTail
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-            let detail = NSTextField(labelWithString: right)
-            detail.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-            detail.textColor = Brand.Color.textSecondary
+            // A led row's value is the thing on the screen worth copying, so it
+            // gets the weight and the foreground colour; the rest is reference
+            // and reads as reference.
+            let detail = NSTextField(labelWithString: entry.value)
+            detail.font = .monospacedDigitSystemFont(ofSize: entry.lead ? 12 : 11,
+                                                     weight: entry.lead ? .semibold : .regular)
+            detail.textColor = entry.lead ? Brand.Color.textPrimary
+                                          : Brand.Color.textSecondary
             detail.alignment = .right
             detail.setContentHuggingPriority(.defaultHigh, for: .horizontal)
 
