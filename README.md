@@ -72,6 +72,10 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
   themselves. A host that is not running says so rather than relying on its icon.
 - **Fleet health at a glance.** The menubar aircraft turns green while the cache
   is fresh, and says so when it is not.
+- **A dashboard over the same one call.** Drill the fleet product by
+  environment by host, open any host for everything `DescribeInstances` returned
+  about it, and read the tag, placement, age and exposure findings behind it.
+  No second API call and no second permission.
 
 <div align="center">
 
@@ -162,8 +166,70 @@ to replace a damaged binary should not cost you your tag mapping.
 ### Fleet dashboard
 
 **Fleet Dashboard** in the menubar, or <kbd>⌘</kbd><kbd>D</kbd> with the menu
-open. Everything on it is derived from the `DescribeInstances` response Hangar
-already has, so it costs no extra call and no extra IAM permission:
+open. Every number and every circle on it comes out of the `DescribeInstances`
+response Hangar already fetched, so the whole window costs no extra AWS call and
+no extra IAM permission.
+
+<div align="center">
+
+<img src="site/assets/shot-dashboard.png" alt="The Fleet tab of Hangar's dashboard: an EC2 hub in the middle reading 110 hosts, seven product circles around it carrying their host counts, host particles arcing around each one, and four stat cards down the left for total hosts, running, stopped and groups" width="820">
+
+</div>
+
+Two tabs. **Fleet** is the picture, **Insights** is the same fleet in words.
+Down the left of both are four cards, total hosts, running, stopped and groups,
+and they always describe whatever the picture is currently showing rather than
+the whole account.
+
+#### Drilling the cluster
+
+The picture goes down the same levels the menubar cascade uses, which are the
+tag keys in `group_by`. One click goes in. The hub in the middle goes back out
+and is labelled with where back is; on the Insights tab, where the hub is not on
+screen, the same step out sits at the top of the column as a button.
+
+1. **Products.** A circle per product around the EC2 hub, area tracking the host
+   count, so a group twice the size looks twice the size.
+2. **Environments.** Production sits nearest the hub and each tier steps outward,
+   so the ring reads inside out: production, staging, test, development, then
+   anything Hangar cannot place.
+3. **Hosts.** One circle per instance, **sized by its instance type** with the
+   short size written inside it, `8xl`, `2xl`, `lg`. Colour is state, and a host
+   that is not running says so in its label rather than relying on the colour.
+
+<div align="center">
+
+<img src="site/assets/shot-envs.png" alt="The dashboard drilled into the payments product: five environment circles around the hub, prod nearest with 24 hosts, then stage, qa, dev and perf stepping outward, with the hub reading Back to the fleet" width="820">
+
+<sub>Click a product for its environments. The hub is the way back, and says
+where back is.</sub>
+
+<img src="site/assets/shot-hosts.png" alt="The dashboard drilled into payments prod: 24 host circles around the hub, each sized by its instance type with 8xl, 4xl, 2xl, xl, lg or md written inside, two of them grey and labelled api-1 stopped and api-6 stopped" width="820">
+
+<sub>Then the hosts inside one. The circles are sized by the machine, not by the
+count.</sub>
+
+</div>
+
+#### The host record
+
+Open a host and the Insights tab becomes everything `DescribeInstances` said
+about that one instance: state, launch time, instance type with its vCPUs and
+architecture, instance id, availability zone, VPC, subnet, private and public
+addresses, private DNS, hostname tag, AMI, key pair, IAM instance profile,
+security groups, spot or scheduled lifecycle, monitoring, root device, its
+autoscaling group or that it does not have one, the ssh alias Hangar generated
+for it, and every tag it carries.
+
+<div align="center">
+
+<img src="site/assets/shot-host.png" alt="The host record for payments-prod-web-2: state, launch time, instance type, id, zone, VPC, subnet, addresses, AMI, key pair, IAM profile, security groups, monitoring, root device, autoscaling group and ssh alias, with all seven tags listed below, under a Back to payments prod button" width="820">
+
+</div>
+
+#### Insights
+
+The four panels, computed in `HangarCore` and tested there:
 
 - **Tag hygiene.** Hosts missing the tags your mapping points at, hosts with no
   hostname tag, and aliases two instances would share.
@@ -175,10 +241,14 @@ already has, so it costs no extra call and no extra IAM permission:
 - **Change and exposure.** The host count against the last refresh, from a short
   history kept beside the cache, and how many hosts hold a public address.
 
-Above them the fleet is drawn as a cluster: a node per product and environment,
-every host a particle around it, colour by state. It settles and then holds
-still, and it is skipped entirely when the system asks for reduced motion. The
-panels below say the same things in words.
+<div align="center">
+
+<img src="site/assets/shot-insights.png" alt="The Insights tab: tag hygiene reporting five hosts with no hostname tag, placement reporting eight single-zone groups and 34 hosts outside an autoscaling group, uptime buckets with the burstable and previous-generation families called out, and a change and exposure panel" width="820">
+
+</div>
+
+Nothing here is advice. Hangar does not know why a `t3.micro` is in production,
+so it reports the count and stops.
 
 ### Logs
 
@@ -243,6 +313,31 @@ would beat every generated entry. Hangar connects fine without it; only the
 `ssh payments-prod-web-1` shorthand needs it.
 
 ## Discovery
+
+### The only permission Hangar needs
+
+**`ec2:DescribeInstances`, and nothing else.** One read-only call per refresh,
+against the region in your profile. Hangar does not create, modify, tag,
+terminate or stop anything, and it asks for nothing beyond that one action. The
+menubar list, the ssh aliases, the fleet dashboard and every number on it are all
+read out of that single response.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "ec2:DescribeInstances", "Resource": "*" }
+  ]
+}
+```
+
+`Resource: "*"` is not a choice Hangar makes: `ec2:DescribeInstances` does not
+support resource-level permissions, so AWS accepts no narrower resource for it.
+Narrow it with a condition key if your account uses them.
+
+If the profile you point Hangar at assumes a role, the `sts:AssumeRole` for that
+is your own configuration, and an SSO profile exchanges its cached token the way
+the AWS CLI does. Neither is an extra permission on the fleet.
 
 Hangar calls `ec2:DescribeInstances` once and caches the result locally. Hosts are
 grouped and named from four ideas:
