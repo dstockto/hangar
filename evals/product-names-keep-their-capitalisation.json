@@ -1,0 +1,7 @@
+{
+  "id": "product-names-keep-their-capitalisation",
+  "promise": "A name that came from a tag or from the user's config is never uppercased for display.",
+  "why": "A product genuinely named macOS rendered as MACOS. Capitalisation can be part of a name, and the app kept doing this after the landing page stopped.",
+  "command": "! grep -rnE '(product|name|alias|title|hostname|value)\\.uppercased\\(\\)' app/Sources/Hangar/Rows.swift app/Sources/Hangar/Panel.swift app/Sources/Hangar/ClusterView.swift",
+  "expect": "exit 0"
+}

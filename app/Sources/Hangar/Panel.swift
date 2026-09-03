@@ -254,7 +254,9 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
     func show(filter: [String: String], title: String) {
         activeFilter = filter
         pool = store.entries(matching: filter)
-        headerLabel.stringValue = title.uppercased()
+        // The title comes from a hotkey the user named in their own config, so
+        // it keeps the capitalisation they gave it.
+        headerLabel.stringValue = title
         searchField.stringValue = ""
         lastQuery = ""
         applyThemeColors()

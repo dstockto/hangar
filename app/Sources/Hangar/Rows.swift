@@ -30,8 +30,11 @@ final class ProductHeaderView: NSTableCellView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func configure(product: String, count total: Int) {
+        // Not uppercased. This is an EC2 tag value, and a product genuinely
+        // named macOS must not render as MACOS. The tracking and the small
+        // secondary font carry the header look without touching the name.
         name.attributedStringValue = NSAttributedString(
-            string: product.uppercased(),
+            string: product,
             attributes: [.font: Brand.Font.groupHeader,
                          .foregroundColor: Brand.Color.textSecondary,
                          .kern: Brand.Font.groupHeaderTracking])
