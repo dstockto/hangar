@@ -126,6 +126,15 @@ final class VersionCompareTests: XCTestCase {
         XCTAssertFalse(VersionCompare.isNewer("0.9.0", than: "0.10.0"))
     }
 
+    /// The boundary this project actually crossed: leaving the 0.0.x line for
+    /// 0.1.0 while a 0.0.10 existed. Sorted as text, "0.1.0" is the smaller
+    /// string, and everyone on 0.0.10 would have been stranded there.
+    func testAMinorBumpOutranksATwoDigitPatch() {
+        XCTAssertTrue(VersionCompare.isNewer("0.1.0", than: "0.0.10"))
+        XCTAssertFalse(VersionCompare.isNewer("0.0.10", than: "0.1.0"))
+        XCTAssertTrue(VersionCompare.isNewer("0.0.10", than: "0.0.9"))
+    }
+
     func testEqualVersionsAreNotNewer() {
         XCTAssertFalse(VersionCompare.isNewer("1.2.3", than: "1.2.3"))
     }
