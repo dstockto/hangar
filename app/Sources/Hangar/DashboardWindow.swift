@@ -19,6 +19,9 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     private var sidebar: NSStackView!
     private var cards: NSStackView!
     private var observers: [AnyCancellable] = []
+    /// Which host the panels are currently showing, so opening a different one
+    /// is told apart from a refresh landing while one is already open.
+    private var openHostID: String?
 
     private static let frameName = "HangarDashboardWindow"
 
@@ -66,7 +69,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         // describe whatever the picture is currently showing.
         cluster.aliasProvider = { [weak self] host in self?.store.alias(for: host) }
         cluster.onFocusChange = { [weak self] hosts, focus in
-            Task { @MainActor in self?.renderPanels(for: hosts, focus: focus) }
+            Task { @MainActor in self?.focusChanged(hosts, focus) }
         }
 
         panels = NSStackView()
@@ -195,6 +198,19 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         // fleet for as long as it took that callback to land.
         cluster.show(store.instances, groupBy: store.config.groupingKeys,
                      region: store.region)
+    }
+
+    /// Opening a host is the last click down, and what it opens is the record,
+    /// which is on the other tab. Following the click there is the point of it.
+    /// Only on the way in: stepping back out leaves you where you are reading,
+    /// and the way back out is on this tab too.
+    private func focusChanged(_ hosts: [Instance], _ focus: ClusterFocus) {
+        if let opened = focus.hostID, opened != openHostID, tabs.selectedSegment != 1 {
+            tabs.selectedSegment = 1
+            switchTab()
+        }
+        openHostID = focus.hostID
+        renderPanels(for: hosts, focus: focus)
     }
 
     private func renderPanels(for hosts: [Instance], focus: ClusterFocus) {
