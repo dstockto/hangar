@@ -47,10 +47,18 @@ The cluster shows exactly one level, chosen by the focus.
    `InstanceType.sizeWeight`, with the short size drawn inside it: `8xl`, `lg`,
    `md`. Colour is state. The label under each circle is the host's leaf name.
 
-Colour follows what the circle is: a group takes its product's category hue, a
-host takes its state, and the particles beside a group take theirs. None of it is
-load bearing. The count is inside every group circle, the name is on it or one
-hover away, and the panels say the same things in words.
+Colour follows what the circle is: a group takes its category hue, a host takes
+its state, and the particles beside a group take theirs. None of it is load
+bearing. The count is inside every group circle, a host that is not running says
+so in its own label, and the panels say the same things in words.
+
+**Categories and state do not share the wheel.** `CategoryHue` confines every
+group colour to the arc from 178 to 330 degrees, teal through blue and violet to
+magenta, in ten steps. Red, amber and green belong to terminated, pending and
+running, with a guard band either side, and a product circle drawn in the
+terminated red reads as a fleet on fire rather than as a category. The arc and
+the reserved bands are both in the core, and a test asserts that no slot in the
+arc lands in a reserved band, rather than asserting the ten colours themselves.
 
 `sizeWeight` is derived from the size suffix alone, which is all
 `DescribeInstances` gives without a second API: `large` is 4, an `n`xlarge is
@@ -61,10 +69,12 @@ sits at 3 so an unfamiliar family neither dominates the picture nor vanishes.
 
 Three ways, all the same operation, so there is one implementation:
 
-- **The hub.** Clicking the circle in the middle steps out one level. Its label
-  says where that is: `payments · prod · back`, or the region at the fleet.
-- **The hub as an accessibility button**, titled "Back to payments · prod", so
-  the picture is navigable without a mouse and testable without clicking pixels.
+- **The hub.** Clicking the circle in the middle steps out one level, and it is
+  labelled with where that is: "Back to payments · prod", or the region at the
+  fleet, where there is nothing to step out to.
+- **The hub as an accessibility button**, with the same title, from the same
+  function, so what is drawn and what is spoken cannot drift apart. It also makes
+  the drill testable by pressing elements rather than by clicking pixels.
 - **A button at the top of the Insights tab**, present whenever the focus is not
   the whole fleet, titled the same way. The Insights tab does not show the hub,
   and a screen with no exit on it is a trap. This is the fix for the question in
@@ -73,6 +83,19 @@ Three ways, all the same operation, so there is one implementation:
 Refreshing while drilled keeps the focus, unless what was open is no longer in
 the fleet, in which case the view falls back to the whole fleet rather than
 showing an empty ring.
+
+## Without a mouse
+
+The circles were reachable by mouse and, through the accessibility tree, by
+VoiceOver. A sighted keyboard user had neither. The view is now a first
+responder: <kbd>←</kbd> and <kbd>→</kbd> move around the ring in the order the
+circles sit in, <kbd>Return</kbd> opens the selected one, and <kbd>esc</kbd>
+steps out, which is the same move the hub makes. Nothing is selected until the
+first arrow, because a focus ring drawn before anyone has pressed a key is noise,
+and the ring is drawn outside the circle so focus is not just a brighter fill.
+
+Clicking a circle also takes the keyboard, so the arrows carry on from where the
+mouse left off rather than from wherever they were last.
 
 ## The window
 
@@ -103,6 +126,12 @@ one you need is always the one a summary dropped.
 Each field is shown only when the response carried it. Nothing is inferred and
 nothing is fetched.
 
+Four of those rows are **led**: state, instance type, private address and the ssh
+alias. They carry the label's weight and the foreground colour, and the rest of
+the column reads as reference. Eighteen rows at one weight and one colour is a
+list to be searched rather than read, and the rows someone opened a host to get
+should not sit at the same level as the root device type.
+
 ## The notice card
 
 A notice is sized from its text column plus its padding, both constants, rather
@@ -117,7 +146,8 @@ column is at most 300 points and at least 210, the padding is 26 horizontal and
 leaving one level at a time down to the floor, that the levels come from the
 configured keys rather than the defaults, and that `backDestination` names the
 right place at every depth. `InstanceTypeTests` covers `sizeWeight` and
-`shortSize` including a malformed type string.
+`shortSize` including a malformed type string. `CategoryHueTests` covers the arc,
+and asserts that no slot in it lands on a colour state owns.
 
 The window itself is proven by driving it: every circle and the hub are
 accessibility buttons, so the drill is exercised by pressing elements rather

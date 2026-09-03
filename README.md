@@ -188,6 +188,9 @@ tag keys in `group_by`. One click goes in. The hub in the middle goes back out
 and is labelled with where back is; on the Insights tab, where the hub is not on
 screen, the same step out sits at the top of the column as a button.
 
+It works without a mouse. <kbd>←</kbd> <kbd>→</kbd> move around the ring,
+<kbd>Return</kbd> opens what is selected, and <kbd>esc</kbd> steps back out.
+
 1. **Products.** A circle per product around the EC2 hub, area tracking the host
    count, so a group twice the size looks twice the size.
 2. **Environments.** Production sits nearest the hub and each tier steps outward,
@@ -196,6 +199,10 @@ screen, the same step out sits at the top of the column as a button.
 3. **Hosts.** One circle per instance, **sized by its instance type** with the
    short size written inside it, `8xl`, `2xl`, `lg`. Colour is state, and a host
    that is not running says so in its label rather than relying on the colour.
+
+Product and environment circles are coloured from a band of the wheel running
+teal to magenta. Red, amber and green are reserved for instance state, so a
+product is never drawn in the colour that means terminated.
 
 <div align="center">
 
@@ -497,6 +504,10 @@ survive it.
 | <kbd>⌘</kbd><kbd>R</kbd> | refresh the fleet |
 | <kbd>↑</kbd> <kbd>↓</kbd> | move selection |
 | <kbd>⌘</kbd>-click | edit a host's ssh user or key |
+| <kbd>⌘</kbd><kbd>D</kbd> | open the fleet dashboard |
+| <kbd>←</kbd> <kbd>→</kbd> | in the dashboard, move around the ring |
+| <kbd>Return</kbd> | in the dashboard, open the selected circle |
+| <kbd>esc</kbd> | in the dashboard, step back out a level |
 | <kbd>esc</kbd> / <kbd>⌘</kbd><kbd>Q</kbd> | close the panel, leaving Hangar running |
 
 ## Architecture
