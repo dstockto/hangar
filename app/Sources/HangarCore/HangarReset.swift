@@ -38,12 +38,17 @@ public enum HangarReset {
             return cache + [
                 HangarConfig.path,
                 HangarConfig.onboardedMarkerPath,
+                HangarConfig.loginProbedMarkerPath,
                 // The log describes the install that is being thrown away.
                 HangarConfig.logDirectory,
                 // Hangar's own generated file. The Include line in the user's
                 // ~/.ssh/config stays: that file is theirs, and the line is
                 // harmless pointing at nothing.
                 HangarConfig.sshIncludePath,
+                // Public keys materialized from an agent. The config that named
+                // them is going, so leaving these behind orphans them, and a
+                // reset that leaves state behind is not a reset.
+                KeySource.keyDirectory,
             ]
         }
     }

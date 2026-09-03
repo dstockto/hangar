@@ -57,3 +57,5 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0022 | A window closes rather than quitting | Shipped |
 | 0023 | A key you never have to name | Shipped |
 | 0024 | More than one way to find a host | Shipped |
+| 0025 | A wider door, not a different house | Shipped |
+| 0026 | Three things the first real install found | Shipped |

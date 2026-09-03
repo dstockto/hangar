@@ -447,8 +447,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         // Detected here rather than on the refresh timer: it runs a process, and
         // a fleet refreshing every half hour is no reason to keep poking at
         // somebody's vault.
-        store.detectAgents()
         adoptTheOnlyKeyIfUnset()
+        store.detectAgents()
         checks.append(Preflight.keyCheck(agents: store.agents,
                                          keyFiles: KeySource.detectKeyFiles(),
                                          settings: store.config.ssh))
@@ -502,13 +502,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     /// user who has expressed no preference, is not a question worth asking.
     /// Anything else waits for a click.
     private func adoptTheOnlyKeyIfUnset() {
-        guard !store.hasKeyPreference,
-              let agent = store.agents.first(where: { $0.keys.count == 1 }),
-              let key = agent.keys.first else { return }
-        guard store.adopt(agent: agent, key: key) != nil else { return }
-        Notifier.show(title: "Using your \(agent.name) key",
-                      body: "\(key.title). The private key stays in the vault.",
-                      seconds: 4)
+        guard let adopted = store.adoptAgentKeyIfUnset() else { return }
+        Notifier.show(title: "Using the ssh key from your agent",
+                      body: adopted, seconds: 4)
     }
 
     /// Where the hosts came from, and which key gets used. Every row is something

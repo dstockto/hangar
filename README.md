@@ -627,6 +627,28 @@ letting your agent offer its own.
 `sources.ssm: null` means "only when EC2 is denied". Set it to `true` to always
 ask, or `false` to never.
 
+### The ssh login
+
+Hangar ships **no** login. Saying nothing lets `ssh` do what it already does, and
+it means Hangar cannot outrank a `Host * / User ec2-user` you wrote yourself,
+which matters because Hangar's `Include` sits at the top of `~/.ssh/config` and
+`ssh_config` is first-value-wins.
+
+Once, on the first launch with a fleet, it works out the login by asking **one**
+host and records the answer in `~/.hangar/config.json`. The bounds are the point:
+
+- one running host, never the fleet, never a Windows host, never a host imported
+  from your own config
+- at most six logins tried, not the full candidate list, because a dozen failed
+  authentications against one host is what trips `fail2ban`
+- the platform first. `DescribeInstances` already told Hangar whether the image is
+  Ubuntu, Red Hat, SUSE or Debian, which usually turns six attempts into one
+- once per machine, behind `~/.hangar/.login-probed`, written before the attempt
+  so a probe that dies does not come back
+
+Set `ssh.user` yourself and no probe ever runs. <kbd>⌘</kbd>-click a host to
+change it for one host or a whole group.
+
 ### 1Password, and any other ssh agent
 
 If 1Password's ssh agent is running, Hangar finds it and uses it. There is

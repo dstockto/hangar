@@ -53,6 +53,8 @@ final class FleetStore: ObservableObject {
     /// demand rather than on every refresh: it runs a process, and the fleet
     /// refreshing on a timer is not a reason to poke at someone's vault.
     @Published private(set) var agents: [SSHAgent] = []
+    /// So the launch check and the setup screen do not both run ssh-add.
+    private var hasCheckedAgents = false
 
     /// Search-ready fleet, rebuilt only when the fleet or config changes.
     /// Everything the panel needs per keystroke is precomputed here.
@@ -669,6 +671,7 @@ final class FleetStore: ObservableObject {
     /// the refresh timer: a fleet refreshing every half hour is not a reason to
     /// keep poking at someone's vault.
     func detectAgents() {
+        hasCheckedAgents = true
         agents = KeySource.detectAgents()
         for agent in agents {
             Log.info(.ssh, "ssh agent found",
@@ -680,6 +683,73 @@ final class FleetStore: ObservableObject {
     /// which it is allowed to form one on the user's behalf.
     var hasKeyPreference: Bool {
         config.ssh?.identityAgent?.isEmpty == false || config.ssh?.identityFile?.isEmpty == false
+    }
+
+    /// Adopts the only key there is, once, when the user has expressed no
+    /// preference. Returns what to tell them, or nil when nothing was done.
+    ///
+    /// This used to live in the setup window, which opens on first run only, so
+    /// everyone upgrading from an earlier version kept the old behaviour until
+    /// they happened to open Setup Check. A feature nobody can find is not a
+    /// feature. It still runs at most once per launch, because it starts a
+    /// process and a fleet refreshing on a timer is no reason to keep poking at
+    /// somebody's vault.
+    func adoptAgentKeyIfUnset() -> String? {
+        guard !hasKeyPreference, !hasCheckedAgents else { return nil }
+        hasCheckedAgents = true
+        detectAgents()
+        guard let agent = agents.first(where: { $0.keys.count == 1 }),
+              let key = agent.keys.first,
+              adopt(agent: agent, key: key) != nil else { return nil }
+        return "\(key.title). The private key stays in \(agent.name)."
+    }
+
+    // MARK: - Learning the login
+
+    /// Works out the ssh login once, by asking one host, and records it.
+    ///
+    /// Only when the user has not chosen a login, only against a single running
+    /// host, only up to `SSHLogin.probeLimit` attempts, and only once per machine.
+    /// Every one of those bounds is deliberate: this is an unprompted outbound
+    /// authentication attempt, and a fleet-wide or repeating version of it is how
+    /// you get an SRE's laptop banned by their own fail2ban.
+    func learnLoginIfUnset() async -> String? {
+        guard (config.ssh?.user ?? "").isEmpty,
+              !FileManager.default.fileExists(atPath: HangarConfig.loginProbedMarkerPath),
+              let host = SSHLogin.probeCandidate(from: instances) else { return nil }
+        // Written before the attempt, not after. A probe that crashes or is
+        // killed must not come back on the next launch.
+        PrivateFile.write(Data(), to: HangarConfig.loginProbedMarkerPath)
+
+        let target = alias(for: host) ?? host.host ?? host.id
+        let order = SSHLogin.probeOrder(platform: host.platform,
+                                        effective: config.ssh?.user)
+        Log.info(.ssh, "learning the ssh login",
+                 ["host": Redact.host(target), "tries": "\(order.count)"])
+
+        let found = await Task.detached(priority: .utility) { () -> String? in
+            for login in order {
+                let result = FleetStore.testConnection(host: target, user: login,
+                                                       identityFile: nil)
+                if result.ok { return login }
+            }
+            return nil
+        }.value
+
+        guard let found else {
+            Log.info(.ssh, "no login authenticated; leaving it to ssh")
+            return nil
+        }
+        var updated = config
+        var ssh = updated.ssh ?? HangarConfig.SSHSettings()
+        ssh.user = found
+        updated.ssh = ssh
+        guard (try? HangarConfig.write(updated)) != nil else { return nil }
+        config = updated
+        rebuildIndex()
+        syncSSHConfig(announce: false)
+        Log.info(.ssh, "ssh login learned", ["user": found])
+        return found
     }
 
     /// Pins one agent key for every host. The public half is written under

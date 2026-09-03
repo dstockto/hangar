@@ -199,6 +199,13 @@ public struct HangarConfig: Codable, Sendable {
     public static var logPath: String {
         (logDirectory as NSString).appendingPathComponent("hangar.log")
     }
+    /// Written once the login probe has run, so it runs once on a machine and
+    /// never again. An unprompted authentication attempt is the kind of thing
+    /// that must not repeat on a timer.
+    public static var loginProbedMarkerPath: String {
+        (home as NSString).appendingPathComponent(".login-probed")
+    }
+
     public static var onboardedMarkerPath: String {
         (home as NSString).appendingPathComponent(".setup-complete")
     }
@@ -234,7 +241,13 @@ public struct HangarConfig: Codable, Sendable {
         HangarConfig(
             profile: nil, region: nil, terminal: "iterm",
             ssh: SSHSettings(
-                user: NSUserName(),
+                // No login unless the user picks one. Writing the macOS account
+                // name was a guess, and because Hangar's Include sits at the top
+                // of ~/.ssh/config and ssh_config is first-value-wins, that guess
+                // outranked a `Host * / User ec2-user` the user had written
+                // themselves. Saying nothing lets ssh do what it already does,
+                // which is the same rule the key follows.
+                user: nil,
                 identityFile: nil,
                 knownHostsFile: "~/.ssh/known_hosts.ec2",
                 strictHostKeyChecking: "accept-new",

@@ -72,6 +72,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if case .failed(let message) = store.status {
                 Notifier.show(title: "Hangar could not reach AWS", body: message, seconds: 5)
             }
+            // After the fleet, so the ssh config it may rewrite is written once.
+            if let adopted = store.adoptAgentKeyIfUnset() {
+                Notifier.show(title: "Using the ssh key from your agent",
+                              body: adopted, seconds: 5)
+            }
+            // After the key, because the probe should use it.
+            if let login = await store.learnLoginIfUnset() {
+                Notifier.show(title: "Learned your ssh login",
+                              body: "Hosts connect as \(login). Change it in the "
+                                  + "host editor, or in ~/.hangar/config.json.",
+                              seconds: 5)
+            }
         }
     }
 

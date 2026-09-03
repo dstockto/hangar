@@ -179,7 +179,16 @@ Kept because each one cost real debugging and would be easy to reintroduce.
 23. **An empty string sorts first.** Untagged hosts opened the panel, above
     everything tagged. Survivable while untagged meant a few forgotten EC2 boxes,
     not once a source existed that produces them by the handful.
-24. **Three numbers for one fleet.** The sources card summed its rows, the tag
+24. **A default that outranked the user.** `HangarConfig.standard()` wrote
+    `User <macOS account>` on every host, and because Hangar's `Include` sits at
+    the top of `~/.ssh/config` and ssh_config is first-value-wins, that guess beat
+    a `Host * / User ec2-user` the user had written themselves. Hangar now ships
+    no login and learns one by asking a single host, once. Anything Hangar asserts
+    in that file beats the user's own config, so it must only assert what it knows.
+25. **A feature only the first run could reach.** Adopting the agent's key ran
+    inside the setup window's checks, and that window opens on launch only before
+    onboarding completes. Fresh installs got it; every upgrade did not.
+26. **Three numbers for one fleet.** The sources card summed its rows, the tag
     check counted the merged fleet, and the alias check quoted the fleet size for
     a file that does not hold every host. 225, 225 and 223 for the same question.
     A number on screen has to name the set it counted.

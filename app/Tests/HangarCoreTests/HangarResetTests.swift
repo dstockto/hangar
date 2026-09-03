@@ -31,10 +31,14 @@ final class HangarResetTests: XCTestCase {
         let paths = HangarReset.paths(for: .everything)
         for expected in [HangarConfig.cachePath, UpdateSchedule.stampPath,
                          HangarConfig.path, HangarConfig.onboardedMarkerPath,
-                         HangarConfig.logDirectory, HangarConfig.sshIncludePath] {
+                         HangarConfig.logDirectory, HangarConfig.sshIncludePath,
+                         HangarConfig.loginProbedMarkerPath,
+                         // The config that named these is going with them, so
+                         // leaving them behind orphans an IdentityFile.
+                         KeySource.keyDirectory] {
             XCTAssertTrue(paths.contains(expected), "missing \(expected)")
         }
-        XCTAssertEqual(paths.count, 6)
+        XCTAssertEqual(paths.count, 8)
     }
 
     func testNeitherScopeTouchesAnythingHangarDoesNotOwn() {

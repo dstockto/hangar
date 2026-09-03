@@ -44,12 +44,29 @@ final class SSHConfigWriterTests: TemporaryDirectoryTestCase {
 
     func testDefaultRendering() {
         let text = writer.render(instances: [asgA, asgB, solo], region: "us-west-2")
-        XCTAssertTrue(text.contains("User \(NSUserName())"))
+        // No User by default. Hangar's Include sits at the top of ~/.ssh/config
+        // and ssh_config is first-value-wins, so writing the macOS account name
+        // outranked a `Host * / User ec2-user` the user had written themselves.
+        XCTAssertFalse(text.contains("User "), "no login is guessed")
         XCTAssertFalse(text.contains("IdentityFile"), "no key is pinned by default")
         XCTAssertFalse(text.contains("IdentitiesOnly"), "so agent keys are not shut out")
         XCTAssertTrue(text.contains("UserKnownHostsFile ~/.ssh/known_hosts.ec2"))
         XCTAssertTrue(text.contains("# hangar product=payments env=prod"))
         XCTAssertTrue(text.contains("HostName i-aaa.xfer.prod.example.com"))
+    }
+
+    /// A login the user actually chose is still written, on every host.
+    func testAChosenLoginIsStillWritten() {
+        var config = HangarConfig.standard()
+        config.ssh?.user = "ec2-user"
+        let text = SSHConfigWriter(config: config)
+            .render(instances: [solo], region: "us-west-2")
+        XCTAssertTrue(text.contains("User ec2-user"))
+    }
+
+    /// The starter config must not ship a guess, or every new install writes one.
+    func testTheStarterConfigNamesNoLogin() {
+        XCTAssertNil(HangarConfig.standard().ssh?.user)
     }
 
     func testOverridesApplyOnlyWhereTheyMatch() {
