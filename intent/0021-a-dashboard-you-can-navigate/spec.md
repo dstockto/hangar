@@ -98,12 +98,22 @@ the last resort is clamped back into view rather than dropped.
 How many groups are named comes from the label's own size rather than a fixed
 number of points, so making the type bigger does not quietly pack more of it in.
 
+## Following the last click
+
+Opening a host is the last click down, and what it opens is the record, which
+lives on the Insights tab. The window follows it there. Only on the way in:
+stepping back out leaves you where you are reading, and the way out is on that
+tab too.
+
 ## Getting back out
 
 Three ways, all the same operation, so there is one implementation:
 
-- **The hub.** Clicking the circle in the middle steps out one level, and it is
-  labelled with where that is: "Back to payments · prod", or the region at the
+- **The hub**, which looks like a control when it is one: below the fleet it
+  gains a ring around it, brightening under the pointer, and the cursor becomes
+  a pointing hand over it and over every circle. The words underneath were the
+  only sign before, and only if you read them. Clicking it steps out one level,
+  and it is labelled with where that is: "Back to payments · prod", or the region at the
   fleet, where there is nothing to step out to.
 - **The hub as an accessibility button**, with the same title, from the same
   function, so what is drawn and what is spoken cannot drift apart. It also makes

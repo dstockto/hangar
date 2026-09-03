@@ -80,6 +80,9 @@ final class ClusterView: NSView {
     private var entrance: CGFloat = 1
     private var ringRadius: CGFloat = 0
     private var hovered: Int?
+    /// The hub answers to the pointer too, because it is a control: below the
+    /// fleet it is the way out, and nothing said so but the words under it.
+    private var hubHovered = false
     /// What the keyboard is on. Independent of `hovered`, which is the mouse.
     private var selected: Int?
     /// Either of them: what gets the brighter circle and a guaranteed label.
@@ -343,6 +346,9 @@ final class ClusterView: NSView {
             angle += slice
         }
         ringRadius = outer
+        // The circles moved, so the rects that say "this is clickable" have to
+        // move with them.
+        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
 
@@ -527,10 +533,22 @@ final class ClusterView: NSView {
         // The hub, drawn over the spokes and under the labels.
         let hubRect = CGRect(x: centre.x - hubRadius, y: centre.y - hubRadius,
                              width: hubRadius * 2, height: hubRadius * 2)
-        context.setFillColor(Brand.Color.panel.cgColor)
+        // At the fleet the hub is a label. Below it, it is the way out, and it
+        // says so: a second ring around it, brighter under the pointer. The
+        // words underneath were the only sign before, and only if you read them.
+        let canStepOut = focus.backDestination != nil
+        if canStepOut {
+            context.setStrokeColor(Brand.Color.accent
+                .withAlphaComponent(hubHovered ? 0.55 : 0.3).cgColor)
+            context.setLineWidth(hubHovered ? 3 : 2)
+            context.strokeEllipse(in: hubRect.insetBy(dx: -7, dy: -7))
+        }
+        context.setFillColor((hubHovered ? Brand.Color.surfaceRaised
+                                         : Brand.Color.panel).cgColor)
         context.fillEllipse(in: hubRect)
-        context.setStrokeColor(Brand.Color.accent.withAlphaComponent(0.75).cgColor)
-        context.setLineWidth(1.5)
+        context.setStrokeColor(Brand.Color.accent
+            .withAlphaComponent(canStepOut ? (hubHovered ? 1 : 0.9) : 0.75).cgColor)
+        context.setLineWidth(canStepOut ? 2 : 1.5)
         context.strokeEllipse(in: hubRect)
 
         let total = "\(hubTotal)"
@@ -694,6 +712,11 @@ final class ClusterView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        let overHub = focus.backDestination != nil && isOnHub(point)
+        if overHub != hubHovered {
+            hubHovered = overHub
+            needsDisplay = true
+        }
         let found = nodes.firstIndex { node in
             let drawn = drawPosition(node)
             return hypot(drawn.x - point.x, drawn.y - point.y) <= node.drawRadius + 8
@@ -760,13 +783,16 @@ final class ClusterView: NSView {
         needsDisplay = true
     }
 
+    private func isOnHub(_ point: CGPoint) -> Bool {
+        hypot(point.x - bounds.midX, point.y - bounds.midY) <= ClusterView.hubRadius + 2
+    }
+
     override func mouseDown(with event: NSEvent) {
         // So the arrows carry on from wherever the mouse just was, rather than
         // from whatever the keyboard was last on.
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
-        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        if hypot(point.x - centre.x, point.y - centre.y) <= 42 {
+        if isOnHub(point) {
             stepOut()
             return
         }
@@ -781,9 +807,28 @@ final class ClusterView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        hubHovered = false
         hovered = nil
         toolTip = nil
         needsDisplay = true
+    }
+
+    /// The pointer says what is clickable before anything is clicked, which is
+    /// the cheapest affordance there is.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        for node in nodes {
+            let drawn = drawPosition(node)
+            addCursorRect(CGRect(x: drawn.x - node.drawRadius, y: drawn.y - node.drawRadius,
+                                 width: node.drawRadius * 2, height: node.drawRadius * 2),
+                          cursor: .pointingHand)
+        }
+        guard focus.backDestination != nil else { return }
+        addCursorRect(CGRect(x: bounds.midX - ClusterView.hubRadius,
+                             y: bounds.midY - ClusterView.hubRadius,
+                             width: ClusterView.hubRadius * 2,
+                             height: ClusterView.hubRadius * 2),
+                      cursor: .pointingHand)
     }
 
     // MARK: - Accessibility
