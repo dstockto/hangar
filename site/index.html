@@ -29,6 +29,92 @@
 <link rel="shortcut icon" type="image/png" href="assets/hangar-icon.png">
 <link rel="apple-touch-icon" href="assets/hangar-icon.png">
 <link rel="stylesheet" href="styles.css">
+
+<!-- Structured data. Inline JSON-LD rather than a fetch, so it costs no request
+     and cannot break the no-external-origins promise. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://goriparthi.github.io/hangar/#app",
+      "name": "Hangar",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "SSH client launcher",
+      "operatingSystem": "macOS 14 or newer",
+      "url": "https://goriparthi.github.io/hangar/",
+      "downloadUrl": "https://github.com/goriparthi/hangar/releases/latest",
+      "softwareVersion": "0.2.1",
+      "license": "https://github.com/goriparthi/hangar/blob/main/LICENSE",
+      "image": "https://goriparthi.github.io/hangar/assets/og.png",
+      "description": "A native macOS launcher for every host you can ssh to. Reads the hosts already in your ssh config, imports a CSV, and turns changing EC2 instances into stable, searchable SSH aliases. Press Command-Shift-H, type a few characters, and connect.",
+      "featureList": [
+        "Fuzzy search across thousands of SSH hosts",
+        "Imports hosts from ~/.ssh/config without rewriting it",
+        "Imports hosts from a CSV",
+        "Generates stable ssh_config aliases from EC2 instance tags",
+        "Falls back to AWS Systems Manager when EC2 access is denied",
+        "Uses the ssh key held by 1Password, Secretive or any ssh agent",
+        "Global keyboard shortcut from any application",
+        "Fleet dashboard from a single read-only AWS call"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": { "@id": "https://github.com/goriparthi#person" },
+      "isAccessibleForFree": true
+    },
+    {
+      "@type": "Person",
+      "@id": "https://github.com/goriparthi#person",
+      "name": "Prashanth Goriparthi",
+      "url": "https://github.com/goriparthi",
+      "description": "Engineer working on large production infrastructure."
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://goriparthi.github.io/hangar/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does Hangar need AWS access?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Hangar reads the hosts already in your ~/.ssh/config and imports a CSV, both of which work with no AWS account at all. An AWS fleet adds aliases built from instance tags, which needs one read-only ec2:DescribeInstances call."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Hangar change my ssh config?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It owns one file, ~/.ssh/config.d/hangar, and adds a single Include line to ~/.ssh/config. Hosts imported from your own config are never rewritten, because they already resolve."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Hangar read my private SSH key?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. If an ssh agent such as 1Password is holding your key, Hangar asks the agent what public keys it has, the same way ssh does. It never reads, exports or stores a private key."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is anything uploaded?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. There is no Hangar server, no account and no telemetry. It talks to AWS and to GitHub for update checks, and nowhere else."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -44,13 +130,13 @@
     </a>
 
     <ul class="nav-links" id="nav-links">
-      <li><a href="#product">Product</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#sources">Sources</a></li>
+      <li><a href="#key">Your key</a></li>
       <li><a href="#how">How it works</a></li>
       <li><a href="#dashboard">Dashboard</a></li>
       <li><a href="#security">Security</a></li>
-      <li><a href="#sources">Sources</a></li>
-      <li><a href="#key">Your key</a></li>
-      <li><a href="#install">Install</a></li>
+      <li><a href="#why">Why</a></li>
       <li><a href="#docs">Documentation</a></li>
       <li><a class="nav-gh" href="https://github.com/goriparthi/hangar">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
@@ -70,13 +156,13 @@
 <div class="sheet" id="sheet" data-open="false">
   <div class="wrap">
     <ul>
-      <li><a href="#product">Product</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#sources">Sources</a></li>
+      <li><a href="#key">Your key</a></li>
       <li><a href="#how">How it works</a></li>
       <li><a href="#dashboard">Dashboard</a></li>
       <li><a href="#security">Security</a></li>
-      <li><a href="#sources">Sources</a></li>
-      <li><a href="#key">Your key</a></li>
-      <li><a href="#install">Install</a></li>
+      <li><a href="#why">Why</a></li>
       <li><a href="#docs">Documentation</a></li>
       <li><a href="https://github.com/goriparthi/hangar">GitHub</a></li>
     </ul>
@@ -198,6 +284,55 @@
         <div><dt>Sources</dt><dd>Four, merged</dd></div>
         <div><dt>AWS</dt><dd>Optional</dd></div>
       </dl>
+    </div>
+  </section>
+
+  <!-- ---------------- Install ---------------- -->
+  <section class="band" id="install">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Three steps, no toolchain.</h2>
+        <p class="lede">
+          No Homebrew, no Xcode, no <code>xattr</code> workaround. The app is signed
+          with a Developer ID certificate and notarized by Apple.
+        </p>
+      </div>
+
+      <div class="install">
+        <div class="step">
+          <span class="n">1</span>
+          <h3>Download the DMG</h3>
+          <p>One file, under a megabyte.</p>
+        </div>
+        <div class="step">
+          <span class="n">2</span>
+          <h3>Drag it to Applications and open it</h3>
+          <p>No Gatekeeper warning. A setup check reads your machine and says what
+             works, then Hangar sits in your menu bar.</p>
+        </div>
+        <div class="step">
+          <span class="n">3</span>
+          <h3>Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></h3>
+          <p>Type a few characters, press <kbd>↩</kbd>, and you are on the box.</p>
+        </div>
+      </div>
+
+      <p class="panel-note" style="margin-top:26px">
+        And one step to undo it. <strong>Settings → Uninstall Hangar</strong> removes
+        <code>~/.hangar</code>, the aliases it generated, and the <code>Include</code>
+        line it added to your <code>~/.ssh/config</code>, then moves the app to the
+        Trash. Your AWS credentials and the rest of that file are untouched.
+      </p>
+
+      <p style="margin-top:28px">
+        <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">
+          Download Hangar
+        </a>
+      </p>
+      <p class="hero-fine" style="margin-top:16px">
+        <span>macOS 14 or newer</span> · <span>Apple silicon and Intel</span> ·
+        <span>MIT licensed</span>
+      </p>
     </div>
   </section>
 
@@ -667,51 +802,90 @@ rsync -av ./dist/ payments-prod-web-1:/srv/app/">
     </div>
   </section>
 
-  <!-- ---------------- Install ---------------- -->
-  <section class="band" id="install">
+  <!-- ---------------- Why ---------------- -->
+  <!-- Prose, deliberately. Everything above this is scannable, and a search
+       engine and a person deciding whether to trust a binary both want sentences
+       about why the thing exists and who stands behind it. -->
+  <section class="band" id="why">
     <div class="wrap">
       <div class="section-head">
-        <h2>Three steps, no toolchain.</h2>
-        <p class="lede">
-          No Homebrew, no Xcode, no <code>xattr</code> workaround. The app is signed
-          with a Developer ID certificate and notarized by Apple.
-        </p>
+        <h2>Why Hangar exists.</h2>
       </div>
 
-      <div class="install">
-        <div class="step">
-          <span class="n">1</span>
-          <h3>Download the DMG</h3>
-          <p>One file, under a megabyte.</p>
+      <div class="why">
+        <div class="why-prose">
+          <p class="pull">
+            I wanted to ssh to any host among thousands in under two seconds.
+            That is the entire brief.
+          </p>
+
+          <p>
+            Every fleet I have worked on ends the same way. There are a few
+            hundred machines, then a few thousand. Names stop being memorable.
+            Autoscaling replaces the box you connected to yesterday and the
+            hostname you saved goes with it. So the actual work, the thing you
+            were about to do on that machine, gets prefixed every single time by
+            a lookup: a console tab, a <code>describe-instances</code> and a page
+            of JSON, or a scroll through an ssh config that has been accreting
+            since a job you left years ago.
+          </p>
+
+          <p>
+            None of that is hard. It is just slow, and it happens twenty times a
+            day, and it happens at exactly the moments when something is on fire
+            and you can least afford it. Two seconds is the target because two
+            seconds is short enough that you stop planning around it.
+          </p>
+
+          <h3>Why it is built the way it is</h3>
+
+          <p>
+            The lookup problem is not new, and neither are the tools for it. What
+            they mostly get wrong is asking you to move: import your hosts into a
+            new database, keep a second inventory in step, sign in to something.
+            Hangar writes standard <code>ssh_config</code> and nothing else, so
+            <code>scp</code>, <code>rsync</code>, Ansible and VS Code Remote all
+            get the same aliases for free, and uninstalling it leaves you exactly
+            where you started.
+          </p>
+
+          <p>
+            It reads what is already on your machine, and it holds the aliases to
+            your tags rather than to hostnames, which is what makes them survive
+            an instance being replaced. There is no server to talk to, no account
+            to create, and nothing is uploaded, because a tool that indexes your
+            production estate has no business doing any of those things.
+          </p>
+
+          <h3>Who built it</h3>
+
+          <p>
+            Hangar is written and maintained by
+            <a href="https://github.com/goriparthi" rel="author">Prashanth
+            Goriparthi</a>, an engineer who has spent a long time around
+            large production estates and the people who get paged for them.
+            It started as a personal tool for a personal irritation and is
+            released under the MIT license, in the open, with no company behind
+            it and nothing to sell you.
+          </p>
         </div>
-        <div class="step">
-          <span class="n">2</span>
-          <h3>Drag Hangar to Applications</h3>
-          <p>It opens without a Gatekeeper warning.</p>
-        </div>
-        <div class="step">
-          <span class="n">3</span>
-          <h3>Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></h3>
-          <p>A setup check reads your machine and says what works.</p>
-        </div>
+
+        <aside class="why-card">
+          <h3>At a glance</h3>
+          <dl>
+            <dt>Platform</dt><dd>macOS 14 or newer</dd>
+            <dt>Written in</dt><dd>Swift 6, AppKit</dd>
+            <dt>Dependencies</dt><dd>None</dd>
+            <dt>License</dt><dd>MIT</dd>
+            <dt>Price</dt><dd>Free</dd>
+            <dt>Telemetry</dt><dd>None</dd>
+          </dl>
+          <p style="margin-top:16px">
+            Signed with a Developer ID certificate and notarized by Apple, so it
+            opens without a Gatekeeper warning.
+          </p>
+        </aside>
       </div>
-
-      <p class="panel-note" style="margin-top:26px">
-        And one step to undo it. <strong>Settings → Uninstall Hangar</strong> removes
-        <code>~/.hangar</code>, the aliases it generated, and the <code>Include</code>
-        line it added to your <code>~/.ssh/config</code>, then moves the app to the
-        Trash. Your AWS credentials and the rest of that file are untouched.
-      </p>
-
-      <p style="margin-top:28px">
-        <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">
-          Download Hangar
-        </a>
-      </p>
-      <p class="hero-fine" style="margin-top:16px">
-        <span>macOS 14 or newer</span> · <span>Apple silicon and Intel</span> ·
-        <span>MIT licensed</span>
-      </p>
     </div>
   </section>
 
@@ -765,7 +939,8 @@ rsync -av ./dist/ payments-prod-web-1:/srv/app/">
             <img src="assets/hangar-wordmark-light.svg" width="190" height="43" alt="Hangar">
           </picture>
         </a>
-        <p>Spotlight for your SSH hosts. A native macOS launcher for tagged EC2 fleets.</p>
+        <p>Spotlight for your SSH hosts. Your ssh config, a CSV, or an EC2 fleet,
+           all behind one shortcut.</p>
       </div>
 
       <nav aria-labelledby="f-project">

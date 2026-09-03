@@ -136,11 +136,52 @@ code, kbd, pre { font-family: var(--mono); }
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
+  /* The glow below is absolutely positioned against this. Without it the glow
+     anchors to the viewport and lands in the corner of the page. */
+  position: relative;
 }
 .brand:hover { text-decoration: none; }
-.brand img { width: 154px; height: auto; display: block; }
+.brand img { width: 172px; height: auto; display: block; position: relative; }
 .brand-lg img { width: 190px; }
-@media (max-width: 480px) { .brand img { width: 132px; } }
+@media (max-width: 480px) { .brand img { width: 146px; } }
+
+/* A slow glow behind the mark at the left of the lockup.
+   Behind, not around: the wordmark is supplied geometry and stays untouched, so
+   this is a light source placed under it rather than an edit to the artwork.
+   Sized and positioned against the lockup's own proportions, which put the mark
+   in roughly the leading fifth of its width. */
+.brand::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  /* Centred with a margin rather than a translate, so the keyframes own the
+     transform outright and the two cannot fight. */
+  top: 50%;
+  margin-top: -28px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+              rgba(87, 185, 255, 0.30) 0%,
+              rgba(87, 185, 255, 0.13) 42%,
+              rgba(87, 185, 255, 0) 70%);
+  pointer-events: none;
+  animation: brand-pulse 3.6s ease-in-out infinite;
+}
+.brand-lg::before { left: -12px; width: 62px; height: 62px; margin-top: -31px; }
+@media (max-width: 480px) {
+  .brand::before { left: -8px; width: 48px; height: 48px; margin-top: -24px; }
+}
+
+@keyframes brand-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.94); }
+  50%      { opacity: 1;    transform: scale(1.06); }
+}
+
+/* Motion is the decoration; the glow itself is not, so it stays and stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .brand::before { animation: none; opacity: 0.8; transform: none; }
+}
 
 .nav-links {
   display: flex;
@@ -711,6 +752,37 @@ kbd {
 .feature .demo .ok { color: var(--running); }
 .feature .demo .warn { color: var(--pending); }
 .feature .demo .acc { color: var(--accent); }
+
+/* ---------- Why ---------- */
+
+.why { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+       gap: clamp(24px, 5vw, 64px); align-items: start; }
+@media (max-width: 900px) { .why { grid-template-columns: 1fr; } }
+
+.why-prose p { margin: 0 0 16px; font-size: 16px; line-height: 1.7; }
+.why-prose p:last-child { margin-bottom: 0; }
+.why-prose h3 { margin: 28px 0 10px; font-size: 17px; }
+.why-prose .pull {
+  margin: 0 0 22px;
+  padding-left: 18px;
+  border-left: 2px solid var(--accent);
+  font-size: 19px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.why-card {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  padding: 24px;
+}
+.why-card h3 { margin-bottom: 10px; font-size: 15px; }
+.why-card p { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.why-card p:last-child { margin-bottom: 0; }
+.why-card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; }
+.why-card dt { color: var(--muted); font-size: 13px; }
+.why-card dd { margin: 0; font-size: 13px; font-weight: 550; }
 
 /* ---------- Key flow ---------- */
 

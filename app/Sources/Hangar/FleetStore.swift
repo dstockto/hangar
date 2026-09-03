@@ -714,30 +714,61 @@ final class FleetStore: ObservableObject {
     /// authentication attempt, and a fleet-wide or repeating version of it is how
     /// you get an SRE's laptop banned by their own fail2ban.
     func learnLoginIfUnset() async -> String? {
-        guard (config.ssh?.user ?? "").isEmpty,
-              !FileManager.default.fileExists(atPath: HangarConfig.loginProbedMarkerPath),
-              let host = SSHLogin.probeCandidate(from: instances) else { return nil }
-        // Written before the attempt, not after. A probe that crashes or is
-        // killed must not come back on the next launch.
-        PrivateFile.write(Data(), to: HangarConfig.loginProbedMarkerPath)
+        guard (config.ssh?.user ?? "").isEmpty else { return nil }
+        var state = LoginProbeState.load()
+        guard state.shouldRun else { return nil }
 
-        let target = alias(for: host) ?? host.host ?? host.id
-        let order = SSHLogin.probeOrder(platform: host.platform,
+        // Hosts this machine has connected to before are the only evidence of
+        // reachability available, and on a fleet behind a VPN they are the
+        // difference between a probe that can answer and one that cannot.
+        let known = SSHLogin.knownHostnames(paths: [
+            config.ssh?.knownHostsFile ?? "~/.ssh/known_hosts.ec2",
+            "~/.ssh/known_hosts",
+        ])
+        let hosts = SSHLogin.probeCandidates(from: instances, preferring: known)
+        guard !hosts.isEmpty else { return nil }
+
+        // Counted before the attempt, so a probe that crashes or is killed does
+        // not come back on every launch forever.
+        state.attempts += 1
+        state.save()
+
+        let targets = hosts.map { alias(for: $0) ?? $0.host ?? $0.id }
+        let order = SSHLogin.probeOrder(platform: hosts[0].platform,
                                         effective: config.ssh?.user)
         Log.info(.ssh, "learning the ssh login",
-                 ["host": Redact.host(target), "tries": "\(order.count)"])
+                 ["hosts": "\(targets.count)", "logins": "\(order.count)",
+                  "attempt": "\(state.attempts)"])
 
-        let found = await Task.detached(priority: .utility) { () -> String? in
-            for login in order {
-                let result = FleetStore.testConnection(host: target, user: login,
-                                                       identityFile: nil)
-                if result.ok { return login }
+        let outcome = await Task.detached(priority: .utility) {
+            () -> (login: String?, reached: Bool) in
+            var reached = false
+            for target in targets {
+                for login in order {
+                    let result = FleetStore.testConnection(host: target, user: login,
+                                                           identityFile: nil)
+                    if result.ok { return (login, true) }
+                    // A host that cannot be reached has no opinion about logins,
+                    // so stop asking it and move to the next one.
+                    if SSHLogin.isUnreachable(result.detail) { break }
+                    reached = true
+                }
             }
-            return nil
+            return (nil, reached)
         }.value
 
-        guard let found else {
-            Log.info(.ssh, "no login authenticated; leaving it to ssh")
+        // Only a host that actually answered settles the question. All-unreachable
+        // means try again next launch, which is the whole point of the change.
+        if outcome.reached {
+            state.settled = true
+            state.save()
+        } else {
+            Log.info(.ssh, "no host answered; will try again next launch",
+                     ["attempt": "\(state.attempts)"])
+        }
+
+        guard let found = outcome.login else {
+            if outcome.reached { Log.info(.ssh, "no login authenticated; leaving it to ssh") }
             return nil
         }
         var updated = config

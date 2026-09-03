@@ -49,15 +49,115 @@ public enum SSHLogin {
         return Array(ordered.filter { seen.insert($0).inserted }.prefix(probeLimit))
     }
 
-    /// Whether a fleet is worth probing at all. A Windows-only fleet has no ssh
-    /// login to learn, and a fleet with nothing running has nothing to ask.
-    public static func probeCandidate(from instances: [Instance]) -> Instance? {
-        instances.first {
+    /// How many hosts a probe may ask. More than one because the first may be
+    /// unreachable, few enough that an unreachable fleet costs almost nothing.
+    public static let probeHostLimit = 3
+
+    /// Hosts worth asking, best first.
+    ///
+    /// A host already in `known_hosts` has been connected to from this machine
+    /// before, which is the only evidence available that it is reachable at all.
+    /// Preferring those matters more than it sounds: on a fleet behind a VPN or a
+    /// bastion, most hosts are not reachable right now, and picking merely the
+    /// first *running* one wastes the probe on a host that cannot answer.
+    public static func probeCandidates(from instances: [Instance],
+                                       preferring known: Set<String> = [],
+                                       limit: Int = probeHostLimit) -> [Instance] {
+        let usable = instances.filter {
             $0.state == "running"
                 && !($0.platform ?? "").lowercased().contains("windows")
                 && $0.host != nil
                 && $0.isWrittenToSSHConfig
         }
+        let proven = usable.filter { known.contains(($0.host ?? "").lowercased()) }
+        let rest = usable.filter { !known.contains(($0.host ?? "").lowercased()) }
+        return Array((proven + rest).prefix(limit))
+    }
+
+    /// Hostnames this machine has an ssh host key for.
+    ///
+    /// Hashed entries are skipped rather than guessed at: `HashKnownHosts` stores
+    /// an HMAC, and matching one requires the salt per line, which is more work
+    /// than this hint is worth.
+    public static func knownHostnames(paths: [String]) -> Set<String> {
+        var names = Set<String>()
+        for path in paths {
+            let expanded = NSString(string: path).expandingTildeInPath
+            guard let text = try? String(contentsOfFile: expanded, encoding: .utf8) else {
+                continue
+            }
+            for line in text.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty, !trimmed.hasPrefix("#"),
+                      !trimmed.hasPrefix("|") else { continue }
+                guard let field = trimmed.split(separator: " ").first else { continue }
+                for var name in field.split(separator: ",").map(String.init) {
+                    // `[host]:2222` is how a non-default port is recorded.
+                    if name.hasPrefix("["), let close = name.firstIndex(of: "]") {
+                        name = String(name[name.index(after: name.startIndex)..<close])
+                    }
+                    if !name.isEmpty { names.insert(name.lowercased()) }
+                }
+            }
+        }
+        return names
+    }
+
+    /// Whether ssh never got far enough to have an opinion about the login.
+    ///
+    /// The distinction decides whether the probe has had its answer. "Permission
+    /// denied" is an answer: the host is there and that login is wrong. A refused
+    /// connection is not, and burning the one probe on it means the login is never
+    /// learned, even once the user is back on the VPN.
+    public static func isUnreachable(_ detail: String) -> Bool {
+        let lowered = detail.lowercased()
+        for phrase in ["connection refused", "connection timed out", "operation timed out",
+                       "no route to host", "could not resolve", "name or service not known",
+                       "network is unreachable", "host is down", "no address associated",
+                       "connection closed by remote host", "broken pipe",
+                       "kex_exchange_identification", "connection reset"] where lowered.contains(phrase) {
+            return true
+        }
+        // ssh could not even be told where to go.
+        return lowered.contains("hostname") && lowered.contains("nodename")
+    }
+}
+
+/// What the login probe has done so far, so it neither repeats forever nor gives
+/// up after one attempt that never reached anything.
+public struct LoginProbeState: Codable, Sendable, Equatable {
+    /// Launches on which the probe has run.
+    public var attempts: Int
+    /// True once a host actually answered, whatever it said.
+    public var settled: Bool
+
+    public init(attempts: Int = 0, settled: Bool = false) {
+        self.attempts = attempts
+        self.settled = settled
+    }
+
+    /// Give up after this many launches without ever reaching a host.
+    public static let maxAttempts = 5
+
+    public var shouldRun: Bool { !settled && attempts < LoginProbeState.maxAttempts }
+
+    public static func load(from path: String = HangarConfig.loginProbedMarkerPath)
+        -> LoginProbeState {
+        guard let data = FileManager.default.contents(atPath: path) else {
+            return LoginProbeState()
+        }
+        // An empty marker is one written by an earlier version, which meant
+        // "done". Honour it rather than probing someone who already settled.
+        guard !data.isEmpty,
+              let state = try? JSONDecoder().decode(LoginProbeState.self, from: data) else {
+            return LoginProbeState(attempts: 0, settled: true)
+        }
+        return state
+    }
+
+    public func save(to path: String = HangarConfig.loginProbedMarkerPath) {
+        guard let data = try? JSONEncoder().encode(self) else { return }
+        PrivateFile.write(data, to: path)
     }
 }
 
