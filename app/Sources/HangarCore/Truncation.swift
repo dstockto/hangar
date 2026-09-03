@@ -53,6 +53,41 @@ public enum Truncation {
         return String(characters.prefix(lead)) + ellipsis + String(characters.suffix(tail))
     }
 
+    /// Breaks `text` into at most `maxLines` lines at word boundaries.
+    ///
+    /// `fits` decides whether a candidate line is short enough, because the
+    /// caller is the only one that knows the font: counting characters in a
+    /// proportional face throws away most of the available width. A word wider
+    /// than a whole line gets its own line rather than being dropped, and
+    /// anything still left when the last line is reached goes onto it, so the
+    /// caller can truncate one line instead of losing a sentence.
+    public static func wrap(_ text: String, maxLines: Int,
+                            fits: (String) -> Bool) -> [String] {
+        let words = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard maxLines > 1, words.count > 1 else { return [text] }
+
+        var lines: [String] = []
+        var current = ""
+        for (index, word) in words.enumerated() {
+            let candidate = current.isEmpty ? word : current + " " + word
+            if current.isEmpty || fits(candidate) {
+                current = candidate
+                continue
+            }
+            // On the last line there is nowhere else to put the rest.
+            if lines.count == maxLines - 1 {
+                current = candidate + (index + 1 < words.count
+                                       ? " " + words[(index + 1)...].joined(separator: " ")
+                                       : "")
+                break
+            }
+            lines.append(current)
+            current = word
+        }
+        if !current.isEmpty { lines.append(current) }
+        return lines.isEmpty ? [text] : lines
+    }
+
     /// Character offsets spanning all matched ranges.
     public static func protectedSpan(in text: String,
                               ranges: [Range<String.Index>]) -> Range<Int>? {

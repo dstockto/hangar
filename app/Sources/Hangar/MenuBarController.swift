@@ -688,10 +688,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func errorRow(_ message: String) -> NSMenuItem {
         let item = NSMenuItem(title: message, action: nil, keyEquivalent: "")
         item.isEnabled = false
+        // A menu is as wide as its widest row, and a refresh failure is a whole
+        // sentence. Unwrapped it doubled the width of everything else in here.
+        // The plain title stays unwrapped, which is what a screen reader gets.
+        let font = NSFont.menuFont(ofSize: 0)
+        let lines = Truncation.wrapped(message, into: Brand.Metric.menuTextColumn,
+                                       font: font, maxLines: 3)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
         item.attributedTitle = NSAttributedString(
-            string: message,
+            string: lines.joined(separator: "\n"),
             attributes: [.foregroundColor: Brand.Color.stateTerminated,
-                         .font: NSFont.menuFont(ofSize: 0)])
+                         .font: font,
+                         .paragraphStyle: paragraph])
         return item
     }
 

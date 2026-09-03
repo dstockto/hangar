@@ -111,6 +111,10 @@ enum Brand {
         static let productionRailWidth: CGFloat = 3
         static let focusRingWidth: CGFloat = 1.5
         static let groupHeaderHeight: CGFloat = 24
+        /// How wide a sentence in the menubar menu is allowed to run before it
+        /// wraps. A refresh failure is a sentence, and on one line it set the
+        /// width of the whole menu.
+        static let menuTextColumn: CGFloat = 400
         static let footerHeight: CGFloat = 28
         static let glyphSize: CGFloat = 16
         static let statusGlyphSize: CGFloat = 18

@@ -34,4 +34,22 @@ extension Truncation {
         }
         return candidate
     }
+
+    /// Wraps `text` into at most `maxLines` lines that each fit `width`,
+    /// measuring rather than counting because a menu font is proportional. If
+    /// the text needs more room than that, the last line is middle-truncated
+    /// rather than the sentence being cut off at a word.
+    static func wrapped(_ text: String, into width: CGFloat, font: NSFont,
+                        maxLines: Int) -> [String] {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        func fits(_ candidate: String) -> Bool {
+            (candidate as NSString).size(withAttributes: attributes).width <= width
+        }
+        guard !fits(text) else { return [text] }
+        var lines = Truncation.wrap(text, maxLines: maxLines, fits: fits)
+        if let last = lines.last, !fits(last) {
+            lines[lines.count - 1] = fitting(last, into: width, font: font)
+        }
+        return lines
+    }
 }
