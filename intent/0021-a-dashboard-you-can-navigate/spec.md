@@ -53,6 +53,12 @@ The cluster shows exactly one level, chosen by the focus.
    other, each tier a band further out. Within a tier the order is alphabetical,
    so each band forms an arc and the same fleet lands in the same picture.
 3. **Hosts**, once there is no key left or the group holds a single instance.
+   Labelled with the ssh alias the host actually got, trimmed by the levels
+   *entered* rather than by every key in `group_by`. Both halves matter: the
+   resolved alias is numbered where two hosts share a role, so a pair of `web`
+   boxes reads `web-1` and `web-2` rather than `web` twice; and trimming by the
+   entered levels leaves an optional tag in the name when it was not a level, so
+   a replica shows `repl-archive` beside its primary's `archive`.
    One circle per instance, radius `min(46, 9 + sqrt(sizeWeight) * 5)` from
    `InstanceType.sizeWeight`, with the short size drawn inside it: `8xl`, `lg`,
    `md`. Colour is state. The label under each circle is the host's leaf name.

@@ -59,6 +59,11 @@ final class ClusterView: NSView {
     /// panels can describe the same subset the picture does and offer their own
     /// way back out of it.
     var onFocusChange: (([Instance], ClusterFocus) -> Void)?
+    /// The ssh alias a host actually got, which is the numbered one when two
+    /// hosts share a role. Supplied rather than derived: the numbering is the
+    /// ssh config writer's, and a circle should be labelled with the name you
+    /// would type, not with the stem it was built from.
+    var aliasProvider: ((Instance) -> String?)?
 
     private var nodes: [Node] = []
     /// Every group hangs off one hub: the account's EC2 inventory, which is the
@@ -188,8 +193,12 @@ final class ClusterView: NSView {
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
         nodes = members.enumerated().map { index, instance in
             let angle = CGFloat(index) / CGFloat(max(1, members.count)) * .pi * 2
-            let alias = instance.leafLabel(alias: instance.aliasStem,
-                                           groupedBy: groupingKeys)
+            // Trimmed by the levels actually entered, not by every key in
+            // group_by. Once a level can be skipped the two differ, and trimming
+            // by a level the drill never used takes a real part of the name off.
+            let full = aliasProvider?(instance) ?? instance.aliasStem
+            let alias = instance.leafLabel(alias: full,
+                                           groupedBy: focus.path.map(\.key))
             return Node(label: alias, product: instance.product,
                         env: instance.env, count: 1,
                         running: instance.state == "running" ? 1 : 0,

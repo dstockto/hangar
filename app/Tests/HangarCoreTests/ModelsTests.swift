@@ -39,6 +39,24 @@ final class AliasTests: XCTestCase {
                        "prod-web-1")
     }
 
+    /// The case a real fleet hit: env_name exists only on the replication
+    /// instances, so it is a poor grouping level and a good part of a name.
+    /// Grouped by product and env alone, it has to survive into the label, or a
+    /// replica and its primary are two circles both called "archive".
+    func testAnOptionalTagSurvivesIntoTheLabelWhenItIsNotALevel() {
+        let primary = Fixture.instance(["product": "screen", "env": "prod",
+                                        "Name": "archive"])
+        let replica = Fixture.instance(["product": "screen", "env": "prod",
+                                        "env_name": "repl", "Name": "archive"])
+        let levels = ["product", "env"]
+        XCTAssertEqual(primary.leafLabel(alias: primary.aliasStem, groupedBy: levels),
+                       "archive")
+        XCTAssertEqual(replica.leafLabel(alias: replica.aliasStem, groupedBy: levels),
+                       "repl-archive")
+        XCTAssertNotEqual(primary.leafLabel(alias: primary.aliasStem, groupedBy: levels),
+                          replica.leafLabel(alias: replica.aliasStem, groupedBy: levels))
+    }
+
     func testLeafLabelIsUntouchedWhenNothingIsGroupedBy() {
         let instance = Fixture.instance(["product": "payments", "env": "prod", "Name": "web"])
         XCTAssertEqual(instance.leafLabel(alias: "payments-prod-web-1", groupedBy: []),

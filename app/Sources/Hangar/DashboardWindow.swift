@@ -64,6 +64,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         cluster.translatesAutoresizingMaskIntoConstraints = false
         // Opening a group narrows the panels to it, so the numbers always
         // describe whatever the picture is currently showing.
+        cluster.aliasProvider = { [weak self] host in self?.store.alias(for: host) }
         cluster.onFocusChange = { [weak self] hosts, focus in
             Task { @MainActor in self?.renderPanels(for: hosts, focus: focus) }
         }
