@@ -53,3 +53,4 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0018 | A window you can command-tab back to | Shipped |
 | 0019 | Icon rendered from source, larger and brighter | Shipped |
 | 0020 | Fleet dashboard | Shipped |
+| 0021 | A dashboard you can navigate | Shipped |

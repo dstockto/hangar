@@ -1,5 +1,11 @@
 # 0020 spec: the fleet dashboard
 
+> **Partly superseded.** "The window" and "The cluster view" below describe the
+> dashboard as it first shipped: every level drawn at once, four panels in one
+> scrolling column, a footer. It now drills one level at a time and has two tabs
+> and a sidebar. See [0021](../0021-a-dashboard-you-can-navigate/spec.md).
+> `FleetInsights`, the history and the performance budget are unchanged.
+
 ## The core: `FleetInsights`
 
 One value type computed from `[Instance]` plus the tag mapping, no AppKit, fully

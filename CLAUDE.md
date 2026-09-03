@@ -128,7 +128,16 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     off every alias, so a fleet grouped by product alone showed `web-1` three
     times for prod, stage and qa. Anything that trims a label has to be told the
     levels the menu was actually built from.
-14. **An external process with no deadline.** `credential_process` is the user's
+14. **A screen with no way off it.** Opening a host put its record on the
+    Insights tab, and the only control that stepped back out was the hub in the
+    middle of the cluster, which is on the other tab. Every view that can be
+    navigated into carries its own way out, on itself.
+15. **`NSStackView.fittingSize` leaves the stack's own `edgeInsets` out** of the
+    cross-axis width. Sizing a panel from it produced a notice card exactly as
+    wide as its text column, so 30 points of padding a side became none and the
+    body printed against the rounded edge. Size from the content plus the
+    padding, both as numbers.
+16. **An external process with no deadline.** `credential_process` is the user's
     own command, and `readDataToEndOfFile` waits for the pipe to close, which a
     helper that hangs never does. The fleet refreshed forever and the setup
     window sat blank. Every process Hangar runs gets a deadline and a kill.
