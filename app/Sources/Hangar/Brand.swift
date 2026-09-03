@@ -1,4 +1,5 @@
 import AppKit
+import HangarCore
 
 /// The single source of brand values, all of them resolved from the supplied
 /// HangarAssets catalog. Nothing here re-declares a hex value: named colors are
@@ -32,22 +33,16 @@ enum Brand {
         /// it with the matching state glyph, per the brand kit's accessibility rule.
         /// A stable colour per group name, for the cluster's product circles.
         ///
-        /// Derived by rotating the accent's hue rather than inventing a palette:
-        /// the brand kit supplies one accent and four state colours, and a
-        /// categorical set has to come from somewhere. Saturation and brightness
-        /// are held where the accent sits, so the ring reads as one family.
+        /// The hue comes from `CategoryHue`, which keeps every category clear of
+        /// the wedges state owns. Saturation and brightness are taken from the
+        /// accent so the ring reads as one family in either appearance.
         static func category(for name: String) -> NSColor {
-            var hash: UInt64 = 0xcbf29ce484222325
-            for byte in name.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
             let base = accent.usingColorSpace(.sRGB) ?? .systemBlue
             var hue: CGFloat = 0, saturation: CGFloat = 0
             var brightness: CGFloat = 0, alpha: CGFloat = 0
             base.getHue(&hue, saturation: &saturation, brightness: &brightness,
                         alpha: &alpha)
-            // Ten steps around the wheel: distinct enough to tell apart, few
-            // enough that two products never land a degree from each other.
-            let step = CGFloat(hash % 10) / 10
-            return NSColor(hue: (hue + step).truncatingRemainder(dividingBy: 1),
+            return NSColor(hue: CGFloat(CategoryHue.degrees(for: name)) / 360,
                            saturation: max(0.42, saturation * 0.9),
                            brightness: brightness, alpha: 1)
         }
