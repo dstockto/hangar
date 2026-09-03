@@ -1,6 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="420" height="96" viewBox="0 0 420 96" role="img" aria-label="Hangar">
   <g fill="none" stroke="#000" stroke-width="8" stroke-linecap="square" stroke-linejoin="round">
-    <path d="M7 64V33L36 16L65 33V64H55V38L36 27L17 38V64H7ZM36 34V49L24 57V64L36 60L48 64V57L40 49V34C40 28 32 28 32 34V49L24 57" fill="#000" stroke="none"/>
+    <path d="M7 64V33L36 16L65 33V64H55V38L36 27L17 38V64H7Z" fill="#000" stroke="none"/>
+    <g fill="#000" stroke="none" transform="translate(-8.192 -0.401) scale(.08632)">
+      <path d="M512 348C488 348 476 373 476 410V520L332 610V668L476 624V704L424 742V782L512 758 600 782V742L548 704V624L692 668V610L548 520V410C548 373 536 348 512 348Z"/>
+    </g>
     <path d="M110 20V72M110 48C110 37 120 32 130 32C142 32 148 39 148 51V72"/>
     <path d="M195 32V72M194 39C187 31 173 31 166 39C158 47 159 61 167 68C175 75 188 73 194 65"/>
     <path d="M213 32V72M213 48C213 37 223 32 233 32C245 32 251 39 251 51V72"/>

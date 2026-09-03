@@ -152,7 +152,14 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     menu disagreed about how deep the same fleet went, and 89 hosts on a real
     fleet sat behind a circle that said nothing. When a second thing answers a
     question the first already answers, it has to call the first one.
-19. **An external process with no deadline.** `credential_process` is the user's
+19. **A mono variant hand-simplified away from its source.** The wordmark ships
+    in colour and in a single-colour version, and the mono one had its aircraft
+    redrawn small by hand: one wing, a lopsided fuselage, and a subpath that
+    never closed. It read as a smudge inside the arch at every size. A mono
+    variant is the same drawing without colour, so its geometry comes from the
+    primary asset, scaled. `make wordmark` re-renders the raster fallbacks and
+    the manifest from the SVGs, so this stays checkable.
+20. **An external process with no deadline.** `credential_process` is the user's
     own command, and `readDataToEndOfFile` waits for the pipe to close, which a
     helper that hangs never does. The fleet refreshed forever and the setup
     window sat blank. Every process Hangar runs gets a deadline and a kill.

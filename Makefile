@@ -1,11 +1,12 @@
 # Hangar. The Swift build needs only Command Line Tools; Xcode is required for one
 # step, actool, which compiles the asset catalog.
-.PHONY: help all build test icon verify-assets bundle dmg install run uninstall clean
+.PHONY: help all build test icon wordmark verify-assets bundle dmg install run uninstall clean
 
 help:
 	@echo "  make test            offline test suite, no network needed"
 	@echo "  make bundle          assemble dist/Hangar.app and sign it"
 	@echo "  make icon            re-render the app icon previews from the layer SVGs"
+	@echo "  make wordmark        re-render the wordmark @2x fallbacks and its manifest"
 	@echo "  make verify-assets   prove every brand asset resolves in the bundle"
 	@echo "  make install         build and copy to ~/Applications"
 	@echo "  make run             install and launch"
@@ -27,6 +28,9 @@ bundle:
 # Flattens the layered icon sources into the preview PNGs the bundle falls back to.
 icon:
 	@scripts/render-icon.sh
+
+wordmark:
+	@scripts/render-wordmark.sh
 
 # Proves every supplied brand asset name resolves inside the real bundle.
 verify-assets: bundle
