@@ -60,6 +60,71 @@ public enum FleetGrouping {
             .map { .host($0) }
     }
 
+    /// What one level actually does at its place in the cascade.
+    ///
+    /// A key is not good or bad on its own, only in a position. `env_name` looks
+    /// fine on a fleet where a third of the hosts carry one, and is a poor third
+    /// level on that same fleet, because under product and environment most
+    /// groups have nobody carrying it and gain a level holding one "untagged"
+    /// entry. That is knowable before anyone clicks it, and this is how.
+    public struct LevelReport: Sendable, Equatable {
+        public var key: String
+        /// Groups this level creates, summed over every scope it appears in.
+        public var groups: Int
+        /// Hosts reaching this level with no value for its key: either their
+        /// whole scope skipped it, or they landed in its untagged group.
+        public var withoutValue: Int
+        /// Hosts that reach this level at all.
+        public var hosts: Int
+
+        public init(key: String, groups: Int = 0, withoutValue: Int = 0, hosts: Int = 0) {
+            self.key = key
+            self.groups = groups
+            self.withoutValue = withoutValue
+            self.hosts = hosts
+        }
+
+        /// True when the level does nothing for most of the hosts that reach it.
+        public var isMostlyEmpty: Bool {
+            hosts > 0 && withoutValue * 2 > hosts
+        }
+    }
+
+    /// One report per configured level, walking the same tree `tree` builds.
+    public static func report(_ instances: [Instance],
+                              groupBy keys: [String] = defaultLevels) -> [LevelReport] {
+        var reports = keys.map { LevelReport(key: $0) }
+
+        func walk(_ scope: [Instance], depth: Int) {
+            guard depth < keys.count, !scope.isEmpty else { return }
+            let key = keys[depth]
+            let value: (Instance) -> String = { $0.tagValue(for: key) }
+            reports[depth].hosts += scope.count
+
+            // Skipped for this scope: nobody here carries it, so the level is
+            // not drawn and every host passes through to the next one.
+            guard scope.contains(where: { !value($0).isEmpty }) else {
+                reports[depth].withoutValue += scope.count
+                walk(scope, depth: depth + 1)
+                return
+            }
+            let grouped = Dictionary(grouping: scope) { value($0) }
+            reports[depth].groups += grouped.count
+            reports[depth].withoutValue += grouped[""]?.count ?? 0
+            for members in grouped.values { walk(members, depth: depth + 1) }
+        }
+
+        walk(instances, depth: 0)
+        return reports
+    }
+
+    /// What appending `key` to the current levels would do, without committing
+    /// to it. The question someone actually has in front of the Add menu.
+    public static func reportAppending(_ key: String, to keys: [String],
+                                       in instances: [Instance]) -> LevelReport {
+        report(instances, groupBy: keys + [key]).last ?? LevelReport(key: key)
+    }
+
     /// How many levels this fleet actually produces, which is not the same as
     /// how many were configured: a key nothing carries adds no level.
     public static func depth(_ instances: [Instance],

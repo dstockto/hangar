@@ -550,16 +550,23 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         summary.preferredMaxLayoutWidth = 520
         levelsStack.addView(summary, in: .top)
 
+        // What each level does where it actually sits. A key is not good or bad
+        // on its own: env_name under product and env can be dead weight on the
+        // same fleet where it reads fine on its own.
+        let reports = FleetGrouping.report(store.instances, groupBy: keys)
         for (index, key) in keys.enumerated() {
-            let carried = store.instances.contains { !$0.tagValue(for: key).isEmpty }
+            let report = index < reports.count ? reports[index]
+                                              : FleetGrouping.LevelReport(key: key)
+            let carried = report.groups > 0
             let label = NSTextField(labelWithString: "\(index + 1).  \(key)")
             label.font = Brand.Font.shortcut
             label.textColor = carried ? Brand.Color.textPrimary
                                       : Brand.Color.textSecondary
 
-            let note = NSTextField(labelWithString: carried ? "" : "no host carries this")
+            let note = NSTextField(labelWithString: SetupWindow.levelNote(report))
             note.font = .systemFont(ofSize: 10)
-            note.textColor = Brand.Color.statePending
+            note.textColor = report.isMostlyEmpty ? Brand.Color.statePending
+                                                  : Brand.Color.textSecondary
 
             let up = NSButton(title: "\u{2191}", target: self, action: #selector(moveLevelUp(_:)))
             up.tag = index
@@ -587,14 +594,28 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         add.addItem(withTitle: "Add a level\u{2026}")
         add.menu?.addItem(.separator())
         for entry in catalog.keys where !keys.contains(entry.name) {
-            add.addItem(withTitle: "\(entry.name)   \(entry.instances) hosts, "
-                        + "\(entry.distinctValues) values")
+            // What it would do if added, rather than what it looks like on its
+            // own. The question in front of this menu is "should I add this".
+            let preview = FleetGrouping.reportAppending(entry.name, to: keys,
+                                                        in: store.instances)
+            add.addItem(withTitle: "\(entry.name)   \(SetupWindow.levelNote(preview))")
             add.lastItem?.representedObject = entry.name
         }
         add.target = self
         add.action = #selector(addLevel(_:))
         add.isEnabled = (add.numberOfItems > 2)
         levelsStack.addView(add, in: .top)
+    }
+
+    /// One line saying what a level does. Counts, no advice: Hangar does not
+    /// know that a level covering a third of the fleet is the wrong choice.
+    static func levelNote(_ report: FleetGrouping.LevelReport) -> String {
+        guard report.hosts > 0 else { return "no hosts" }
+        guard report.groups > 0 else { return "no host carries this" }
+        let groups = "\(report.groups) group" + (report.groups == 1 ? "" : "s")
+        guard report.withoutValue > 0 else { return groups + ", every host tagged" }
+        return groups + "  \u{00B7}  \(report.withoutValue) of \(report.hosts) "
+            + "hosts have no value here"
     }
 
     @objc private func addLevel(_ sender: NSPopUpButton) {

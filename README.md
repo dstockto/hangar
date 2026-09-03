@@ -374,9 +374,29 @@ is a perfectly good answer, and so is none:
 ```
 
 Any tag key works, not only the ones above. A level no host carries adds no
-submenu, so nothing produces an empty "untagged" level containing everything.
-Add, remove and reorder from the setup screen, or edit `group_by` directly. The
-default is `["product", "env", "env_name"]`.
+submenu, and the fleet dashboard skips it too, so nothing produces an "untagged"
+level containing everything. Add, remove and reorder from the setup screen, or
+edit `group_by` directly. The default is `["product", "env", "env_name"]`.
+
+The setup screen says what each level actually does where it sits, because a tag
+key is not good or bad on its own. `env_name` reads fine across a fleet and is
+still a poor third level on that same fleet if most of its product and
+environment groups have nobody carrying one:
+
+```
+1.  product    5 groups, every host tagged
+2.  env        20 groups, every host tagged
+3.  env_name   25 groups  ·  141 of 223 hosts have no value here
+```
+
+The same line appears against each key in **Add a level**, computed for the
+position it would take, so the question is answered before you commit to it.
+
+**A tag that makes a poor level can still make a good name.** Drop it from
+`group_by` and it stays in the alias, because only the levels you grouped by are
+trimmed off the label. A fleet grouped by product and environment shows
+`archive` and `repl-archive` side by side rather than putting one replica behind
+its own submenu.
 
 Each host gets three ssh names: a readable alias, a stable instance-id alias, and
 its real hostname.
