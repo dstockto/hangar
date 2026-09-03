@@ -12,6 +12,7 @@ anything. The workflow it belongs to is described in
 
 ```sh
 make test            # the offline suite. Must be green before any commit.
+make testbed         # every host source against a fake home, proving yours is untouched
 make bundle          # assemble and sign dist/Hangar.app
 make verify-assets   # prove every brand asset resolves in the built bundle
 make run             # build, install to ~/Applications, launch
@@ -163,6 +164,38 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     own command, and `readDataToEndOfFile` waits for the pipe to close, which a
     helper that hangs never does. The fleet refreshed forever and the setup
     window sat blank. Every process Hangar runs gets a deadline and a kill.
+21. **A merge key that was not a key.** `FleetMerge` deduplicated on `aliasStem`,
+    and two members of one autoscaling group share a stem by design; the writer
+    exists to number them apart. On the first run against a live account it
+    silently dropped 18 hosts out of 223. Deduplicate on a name a source actually
+    *gave* a host, never on one derived from its tags.
+22. **A git remote is not a host.** Importing `~/.ssh/config` pulled in the
+    GitHub and Bitbucket entries every developer has. `ssh git@github.com` prints
+    a greeting and exits, so those rows could never be connected to, and they
+    sorted above the whole fleet because they carry no product. The rule is
+    `User git`, which also covers every self-hosted forge. A machine merely named
+    for git is still a host.
+23. **An empty string sorts first.** Untagged hosts opened the panel, above
+    everything tagged. Survivable while untagged meant a few forgotten EC2 boxes,
+    not once a source existed that produces them by the handful.
+24. **Three numbers for one fleet.** The sources card summed its rows, the tag
+    check counted the merged fleet, and the alias check quoted the fleet size for
+    a file that does not hold every host. 225, 225 and 223 for the same question.
+    A number on screen has to name the set it counted.
+
+## Testing against a fake fleet
+
+`make testbed` builds a fabricated home directory, runs every host source, the
+merge and the writer against it, and then proves your own `~/.ssh/config` and
+`~/.hangar` are byte for byte unchanged.
+
+That last part is not ceremony. `expandingTildeInPath` reads the real home on
+macOS whatever `HOME` says, so a testbed built on an environment variable would
+quietly read and rewrite the developer's own ssh config. Every path in the
+testbed is passed in explicitly, and the fingerprint check is the proof.
+
+`hangar-probe --sources` and `hangar-probe --keys` report the local sources and
+the ssh agents on this machine, read-only, with no credentials needed.
 
 ## Permissions and file modes
 

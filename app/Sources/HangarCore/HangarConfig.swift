@@ -7,23 +7,43 @@ public struct HangarConfig: Codable, Sendable {
     public struct SSHSettings: Codable, Sendable {
         public var user: String?
         public var identityFile: String?
+        /// The socket of an ssh agent holding the key, when the key does not live
+        /// in a file. 1Password, Secretive and a forwarded agent all look the same
+        /// from here.
+        public var identityAgent: String?
+        /// Whether ssh may offer keys other than the pinned one. Nil keeps the
+        /// old behaviour, which is yes when a key is pinned and silent otherwise.
+        /// Explicit false is the escape hatch: pin a key and still let the agent
+        /// offer its own, which is what someone on a vault needs.
+        public var identitiesOnly: Bool?
         public var knownHostsFile: String?
         public var strictHostKeyChecking: String?
         public var extraOptions: [String: String]?
 
         public init(user: String? = nil, identityFile: String? = nil,
+                    identityAgent: String? = nil, identitiesOnly: Bool? = nil,
                     knownHostsFile: String? = nil, strictHostKeyChecking: String? = nil,
                     extraOptions: [String: String]? = nil) {
             self.user = user
             self.identityFile = identityFile
+            self.identityAgent = identityAgent
+            self.identitiesOnly = identitiesOnly
             self.knownHostsFile = knownHostsFile
             self.strictHostKeyChecking = strictHostKeyChecking
             self.extraOptions = extraOptions
         }
 
+        /// Whether `IdentitiesOnly yes` belongs in the file. A pinned key with no
+        /// opinion recorded keeps the behaviour that shipped.
+        public var pinsIdentities: Bool {
+            identitiesOnly ?? (identityFile?.isEmpty == false)
+        }
+
         enum CodingKeys: String, CodingKey {
             case user
             case identityFile = "identity_file"
+            case identityAgent = "identity_agent"
+            case identitiesOnly = "identities_only"
             case knownHostsFile = "known_hosts_file"
             case strictHostKeyChecking = "strict_host_key_checking"
             case extraOptions = "extra_options"
@@ -37,17 +57,22 @@ public struct HangarConfig: Codable, Sendable {
         public var match: [String: String]
         public var user: String?
         public var identityFile: String?
+        public var identityAgent: String?
+        public var identitiesOnly: Bool?
         public var knownHostsFile: String?
         public var strictHostKeyChecking: String?
         public var extraOptions: [String: String]?
 
         public init(match: [String: String], user: String? = nil,
-                    identityFile: String? = nil, knownHostsFile: String? = nil,
+                    identityFile: String? = nil, identityAgent: String? = nil,
+                    identitiesOnly: Bool? = nil, knownHostsFile: String? = nil,
                     strictHostKeyChecking: String? = nil,
                     extraOptions: [String: String]? = nil) {
             self.match = match
             self.user = user
             self.identityFile = identityFile
+            self.identityAgent = identityAgent
+            self.identitiesOnly = identitiesOnly
             self.knownHostsFile = knownHostsFile
             self.strictHostKeyChecking = strictHostKeyChecking
             self.extraOptions = extraOptions
@@ -56,6 +81,8 @@ public struct HangarConfig: Codable, Sendable {
         enum CodingKeys: String, CodingKey {
             case match, user
             case identityFile = "identity_file"
+            case identityAgent = "identity_agent"
+            case identitiesOnly = "identities_only"
             case knownHostsFile = "known_hosts_file"
             case strictHostKeyChecking = "strict_host_key_checking"
             case extraOptions = "extra_options"
@@ -106,6 +133,9 @@ public struct HangarConfig: Codable, Sendable {
     /// One menubar submenu level per tag key, in order. Any tag key works, not
     /// only the ones Hangar maps. Nil keeps the default product, env, env_name.
     public var groupBy: [String]?
+    /// Where Hangar looks for hosts. Nil is every source at its own default,
+    /// which is what someone who never opens this file should get.
+    public var sources: SourceSettings?
 
     public init(profile: String? = nil, region: String? = nil, terminal: String? = nil,
                 ssh: SSHSettings? = nil, overrides: [Override]? = nil,
@@ -114,7 +144,8 @@ public struct HangarConfig: Codable, Sendable {
                 healthyWithinHours: Int? = nil,
                 updateChannel: String? = nil, checkUpdatesOnLaunch: Bool? = nil,
                 launchAtLogin: Bool? = nil, tags: TagMapping? = nil,
-                updateCheckHours: Int? = nil, groupBy: [String]? = nil) {
+                updateCheckHours: Int? = nil, groupBy: [String]? = nil,
+                sources: SourceSettings? = nil) {
         self.profile = profile
         self.region = region
         self.terminal = terminal
@@ -131,6 +162,7 @@ public struct HangarConfig: Codable, Sendable {
         self.tags = tags
         self.updateCheckHours = updateCheckHours
         self.groupBy = groupBy
+        self.sources = sources
     }
 
     enum CodingKeys: String, CodingKey {
@@ -145,6 +177,7 @@ public struct HangarConfig: Codable, Sendable {
         case tags
         case updateCheckHours = "update_check_hours"
         case groupBy = "group_by"
+        case sources
     }
 
     public static var home: String {
@@ -183,6 +216,16 @@ public struct HangarConfig: Codable, Sendable {
     /// a flat list of every host, which is the right answer for a small fleet.
     public var groupingKeys: [String] { groupBy ?? FleetGrouping.defaultLevels }
 
+    /// Hosts the user brought themselves. A plain CSV rather than a database,
+    /// so a script, a cron job or an inventory export can write it and the user
+    /// can read what Hangar is going to do before it does it.
+    public static var hostsFilePath: String {
+        (home as NSString).appendingPathComponent("hosts.csv")
+    }
+
+    /// The sources to gather from, with every default already applied.
+    public var sourceSettings: SourceSettings { sources ?? .standard }
+
     public static var sshIncludePath: String {
         NSString(string: "~/.ssh/config.d/hangar").expandingTildeInPath
     }
@@ -207,7 +250,8 @@ public struct HangarConfig: Codable, Sendable {
             launchAtLogin: false,
             tags: .standard,
             updateCheckHours: 24,
-            groupBy: FleetGrouping.defaultLevels)
+            groupBy: FleetGrouping.defaultLevels,
+            sources: .standard)
     }
 
     /// Loads the config, writing a documented starter file on first run. A config
@@ -249,6 +293,8 @@ public struct HangarConfig: Codable, Sendable {
         for override in overrides ?? [] where HangarConfig.matches(override.match, instance) {
             if let v = override.user { result.user = v }
             if let v = override.identityFile { result.identityFile = v }
+            if let v = override.identityAgent { result.identityAgent = v }
+            if let v = override.identitiesOnly { result.identitiesOnly = v }
             if let v = override.knownHostsFile { result.knownHostsFile = v }
             if let v = override.strictHostKeyChecking { result.strictHostKeyChecking = v }
             if let v = override.extraOptions {

@@ -1,0 +1,7 @@
+{
+  "id": "security-imported-hosts-are-never-written",
+  "promise": "A host read from the user's own ~/.ssh/config is never written back into Hangar's include.",
+  "why": "Hangar's Include sits above the user's own file and ssh_config is first-match-wins, so a second copy of their host would silently outrank the definition they wrote by hand.",
+  "command": "scripts/test.sh --filter SSHConfigImportTests 2>&1 | grep -q 'with 0 failures' && grep -q 'guard instance.isWrittenToSSHConfig' app/Sources/HangarCore/SSHConfigWriter.swift",
+  "expect": "exit 0"
+}

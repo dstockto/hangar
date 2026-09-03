@@ -62,6 +62,17 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
   `app`/`stage`, or a single `Name` tag all work with no configuration. The setup
   screen shows the tag keys your fleet actually uses and lets you point each one
   at the right key.
+- **Four sources, merged.** EC2, Systems Manager, the hosts already in your
+  `~/.ssh/config`, and any CSV you drop on the window. No AWS permission at all is
+  required to use Hangar, and a denied `DescribeInstances` falls back on its own
+  instead of showing you an error page.
+- **Your ssh config is read, never rewritten.** Imported hosts are searchable and
+  launchable and Hangar writes nothing for them, so it can never outrank a file
+  you wrote by hand.
+- **1Password and any other ssh agent, with no setup.** If an agent is holding
+  your key, Hangar finds it and uses it. One key is adopted without asking; several
+  are listed by their vault item title. No `op` CLI, and no private key is ever
+  read, exported or stored.
 - **Credentials stay local.** The same resolution order the AWS CLI uses, read
   from your home directory. Expired SSO tokens refresh in place.
 - **Fix a wrong login in place.** <kbd>⌘</kbd>-click a host to set its ssh user
@@ -327,7 +338,62 @@ would beat every generated entry. Hangar connects fine without it; only the
 
 ## Discovery
 
-### The only permission Hangar needs
+### Four ways to find a host
+
+Hangar gathers from four sources and merges them, richest first. They are all on
+by default, because a source that finds nothing costs nothing.
+
+| Source | What it needs | Notes |
+|---|---|---|
+| **EC2** | `ec2:DescribeInstances` | Tags, state, zone, instance type; everything the dashboard reads |
+| **Systems Manager** | `ssm:DescribeInstanceInformation` | Tried automatically when EC2 is denied. Finds on-prem `mi-` instances EC2 never could |
+| **`~/.ssh/config`** | nothing at all | The hosts you already have. Indexed for search and launch, **never rewritten** |
+| **`~/.hangar/hosts.csv`** | a CSV you drop on the window | Any spreadsheet, inventory export or script output |
+
+**No AWS permission is required to use Hangar.** If `DescribeInstances` is denied,
+Hangar falls back to Systems Manager on its own, and your own `~/.ssh/config` and
+a CSV work with no AWS account at all. The setup screen shows what each source
+found rather than presenting one failure as the end of the road.
+
+When two sources describe the same machine, the richest copy wins: EC2, then
+Systems Manager, then the CSV, then your ssh config. Duplicates are matched on
+instance id, hostname and alias.
+
+#### Your own ssh config is read, never rewritten
+
+Hosts imported from `~/.ssh/config` are searchable, groupable and launchable, and
+Hangar writes **nothing** for them. Those hosts already resolve; a second
+definition in Hangar's include would sit *above* yours, and `ssh_config` is
+first-match-wins, so Hangar would silently outrank a file you wrote by hand. The
+port, the `ProxyJump` and the login in your file are the ones that get used.
+
+`Host *`, `Host prod-*` and `Match` blocks are skipped and reported, because a
+pattern is not a host. `Include` is followed the way ssh follows it.
+
+**Git remotes are skipped too.** Nearly every developer's ssh config has entries
+for GitHub, GitLab, Bitbucket or CodeCommit, and none of them is a machine:
+`ssh git@github.com` prints a greeting and exits. Hangar recognises them by
+`User git`, which is how every self-hosted forge is reached as well, and by the
+known forge hostnames for entries that leave `User` to the remote URL. A host
+merely *named* for git, logged into as a person, is still a host. Everything
+skipped is listed on the setup screen rather than silently dropped.
+
+#### A CSV of hostnames
+
+Drop one anywhere on the Hangar window, or use **Import Hosts CSV** on the setup
+screen. Importing copies it to `~/.hangar/hosts.csv`; there is no other state, so
+a script, a cron job or an inventory export can write that file directly.
+
+```
+alias,hostname,user,port,product,env,role,datacenter
+legacy-dc-app-1,192.168.10.5,root,22,legacy,prod,app,ams3
+```
+
+`alias` or `hostname` is enough. Any column Hangar has no meaning for becomes a
+tag, so you can group the menu by `datacenter` or `owner`. A row that cannot be
+written safely is refused **with its line number** rather than dropped.
+
+### The only permission Hangar asks for
 
 **`ec2:DescribeInstances`, and nothing else.** One read-only call per refresh,
 against the region in your profile. Hangar does not create, modify, tag,
@@ -351,6 +417,16 @@ Narrow it with a condition key if your account uses them.
 If the profile you point Hangar at assumes a role, the `sts:AssumeRole` for that
 is your own configuration, and an SSO profile exchanges its cached token the way
 the AWS CLI does. Neither is an extra permission on the fleet.
+
+The Systems Manager fallback asks for one more read-only action, and only after
+EC2 has already refused:
+
+```json
+{ "Effect": "Allow", "Action": "ssm:DescribeInstanceInformation", "Resource": "*" }
+```
+
+Discovery only. Hangar does not start a Session Manager session, which would
+need the `aws` CLI and its session-manager plugin at runtime.
 
 Hangar calls `ec2:DescribeInstances` once and caches the result locally. Hosts are
 grouped and named from four ideas:
@@ -447,11 +523,15 @@ happens to invoke.
 
 - **Nothing is uploaded.** There is no Hangar server, account, or telemetry.
 - **No private keys are read.** Hangar reads `~/.aws/config`,
-  `~/.aws/credentials`, the SSO token cache, and EC2 instance tags. Key material
-  stays with `ssh` and your agent.
+  `~/.aws/credentials`, the SSO token cache, EC2 instance tags, `~/.ssh/config`
+  and `~/.hangar/hosts.csv`. Key material stays with `ssh` and your agent. When an
+  agent is used, only the *public* half of the chosen key is written, under
+  `~/.hangar/keys`, and it is asked for over the agent socket rather than read
+  from a vault.
 - **One AWS call to list the fleet**, `ec2:DescribeInstances`, signed with SigV4.
   Depending on the profile it is preceded by an STS `AssumeRole` or an SSO token
-  exchange, and nothing else.
+  exchange, and nothing else. A denied call adds one more read-only call,
+  `ssm:DescribeInstanceInformation`, and nothing else.
 - **Read-only against AWS.** Hangar never mutates infrastructure.
 - **It owns one file**, `~/.ssh/config.d/hangar`, written atomically at `0600`
   after `ssh` itself validates the syntax. Your own `~/.ssh/config` is touched
@@ -460,6 +540,13 @@ happens to invoke.
   Hangar writes, so values are quoted on the way into `ssh_config` and
   shell-quoted on the way into a terminal. A value carrying a line break is
   dropped and the host reported as skipped.
+- **So is an imported host.** A hand-edited `~/.ssh/config` and a CSV from
+  anywhere are held to exactly the same rules as an EC2 tag. A name that could act
+  as a pattern is refused, and a CSV row that cannot be written safely is reported
+  with its line number rather than dropped.
+- **Every external process has a deadline.** A credential helper, an ssh agent
+  behind a locked vault, `ssh` itself: each gets a timeout, a terminate and a
+  kill, so nothing the user's own machine does can hang the app.
 - **`credential_process` runs through `/bin/sh`** when a profile configures one,
   exactly as the AWS CLI does. That command is yours, from your `~/.aws/config`.
 
@@ -477,8 +564,16 @@ Full detail, and how to report a hole, in [SECURITY.md](SECURITY.md).
   "ssh": {
     "user": "your-login",
     "identity_file": null,
+    "identity_agent": null,
+    "identities_only": null,
     "known_hosts_file": "~/.ssh/known_hosts.ec2",
     "strict_host_key_checking": "accept-new"
+  },
+  "sources": {
+    "ec2": true,
+    "ssm": null,
+    "ssh_config": true,
+    "hosts_file": true
   },
   "overrides": [
     { "match": { "product": "payments", "env": "prod" },
@@ -498,8 +593,42 @@ Full detail, and how to report a hole, in [SECURITY.md](SECURITY.md).
 ```
 
 `identity_file: null` means Hangar says nothing about keys and lets `ssh` and your
-agent behave as they already do. Set it to pin one, and `IdentitiesOnly yes` is
-added alongside so a loaded agent cannot cause `Too many authentication failures`.
+agent behave as they already do. That is the default, and it is why an agent you
+have already set up globally keeps working untouched.
+
+`identities_only` is the escape hatch: `null` adds `IdentitiesOnly yes` whenever a
+key is pinned, which is the old behaviour, and `false` pins a key while still
+letting your agent offer its own.
+
+`sources.ssm: null` means "only when EC2 is denied". Set it to `true` to always
+ask, or `false` to never.
+
+### 1Password, and any other ssh agent
+
+If 1Password's ssh agent is running, Hangar finds it and uses it. There is
+nothing to configure and no `op` CLI to install.
+
+Hangar asks the agent what it holds the same way ssh does, over the agent socket.
+If it holds exactly one key, that key is used and you are never asked. If it holds
+several, the setup screen lists them by their vault item title and you click one.
+What gets written is:
+
+```
+Host payments-prod-web-1
+  HostName 10.20.30.10
+  IdentityAgent "~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+  IdentityFile ~/.hangar/keys/prod-sre-a1b2c3d4.pub
+  IdentitiesOnly yes
+```
+
+**Hangar never reads, exports or stores a private key.** The file it writes under
+`~/.hangar/keys` is the *public* half, and it is there for a practical reason:
+with `IdentitiesOnly`, naming the public key is how ssh is told which of the
+agent's keys to offer. A vault holding a dozen keys otherwise runs past
+`MaxAuthTries` and fails on a host that would have worked.
+
+Secretive, a forwarded agent, and anything else on `SSH_AUTH_SOCK` work through
+exactly the same path; 1Password is not a special case.
 
 Each hotkey gets its own registration and its own filter, so
 <kbd>⌘</kbd><kbd>⇧</kbd><kbd>P</kbd> can open straight into production. Hotkeys

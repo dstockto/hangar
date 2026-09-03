@@ -71,6 +71,26 @@ public struct FleetInsights: Sendable, Equatable {
     public var total: Int = 0
     public var running: Int = 0
     public var stopped: Int = 0
+    /// Hosts `DescribeInstances` actually described. Placement, ages, families
+    /// and exposure are computed over these alone.
+    ///
+    /// A host imported from an ssh config or a CSV has no availability zone, no
+    /// instance type and no launch time, and counting it as "not spread" or "no
+    /// public address" would be an answer to a question nobody asked. Mistake 18
+    /// was two things answering the same question differently; this is the same
+    /// shape, so the denominator travels with the number.
+    public var described: Int = 0
+    public var undescribed: Int { max(0, total - described) }
+
+    /// What the placement, age, family and exposure panels are counting, in the
+    /// words those panels should print.
+    public var coverage: String? {
+        guard undescribed > 0 else { return nil }
+        return described == 0
+            ? "no EC2 data for any of these \(total) hosts"
+            : "\(described) of \(total) hosts; the rest came from a source that "
+                + "does not describe them"
+    }
     public var hygiene = Hygiene()
     public var placement: [GroupPlacement] = []
     public var ages: [AgeBucket] = []
@@ -99,6 +119,8 @@ public struct FleetInsights: Sendable, Equatable {
         var exposureCounts: [String: (withPublic: Int, total: Int)] = [:]
 
         for instance in instances {
+            // Tag hygiene applies to every host: a missing name is Hangar serving
+            // it badly whatever it came from.
             if instance.product.isEmpty { insights.hygiene.missingProduct += 1 }
             if instance.env.isEmpty { insights.hygiene.missingEnv += 1 }
             if instance.role.isEmpty { insights.hygiene.missingName += 1 }
@@ -106,6 +128,10 @@ public struct FleetInsights: Sendable, Equatable {
                 insights.hygiene.missingHostname += 1
             }
             aliasCounts[instance.aliasStem, default: 0] += 1
+
+            // Everything below needs fields only DescribeInstances returns.
+            guard instance.origin == .ec2 else { continue }
+            insights.described += 1
 
             let key = "\(instance.product)\u{0}\(instance.env)"
             var group = groups[key] ?? GroupPlacement(

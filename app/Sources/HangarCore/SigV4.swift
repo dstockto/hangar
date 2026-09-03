@@ -24,19 +24,34 @@ public struct SigV4 {
             for: Data(message.utf8), using: SymmetricKey(data: key)))
     }
 
+    /// The query protocol most of AWS still speaks, and the one EC2 and STS use.
+    public static let formContentType = "application/x-www-form-urlencoded; charset=utf-8"
+    /// AWS JSON 1.1, which SSM speaks. It needs `x-amz-target` alongside it, and
+    /// that header has to be signed or the signature is rejected.
+    public static let jsonContentType = "application/x-amz-json-1.1"
+
     /// Returns a request signed with the Authorization header form of SigV4.
-    public func sign(url: URL, body: String, now: Date = Date()) -> URLRequest {
+    ///
+    /// `extraHeaders` are signed as well as sent. Anything AWS requires on the
+    /// wire belongs in the canonical headers; a header sent but not signed is a
+    /// 403 with a signature mismatch and no clue as to which header caused it.
+    public func sign(url: URL, body: String,
+                     contentType: String = SigV4.formContentType,
+                     extraHeaders: [String: String] = [:],
+                     now: Date = Date()) -> URLRequest {
         let amzDate = SigV4.stamp(now, format: "yyyyMMdd'T'HHmmss'Z'")
         let dateStamp = SigV4.stamp(now, format: "yyyyMMdd")
         let host = url.host ?? ""
         let payloadHash = SigV4.sha256Hex(Data(body.utf8))
-        let contentType = "application/x-www-form-urlencoded; charset=utf-8"
 
         var headers: [(String, String)] = [
             ("content-type", contentType),
             ("host", host),
             ("x-amz-date", amzDate),
         ]
+        for (name, value) in extraHeaders {
+            headers.append((name.lowercased(), value))
+        }
         if let token = credentials.sessionToken, !token.isEmpty {
             headers.append(("x-amz-security-token", token))
         }
@@ -82,6 +97,9 @@ public struct SigV4 {
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue(amzDate, forHTTPHeaderField: "X-Amz-Date")
         request.setValue(authorization, forHTTPHeaderField: "Authorization")
+        for (name, value) in extraHeaders {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
         if let token = credentials.sessionToken, !token.isEmpty {
             request.setValue(token, forHTTPHeaderField: "X-Amz-Security-Token")
         }

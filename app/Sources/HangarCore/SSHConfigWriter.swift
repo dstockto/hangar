@@ -59,15 +59,22 @@ public struct SSHConfigWriter {
     /// An instance is written only when its hostname can be represented as one
     /// ssh_config argument. A tag carrying a newline could otherwise append a
     /// directive of its own, and ProxyCommand is a directive ssh executes.
+    ///
+    /// A host imported from the user's own `~/.ssh/config` is never written. It
+    /// is already resolvable, and a second definition here would sit *above*
+    /// theirs, so Hangar would silently outrank a file they wrote by hand.
     public static func isWritable(_ instance: Instance) -> Bool {
-        guard let host = instance.host else { return false }
+        guard instance.isWrittenToSSHConfig, let host = instance.host else { return false }
         return SSHConfigValue.isEmittable(host)
     }
 
     /// The instances left out of the file, so the caller can say so rather than
-    /// have hosts quietly go missing.
+    /// have hosts quietly go missing. Hosts from a source Hangar deliberately
+    /// does not write are not omissions and are not reported as such.
     public func omitted(from instances: [Instance]) -> [Instance] {
-        instances.filter { $0.host != nil && !SSHConfigWriter.isWritable($0) }
+        instances.filter {
+            $0.isWrittenToSSHConfig && $0.host != nil && !SSHConfigWriter.isWritable($0)
+        }
     }
 
     /// One `  Keyword value` line, quoted if the value needs it, or nothing at
@@ -97,6 +104,10 @@ public struct SSHConfigWriter {
             where !value.isEmpty {
                 meta.append("\(key)=\(SSHConfigValue.comment(value))")
             }
+            // Provenance, but only when it is not the obvious one. "Where did
+            // this host come from" is the first question anyone asks about a
+            // host they did not expect to find in this file.
+            if instance.origin != .ec2 { meta.append("source=\(instance.origin.rawValue)") }
             lines.append("# hangar " + meta.joined(separator: " "))
             // Every alias is checked again here rather than trusted from the
             // caller: this is the one line in the file that is a pattern.
@@ -107,11 +118,24 @@ public struct SSHConfigWriter {
                 option("HostName", instance.host ?? instance.id),
                 option("User", settings.user),
             ].compactMap { $0 })
+            // The agent first, because it is the thing that holds the key when
+            // the key is not a file. 1Password, Secretive and a forwarded agent
+            // are all just a socket from here.
+            if let agent = option("IdentityAgent", settings.identityAgent) {
+                lines.append(agent)
+            }
             // Only pin a key when one is configured. Saying nothing lets ssh and
-            // the agent behave as they already do, and avoids shutting agent keys
-            // out with IdentitiesOnly.
+            // the agent behave as they already do.
             if let identity = option("IdentityFile", settings.identityFile) {
                 lines.append(identity)
+            }
+            // IdentitiesOnly used to follow IdentityFile automatically, and that
+            // locked out every key an agent held: it tells ssh to ignore the
+            // agent unless a listed IdentityFile matches. It is now the user's
+            // decision, defaulting to the old behaviour only when a key is
+            // pinned. Pinning an agent key means pointing IdentityFile at its
+            // *public* key, which is how ssh is told which one to offer.
+            if settings.pinsIdentities, settings.identityFile?.isEmpty == false {
                 lines.append("  IdentitiesOnly yes")
             }
             lines.append(contentsOf: [
@@ -189,18 +213,18 @@ public struct SSHConfigWriter {
     /// Asks ssh to parse the file. Cheaper and far more accurate than trying to
     /// validate ssh_config syntax ourselves.
     public static func validate(_ path: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = ["-F", path, "-G", "hangar-syntax-probe"]
-        let errors = Pipe()
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = errors
-        do { try process.run() } catch { return "could not run ssh: \(error)" }
-        let data = errors.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus != 0 else { return nil }
-        return String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "exit \(process.terminationStatus)"
+        do {
+            // Through ProcessRunner like everything else Hangar starts. This one
+            // reads a local file and should never hang, but "should never" is
+            // what the credential helper had going for it too.
+            let result = try ProcessRunner.run(
+                "/usr/bin/ssh", ["-F", path, "-G", "hangar-syntax-probe"], timeout: 10)
+            guard result.status != 0 else { return nil }
+            let message = result.err.trimmingCharacters(in: .whitespacesAndNewlines)
+            return message.isEmpty ? "exit \(result.status)" : message
+        } catch {
+            return "could not run ssh: \(error.localizedDescription)"
+        }
     }
 
     public static var includeLine: String { "Include ~/.ssh/config.d/hangar" }

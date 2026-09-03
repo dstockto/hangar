@@ -29,6 +29,11 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private var tagPopups: [TagCatalog.Concept: NSPopUpButton] = [:]
     private var levelsStack: NSStackView!
     private var levelsCard: NSView!
+    private var sourcesStack: NSStackView!
+    private var sourcesCard: NSView!
+    private var sourceToggles: [HostSource: NSButton] = [:]
+    private var keyPopup: NSPopUpButton?
+    private var keyAgent: SSHAgent?
     private var closeHint: NSTextField!
     private var openButton: NSButton!
     private var recheckButton: NSButton!
@@ -138,9 +143,37 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         levelsCard.isHidden = true
         self.levelsCard = levelsCard
 
+        // Hosts and keys. Detection, not a form: every row here is something
+        // Hangar found, with the answer already chosen when there is only one.
+        sourcesStack = NSStackView()
+        sourcesStack.orientation = .vertical
+        sourcesStack.alignment = .leading
+        sourcesStack.spacing = Brand.Metric.space8
+        sourcesStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let sourcesCard = NSView()
+        sourcesCard.wantsLayer = true
+        sourcesCard.layer?.cornerRadius = 8
+        sourcesCard.layer?.backgroundColor = Brand.Color.surfaceRaised.cgColor
+        sourcesCard.translatesAutoresizingMaskIntoConstraints = false
+        sourcesCard.addSubview(sourcesStack)
+        NSLayoutConstraint.activate([
+            sourcesStack.topAnchor.constraint(equalTo: sourcesCard.topAnchor,
+                                              constant: Brand.Metric.space12),
+            sourcesStack.bottomAnchor.constraint(equalTo: sourcesCard.bottomAnchor,
+                                                 constant: -Brand.Metric.space12),
+            sourcesStack.leadingAnchor.constraint(equalTo: sourcesCard.leadingAnchor,
+                                                  constant: Brand.Metric.space12),
+            sourcesStack.trailingAnchor.constraint(equalTo: sourcesCard.trailingAnchor,
+                                                   constant: -Brand.Metric.space12),
+        ])
+        sourcesCard.isHidden = true
+        self.sourcesCard = sourcesCard
+
         let disclosure = NSTextField(wrappingLabelWithString:
-            "Reads ~/.aws/config, ~/.aws/credentials, the SSO token cache, and EC2 "
-            + "instance tags. Writes ~/.ssh/config.d/hangar. Never reads private keys.")
+            "Reads ~/.aws/config, ~/.aws/credentials, the SSO token cache, EC2 "
+            + "instance tags and ~/.ssh/config. Writes ~/.ssh/config.d/hangar. "
+            + "Never reads a private key.")
         disclosure.font = .systemFont(ofSize: 10, weight: .regular)
         disclosure.textColor = Brand.Color.textSecondary
 
@@ -218,8 +251,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         // Everything that grows with the fleet scrolls. The toggles and the buttons
         // are pinned below it, because a window taller than the screen with the
         // settings and Open Hangar off the bottom edge cannot be finished.
-        let scrollable = NSStackView(views: [header, checksStack, tagsCard, levelsCard,
-                                             disclosure])
+        let scrollable = NSStackView(views: [header, checksStack, sourcesCard, tagsCard,
+                                             levelsCard, disclosure])
         scrollable.orientation = .vertical
         scrollable.alignment = .leading
         scrollable.spacing = Brand.Metric.space12
@@ -266,7 +299,13 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         divider.boxType = .separator
         divider.translatesAutoresizingMaskIntoConstraints = false
 
-        let content = NSView()
+        // Dropping a CSV on the window is the import. No wizard, no file picker
+        // in the common case.
+        let content = DropView()
+        content.onDrop = { [weak self] url in
+            guard let self else { return }
+            Task { await self.importHosts(from: url) }
+        }
         content.addSubview(scroll)
         content.addSubview(divider)
         content.addSubview(footer)
@@ -287,6 +326,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             header.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
                                           constant: -Brand.Metric.space32),
             checksStack.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
+                                               constant: -Brand.Metric.space32),
+            sourcesCard.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
                                                constant: -Brand.Metric.space32),
             tagsCard.widthAnchor.constraint(equalTo: scrollable.widthAnchor,
                                             constant: -Brand.Metric.space32),
@@ -364,7 +405,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private static let plan: [(title: String, detail: String)] = [
         ("AWS profiles", "Reading ~/.aws/config and ~/.aws/credentials."),
         ("Credentials", "Resolving your profile, then asking EC2 for the fleet."),
+        ("Where the hosts came from", "EC2, Systems Manager, ~/.ssh/config, your CSV."),
         ("Hosts and tags", "Indexing what came back."),
+        ("SSH key", "Looking for an agent holding it, then in ~/.ssh."),
         ("SSH aliases", "Looking for Hangar's include in ~/.ssh/config."),
         ("Terminal", "Looking for iTerm2 and Terminal."),
         ("Shortcut", "Checking the shortcut is free."),
@@ -390,10 +433,25 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             sourceLabel: store.credentialDescription.map { description in
                 [description.label, description.literal].compactMap { $0 }.joined(separator: " ")
             },
-            advice: store.credentialAdvice))
+            advice: store.credentialAdvice,
+            hasHostsAnyway: !store.instances.isEmpty))
+        renderProgress(checks)
+
+        checks.append(Preflight.sourcesCheck(store.sourceReports,
+                                             fleetSize: store.instances.count))
         renderProgress(checks)
 
         checks.append(Preflight.taggingCheck(instances: store.instances))
+        renderProgress(checks)
+
+        // Detected here rather than on the refresh timer: it runs a process, and
+        // a fleet refreshing every half hour is no reason to keep poking at
+        // somebody's vault.
+        store.detectAgents()
+        adoptTheOnlyKeyIfUnset()
+        checks.append(Preflight.keyCheck(agents: store.agents,
+                                         keyFiles: KeySource.detectKeyFiles(),
+                                         settings: store.config.ssh))
         renderProgress(checks)
 
         let includeFileExists = FileManager.default
@@ -401,7 +459,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         checks.append(Preflight.sshIncludeCheck(
             includePresent: SSHConfigWriter.includeLinePresent(),
             fileExists: includeFileExists,
-            hostCount: store.instances.count))
+            hostCount: store.writtenHostCount,
+            importedCount: store.importedHostCount))
         renderProgress(checks)
 
         let terminal = Launcher.Terminal.from(store.config.terminal)
@@ -429,11 +488,241 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             body.stringValue = "Resolve the item marked below, then re-check."
         }
         render(checks)
+        renderSources()
         renderTagPicker()
         renderLevels()
         fitToScreen()
         recheckButton.isEnabled = true
         running = false
+    }
+
+    /// Adopts the only key there is.
+    ///
+    /// The whole point of the feature: an agent holding exactly one key, and a
+    /// user who has expressed no preference, is not a question worth asking.
+    /// Anything else waits for a click.
+    private func adoptTheOnlyKeyIfUnset() {
+        guard !store.hasKeyPreference,
+              let agent = store.agents.first(where: { $0.keys.count == 1 }),
+              let key = agent.keys.first else { return }
+        guard store.adopt(agent: agent, key: key) != nil else { return }
+        Notifier.show(title: "Using your \(agent.name) key",
+                      body: "\(key.title). The private key stays in the vault.",
+                      seconds: 4)
+    }
+
+    /// Where the hosts came from, and which key gets used. Every row is something
+    /// Hangar found; nothing here is a path to type.
+    private func renderSources() {
+        sourcesStack.subviews.forEach { $0.removeFromSuperview() }
+        sourceToggles = [:]
+        keyPopup = nil
+        keyAgent = nil
+        sourcesCard.isHidden = false
+
+        let title = NSTextField(labelWithString: "Where your hosts come from")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = Brand.Color.textPrimary
+        sourcesStack.addView(title, in: .top)
+
+        let subtitle = NSTextField(wrappingLabelWithString:
+            "Hangar gathers from four places and merges them, richest first. "
+            + "A source that finds nothing costs nothing, so they are all on.")
+        subtitle.font = .systemFont(ofSize: 11)
+        subtitle.textColor = Brand.Color.textSecondary
+        subtitle.preferredMaxLayoutWidth = 520
+        sourcesStack.addView(subtitle, in: .top)
+
+        let grid = NSGridView()
+        grid.rowSpacing = Brand.Metric.space4
+        grid.columnSpacing = Brand.Metric.space12
+        let reports = Dictionary(uniqueKeysWithValues:
+            store.sourceReports.map { ($0.source, $0) })
+
+        for source in FleetMerge.priority {
+            let report = reports[source]
+            let toggle = NSButton(checkboxWithTitle: source.label,
+                                  target: self, action: #selector(sourceToggled(_:)))
+            toggle.state = isEnabled(source) ? .on : .off
+            toggle.font = Brand.Font.metadata
+            sourceToggles[source] = toggle
+
+            let count = NSTextField(labelWithString: countLabel(report))
+            count.font = Brand.Font.metadata
+            count.textColor = (report?.hosts ?? 0) > 0
+                ? Brand.Color.textPrimary : Brand.Color.textSecondary
+
+            let detail = NSTextField(labelWithString: detailLabel(source, report))
+            detail.font = .systemFont(ofSize: 10)
+            detail.textColor = Brand.Color.textSecondary
+            detail.lineBreakMode = .byTruncatingTail
+
+            grid.addRow(with: [toggle, count, detail])
+        }
+        sourcesStack.addView(grid, in: .top)
+
+        let importRow = NSStackView(views: [
+            button("Import Hosts CSV\u{2026}", #selector(importCSV)),
+            button("Create Example CSV", #selector(createExampleCSV)),
+            hint("or drop a CSV anywhere on this window"),
+        ])
+        importRow.orientation = .horizontal
+        importRow.spacing = Brand.Metric.space8
+        importRow.alignment = .centerY
+        sourcesStack.addView(importRow, in: .top)
+
+        renderKeyRow()
+    }
+
+    /// The key half of the card. Nothing at all when there is nothing to say,
+    /// because a row reading "no key" teaches no one anything.
+    private func renderKeyRow() {
+        let divider = NSBox()
+        divider.boxType = .separator
+        sourcesStack.addView(divider, in: .top)
+        divider.widthAnchor.constraint(equalTo: sourcesStack.widthAnchor).isActive = true
+
+        let heading = NSTextField(labelWithString: "Which key ssh uses")
+        heading.font = .systemFont(ofSize: 13, weight: .semibold)
+        heading.textColor = Brand.Color.textPrimary
+        sourcesStack.addView(heading, in: .top)
+
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = Brand.Metric.space8
+        row.alignment = .centerY
+
+        if let agent = store.agents.first(where: { $0.isUsable }) {
+            keyAgent = agent
+            let label = NSTextField(labelWithString: "\(agent.name):")
+            label.font = Brand.Font.metadata
+            label.textColor = Brand.Color.textSecondary
+            row.addArrangedSubview(label)
+
+            let popup = NSPopUpButton()
+            popup.addItem(withTitle: "Let ssh decide")
+            for key in agent.keys { popup.addItem(withTitle: key.title) }
+            let pinned = store.config.ssh?.identityFile ?? ""
+            popup.selectItem(at: agent.keys.firstIndex {
+                pinned.hasSuffix("/\($0.slug).pub")
+            }.map { $0 + 1 } ?? 0)
+            popup.target = self
+            popup.action = #selector(keyChosen(_:))
+            popup.controlSize = .small
+            popup.font = Brand.Font.metadata
+            popup.setAccessibilityLabel("SSH key")
+            keyPopup = popup
+            row.addArrangedSubview(popup)
+        } else {
+            let files = KeySource.detectKeyFiles()
+            let label = NSTextField(labelWithString: files.isEmpty
+                ? "No agent and no key in ~/.ssh. ssh decides for itself."
+                : "In ~/.ssh: \(files.joined(separator: ", "))")
+            label.font = Brand.Font.metadata
+            label.textColor = Brand.Color.textSecondary
+            row.addArrangedSubview(label)
+        }
+        row.addArrangedSubview(button("Choose\u{2026}", #selector(chooseKey)))
+        sourcesStack.addView(row, in: .top)
+
+        let note = NSTextField(wrappingLabelWithString:
+            "Hangar never reads a private key. Pinning an agent key writes only "
+            + "its public half, under ~/.hangar/keys, so ssh knows which one to "
+            + "offer instead of trying every key in the vault.")
+        note.font = .systemFont(ofSize: 10)
+        note.textColor = Brand.Color.textSecondary
+        note.preferredMaxLayoutWidth = 520
+        sourcesStack.addView(note, in: .top)
+    }
+
+    private func button(_ title: String, _ action: Selector) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.font = Brand.Font.metadata
+        return button
+    }
+
+    private func hint(_ text: String) -> NSTextField {
+        let field = NSTextField(labelWithString: text)
+        field.font = .systemFont(ofSize: 10)
+        field.textColor = Brand.Color.textSecondary
+        return field
+    }
+
+    private func isEnabled(_ source: HostSource) -> Bool {
+        let settings = store.config.sourceSettings
+        switch source {
+        case .ec2:       return settings.wantsEC2
+        case .ssm:       return settings.wantsSSMAfterFailure
+        case .sshConfig: return settings.wantsSSHConfig
+        case .hostsFile: return settings.wantsHostsFile
+        }
+    }
+
+    private func countLabel(_ report: SourceReport?) -> String {
+        guard let report, report.attempted else { return "off" }
+        if report.hosts > 0 { return "\(report.hosts) hosts" }
+        return report.problem == nil ? "none" : "failed"
+    }
+
+    private func detailLabel(_ source: HostSource, _ report: SourceReport?) -> String {
+        if let problem = report?.problem, report?.hosts == 0 {
+            return String(problem.prefix(90))
+        }
+        // A source that read a file and used none of it owes an explanation. The
+        // common case is an ssh config holding only git remotes, and "launch
+        // only" next to a zero reads like Hangar could not parse it.
+        if report?.hosts == 0, let skipped = report?.skipped, !skipped.isEmpty {
+            let more = skipped.count > 1 ? " (+\(skipped.count - 1) more)" : ""
+            return String(skipped[0].prefix(80)) + more
+        }
+        switch source {
+        case .ec2:       return source.requirement
+        case .ssm:       return "tried when EC2 is denied; needs \(source.requirement)"
+        case .sshConfig: return "launch only; Hangar never rewrites this file"
+        case .hostsFile: return report?.skipped.first ?? "any CSV with a header row"
+        }
+    }
+
+    @objc private func sourceToggled(_ sender: NSButton) {
+        guard let source = sourceToggles.first(where: { $0.value === sender })?.key else { return }
+        var config = store.config
+        var settings = config.sources ?? .standard
+        let on = sender.state == .on
+        switch source {
+        case .ec2:       settings.ec2 = on
+        case .ssm:       settings.ssm = on ? nil : false
+        case .sshConfig: settings.sshConfig = on
+        case .hostsFile: settings.hostsFile = on
+        }
+        config.sources = settings
+        try? HangarConfig.write(config)
+        store.reloadConfig()
+        Task { await runChecks() }
+    }
+
+    @objc private func keyChosen(_ sender: NSPopUpButton) {
+        guard let agent = keyAgent else { return }
+        let index = sender.indexOfSelectedItem
+        if index == 0 {
+            store.clearKeyPreference()
+        } else if index - 1 < agent.keys.count {
+            store.adopt(agent: agent, key: agent.keys[index - 1])
+        }
+        Task { await runChecks() }
+    }
+
+    @objc private func chooseKey() { chooseKeyFile() }
+    @objc private func importCSV() { chooseHostsFile() }
+
+    @objc private func createExampleCSV() {
+        guard store.writeExampleHostsFile() else {
+            Notifier.show(title: "Could not write the example",
+                          body: HangarConfig.hostsFilePath, seconds: 3)
+            return
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: HangarConfig.hostsFilePath))
     }
 
     /// One row per idea: what it is for, and a menu of the tag keys this fleet
@@ -879,6 +1168,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         case .addIncludeLine:    title = "Add Include Line"
         case .openConfig:        title = "Edit Config"
         case .copyLoginCommand:  title = "Copy Login Command"
+        case .openApp(_, let name): title = "Open \(name)"
+        case .importHostsFile:   title = "Import Hosts CSV\u{2026}"
         }
         let button = NSButton(title: title, target: self, action: #selector(applyRemedy(_:)))
         button.bezelStyle = .rounded
@@ -905,8 +1196,63 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             Notifier.show(title: "Copied", body: command)
         case .openConfig:
             NSWorkspace.shared.open(URL(fileURLWithPath: HangarConfig.path))
+        case .openApp(let bundleID, let name):
+            guard let url = NSWorkspace.shared
+                .urlForApplication(withBundleIdentifier: bundleID) else {
+                Notifier.show(title: "\(name) not found",
+                              body: "Hangar could not locate \(name) on this Mac.", seconds: 3)
+                break
+            }
+            NSWorkspace.shared.openApplication(at: url,
+                                               configuration: NSWorkspace.OpenConfiguration())
+        case .importHostsFile:
+            chooseHostsFile()
+            return
         }
         Task { await runChecks() }
+    }
+
+    // MARK: - Hosts and keys
+
+    /// An open panel rather than a path field. Nobody should be typing a path
+    /// into a setup screen in 2026, and the only reason this exists at all is
+    /// the case detection cannot cover.
+    private func chooseHostsFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Import hosts"
+        panel.message = "Choose a CSV with a header row. "
+            + "alias, hostname, user, port, product, env and role are understood; "
+            + "any other column becomes a tag."
+        panel.allowedContentTypes = [.commaSeparatedText, .plainText]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url, let self else { return }
+            Task { await self.importHosts(from: url) }
+        }
+    }
+
+    private func importHosts(from url: URL) async {
+        let message = await store.importHosts(from: url)
+        Notifier.show(title: "Hosts imported", body: message, seconds: 4)
+        await runChecks()
+    }
+
+    private func chooseKeyFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose an ssh key"
+        panel.message = "Pick the key ssh should use. Hangar records the path; it "
+            + "never reads the key."
+        panel.directoryURL = URL(fileURLWithPath:
+            NSString(string: "~/.ssh").expandingTildeInPath)
+        panel.showsHiddenFiles = true
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url, let self else { return }
+            self.store.adopt(keyFile: url.path)
+            Task { await self.runChecks() }
+        }
     }
 
     @objc private func toggleLogin() {
@@ -963,4 +1309,43 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 /// out bottom-up, which put the rows below the visible area.
 final class FlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+/// Accepts a dropped file, which is how a CSV of hostnames gets in.
+///
+/// Only one file, and only a name that looks like a text table. Copying whatever
+/// lands on the window into `~/.hangar/hosts.csv` unread would make a dropped
+/// binary the fleet.
+final class DropView: NSView {
+    var onDrop: ((URL) -> Void)?
+    private static let extensions: Set<String> = ["csv", "tsv", "txt"]
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    private func droppedFile(_ sender: NSDraggingInfo) -> URL? {
+        guard let urls = sender.draggingPasteboard.readObjects(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]) as? [URL],
+              urls.count == 1, let url = urls.first,
+              DropView.extensions.contains(url.pathExtension.lowercased()) else { return nil }
+        return url
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedFile(sender) == nil ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let url = droppedFile(sender) else { return false }
+        onDrop?(url)
+        return true
+    }
 }

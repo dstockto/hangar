@@ -69,6 +69,10 @@ final class HostRowView: NSTableCellView {
     private var hostMatches: [Range<String.Index>] = []
     private var stateName = ""
     private var metadataEnvironment: String?
+    /// Shown only when the host did not come from EC2. Where a host came from is
+    /// the first question anyone asks about one they did not expect to see, and
+    /// printing "ec2" on every row of an all-EC2 fleet would answer it for nobody.
+    private var metadataSource: String?
 
     override var isFlipped: Bool { true }
 
@@ -191,6 +195,7 @@ final class HostRowView: NSTableCellView {
         isProduction = instance.env.lowercased().contains("prod")
         isSelectedRow = selected
         metadataEnvironment = instance.env
+        metadataSource = instance.origin == .ec2 ? nil : instance.origin.label
         divider.isHidden = !showsDivider
 
         stateGlyph.image = Brand.Glyph.forState(instance.state)
@@ -207,6 +212,7 @@ final class HostRowView: NSTableCellView {
         if isProduction { described += ", production" }
         if instance.isASG { described += ", in autoscaling group" }
         described += ", hostname \(fullHostname)"
+        if let source = metadataSource { described += ", from \(source)" }
         setAccessibilityLabel(described)
 
         needsLayout = true
@@ -246,6 +252,7 @@ final class HostRowView: NSTableCellView {
         var parts: [String] = []
         if let env = metadataEnvironment, !env.isEmpty { parts.append(env) }
         parts.append(stateName)
+        if let source = metadataSource { parts.append(source) }
         // Give the hostname whatever width is left after the fixed facts, measured
         // rather than estimated, so a long name uses the space it actually has.
         let lead = parts.isEmpty ? "" : parts.joined(separator: " \u{00B7} ") + " \u{00B7} "

@@ -47,6 +47,12 @@ final class FleetStore: ObservableObject {
     @Published private(set) var tagCatalog: TagCatalog = .empty
     /// Host counts over the last few dozen refreshes, oldest first.
     @Published private(set) var history: [Sample] = []
+    /// What each source produced on the last refresh, in priority order.
+    @Published private(set) var sourceReports: [SourceReport] = []
+    /// The ssh agents on this machine and what they are holding. Detected on
+    /// demand rather than on every refresh: it runs a process, and the fleet
+    /// refreshing on a timer is not a reason to poke at someone's vault.
+    @Published private(set) var agents: [SSHAgent] = []
 
     /// Search-ready fleet, rebuilt only when the fleet or config changes.
     /// Everything the panel needs per keystroke is precomputed here.
@@ -78,10 +84,27 @@ final class FleetStore: ObservableObject {
         for entry in entries {
             aliasByID[entry.instance.id] = entry.aliases.first
         }
+        // Hosts Hangar deliberately does not write still have a name, and it is
+        // the one ssh already resolves. Leaving them out of the table would show
+        // an imported host under a slug that connects to nothing.
+        for instance in instances where !instance.isWrittenToSSHConfig {
+            aliasByID[instance.id] = instance.aliasStem
+        }
         searchEntries = instances
             .map { SearchEntry(instance: $0, alias: aliasByID[$0.id] ?? $0.aliasStem) }
-            .sorted { ($0.instance.product, $0.instance.env, $0.alias)
-                        < ($1.instance.product, $1.instance.env, $1.alias) }
+            .sorted { FleetStore.sortKey($0) < FleetStore.sortKey($1) }
+    }
+
+    /// Product, environment, alias, with anything carrying no product sent to the
+    /// end rather than the front.
+    ///
+    /// An empty string sorts first, so an untagged group used to open the panel.
+    /// That was survivable when untagged meant a handful of forgotten EC2 boxes.
+    /// It is not now: a few git hosts in someone's ssh config would sit above
+    /// their whole fleet, every time.
+    static func sortKey(_ entry: SearchEntry) -> (Int, String, String, String) {
+        (entry.instance.product.isEmpty ? 1 : 0,
+         entry.instance.product, entry.instance.env, entry.alias)
     }
 
     var isStale: Bool {
@@ -169,56 +192,150 @@ final class FleetStore: ObservableObject {
 
     // MARK: - Refresh
 
+    /// Gathers every enabled source, merges them, and reports each one.
+    ///
+    /// Local sources run first and without a network, so an SRE with no AWS
+    /// permission at all has a fleet before AWS is even asked. That ordering is
+    /// the feature: a denied `DescribeInstances` stops being a dead end and
+    /// becomes one line in a list of sources, most of which worked.
     func refresh() async {
         guard status != .refreshing else { return }
         status = .refreshing
         let started = Date()
         Log.info(.fleet, "refresh started")
         reloadConfig()
-        // Read before resolving: when resolution fails we still need to know what
-        // kind of profile it was to say anything useful about why.
+
+        let settings = config.sourceSettings
+        var groups: [HostSource: [Instance]] = [:]
+        var reports: [SourceReport] = []
+
+        // Local first. Neither needs a credential, so neither can be held up by
+        // one that is expired.
+        if settings.wantsSSHConfig {
+            let imported = SSHConfigImport.load()
+            groups[.sshConfig] = imported.hosts
+            reports.append(SourceReport(source: .sshConfig, hosts: imported.hosts.count,
+                                        skipped: imported.skipped))
+        } else {
+            reports.append(.off(.sshConfig))
+        }
+
+        if settings.wantsHostsFile {
+            let file = HostsFile.load()
+            groups[.hostsFile] = file.hosts
+            reports.append(SourceReport(source: .hostsFile, hosts: file.hosts.count,
+                                        skipped: file.skipped))
+        } else {
+            reports.append(.off(.hostsFile))
+        }
+
+        // Then AWS, which may fail without costing the user the hosts above.
         let attempted = try? AWSConfigFiles.load().profile(named: config.profile)
-        do {
-            let resolved = try await CredentialResolver.resolve(profile: config.profile)
-            let queryRegion = config.region ?? resolved.region
-            let ec2 = EC2(credentials: resolved.credentials, region: queryRegion)
-            let fetched = try await ec2.describeInstances(filters: [
-                EC2.Filter(name: "instance-state-name",
-                           values: ["pending", "running", "stopping", "stopped"])
-            ])
-            // Catalogued before normalization, which adds the canonical keys
-            // whether the fleet uses them or not.
-            tagCatalog = TagCatalog.discover(from: fetched)
-            // Tags are mapped to Hangar's canonical keys here, so every screen
-            // below this line reads "product" and "env" regardless of how the
-            // fleet spells them.
-            instances = config.tagMapping.normalize(fetched)
-            region = queryRegion
-            fetchedAt = Date()
-            rebuildIndex()
-            history.append(Sample(at: Date(), hosts: instances.count))
-            if history.count > FleetStore.historyLimit {
-                history.removeFirst(history.count - FleetStore.historyLimit)
+        var awsFailure: Error?
+        var queryRegion = region
+        if settings.wantsEC2 || settings.wantsSSMAlways {
+            do {
+                let resolved = try await CredentialResolver.resolve(profile: config.profile)
+                queryRegion = config.region ?? resolved.region
+                credentialSource = resolved.source
+                credentialAdvice = nil
+                Log.info(.credentials, "credentials resolved",
+                         ["source": resolved.source.label])
+
+                var ec2Denied = false
+                if settings.wantsEC2 {
+                    do {
+                        let ec2 = EC2(credentials: resolved.credentials, region: queryRegion)
+                        let fetched = try await ec2.describeInstances(filters: [
+                            EC2.Filter(name: "instance-state-name",
+                                       values: ["pending", "running", "stopping", "stopped"])
+                        ])
+                        groups[.ec2] = fetched
+                        reports.append(SourceReport(source: .ec2, hosts: fetched.count))
+                    } catch {
+                        ec2Denied = SSM.isAuthorizationFailure(error)
+                        awsFailure = error
+                        reports.append(SourceReport(
+                            source: .ec2, problem: FleetStore.presentable(error)))
+                        Log.warning(.fleet, "ec2 source failed",
+                                    ["error": error.localizedDescription])
+                    }
+                } else {
+                    reports.append(.off(.ec2))
+                }
+
+                // Only when EC2 said no, or when it was asked for outright. An
+                // account with EC2 read pays nothing for this.
+                if settings.wantsSSMAlways || (ec2Denied && settings.wantsSSMAfterFailure) {
+                    do {
+                        let ssm = SSM(credentials: resolved.credentials, region: queryRegion)
+                        let fetched = try await ssm.describeInstanceInformation()
+                        groups[.ssm] = fetched
+                        reports.append(SourceReport(source: .ssm, hosts: fetched.count))
+                        if !fetched.isEmpty { awsFailure = nil }
+                    } catch {
+                        reports.append(SourceReport(
+                            source: .ssm, problem: FleetStore.presentable(error)))
+                        Log.warning(.fleet, "ssm source failed",
+                                    ["error": error.localizedDescription])
+                    }
+                } else {
+                    reports.append(.off(.ssm))
+                }
+            } catch {
+                // Credentials themselves failed, so neither AWS source ran.
+                awsFailure = error
+                let advice = CredentialAdvice.forFailure(error, profile: attempted)
+                credentialAdvice = advice
+                reports.append(SourceReport(source: .ec2, problem: advice.message))
+                reports.append(.off(.ssm))
             }
-            credentialSource = resolved.source
-            credentialAdvice = nil
-            status = .idle
-            Log.info(.fleet, "refresh finished",
-                     ["hosts": "\(instances.count)", "region": queryRegion,
-                      "ms": "\(Int(Date().timeIntervalSince(started) * 1000))"])
-            Log.info(.credentials, "credentials resolved",
-                     ["source": resolved.source.label])
-            saveCache()
-            if config.syncSSHConfigOnRefresh ?? true {
-                syncSSHConfig(announce: false)
-            }
-        } catch {
-            let advice = CredentialAdvice.forFailure(error, profile: attempted)
-            credentialAdvice = advice
-            status = .failed(advice.message)
-            Log.error(.fleet, "refresh failed",
-                      ["error": error.localizedDescription,
-                       "ms": "\(Int(Date().timeIntervalSince(started) * 1000))"])
+        } else {
+            reports.append(.off(.ec2))
+            reports.append(.off(.ssm))
+        }
+
+        let merged = FleetMerge.merge(groups)
+        sourceReports = reports.sorted {
+            (FleetMerge.priority.firstIndex(of: $0.source) ?? 0)
+                < (FleetMerge.priority.firstIndex(of: $1.source) ?? 0)
+        }
+
+        // Nothing from anywhere is the only real failure. Anything else is a
+        // fleet with a note attached, and a fleet beats an error page.
+        guard !merged.instances.isEmpty else {
+            let message = awsFailure.map {
+                CredentialAdvice.forFailure($0, profile: attempted).message
+            } ?? "No hosts from any source."
+            status = .failed(message)
+            Log.error(.fleet, "refresh found nothing",
+                      ["ms": "\(Int(Date().timeIntervalSince(started) * 1000))"])
+            return
+        }
+
+        // Catalogued before normalization, which adds the canonical keys whether
+        // the fleet uses them or not.
+        tagCatalog = TagCatalog.discover(from: merged.instances)
+        // Tags are mapped to Hangar's canonical keys here, so every screen below
+        // this line reads "product" and "env" regardless of how the fleet, or the
+        // spreadsheet, or the ssh config, spells them.
+        instances = config.tagMapping.normalize(merged.instances)
+        region = queryRegion
+        fetchedAt = Date()
+        rebuildIndex()
+        history.append(Sample(at: Date(), hosts: instances.count))
+        if history.count > FleetStore.historyLimit {
+            history.removeFirst(history.count - FleetStore.historyLimit)
+        }
+        status = .idle
+        Log.info(.fleet, "refresh finished",
+                 ["hosts": "\(instances.count)", "region": queryRegion,
+                  "sources": "\(sourceReports.filter { $0.hosts > 0 }.count)",
+                  "duplicates": "\(merged.duplicates)",
+                  "ms": "\(Int(Date().timeIntervalSince(started) * 1000))"])
+        saveCache()
+        if config.syncSSHConfigOnRefresh ?? true {
+            syncSSHConfig(announce: false)
         }
     }
 
@@ -232,12 +349,23 @@ final class FleetStore: ObservableObject {
             lastSyncMessage = "No hosts to write. Refresh the fleet first."
             return
         }
+        // A fleet made entirely of imported hosts is a fleet Hangar writes
+        // nothing for, and that is correct rather than a failure.
+        guard instances.contains(where: { $0.isWrittenToSSHConfig }) else {
+            refreshManagedHosts()
+            if announce {
+                lastSyncMessage = "Nothing to write: every host is already in "
+                    + "~/.ssh/config, and Hangar leaves those alone."
+            }
+            return
+        }
         do {
             let writer = SSHConfigWriter(config: config)
             // The Include line comes with the aliases unless the user has said
             // they manage it themselves. Writing aliases no terminal can see is
             // not a feature with an optional extra step.
-            let result = try writer.sync(instances: instances, region: region,
+            let result = try writer.sync(instances: instances,
+                                         region: region.isEmpty ? "local sources" : region,
                                          ensuringInclude: config.manageSSHInclude ?? true)
             refreshManagedHosts()
             if !result.omittedHosts.isEmpty {
@@ -340,18 +468,12 @@ final class FleetStore: ObservableObject {
     func effectiveSSHSettings(for instance: Instance) -> (user: String?, identityFile: String?) {
         let target = alias(for: instance).flatMap { isManaged($0) ? $0 : nil }
             ?? instance.host ?? instance.id
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = SSHProbe.effectiveSettingsArguments(target: target)
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return (nil, nil) }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        guard let result = try? ProcessRunner.run(
+            "/usr/bin/ssh", SSHProbe.effectiveSettingsArguments(target: target),
+            timeout: 10) else { return (nil, nil) }
         var user: String?
         var identity: String?
-        for line in (String(data: data, encoding: .utf8) ?? "").components(separatedBy: .newlines) {
+        for line in result.out.components(separatedBy: .newlines) {
             let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
             guard parts.count == 2 else { continue }
             if parts[0] == "user", user == nil { user = parts[1] }
@@ -491,20 +613,16 @@ final class FleetStore: ObservableObject {
                                            identityFile: String?) -> (ok: Bool, detail: String) {
         let arguments = SSHProbe.arguments(host: host, user: user,
                                            identityFile: identityFile)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = arguments
-        let errors = Pipe()
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = errors
-        do { try process.run() } catch { return (false, "could not run ssh") }
-        let data = errors.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        if process.terminationStatus == 0 { return (true, "Authenticated") }
-        let text = (String(data: data, encoding: .utf8) ?? "")
+        // ConnectTimeout covers the connect, not a ProxyCommand or a resolver
+        // that never returns, so the deadline sits outside ssh as well as in it.
+        guard let result = try? ProcessRunner.run("/usr/bin/ssh", arguments, timeout: 30) else {
+            return (false, "ssh did not answer in time")
+        }
+        if result.status == 0 { return (true, "Authenticated") }
+        let text = result.err
             .components(separatedBy: .newlines)
             .last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
-            ?? "exit \(process.terminationStatus)"
+            ?? "exit \(result.status)"
         return (false, text.trimmingCharacters(in: .whitespaces))
     }
 
@@ -543,13 +661,135 @@ final class FleetStore: ObservableObject {
         return "Cache updated \(age) ago"
     }
 
+    // MARK: - Keys
+
+    /// Looks for an ssh agent holding the key.
+    ///
+    /// Runs a process, so it is called when the setup screen asks rather than on
+    /// the refresh timer: a fleet refreshing every half hour is not a reason to
+    /// keep poking at someone's vault.
+    func detectAgents() {
+        agents = KeySource.detectAgents()
+        for agent in agents {
+            Log.info(.ssh, "ssh agent found",
+                     ["agent": agent.kind.rawValue, "keys": "\(agent.keys.count)"])
+        }
+    }
+
+    /// True when Hangar has no opinion about keys yet, which is the only state in
+    /// which it is allowed to form one on the user's behalf.
+    var hasKeyPreference: Bool {
+        config.ssh?.identityAgent?.isEmpty == false || config.ssh?.identityFile?.isEmpty == false
+    }
+
+    /// Pins one agent key for every host. The public half is written under
+    /// ~/.hangar/keys and named by IdentityFile; the private half is never read,
+    /// asked for, or stored.
+    @discardableResult
+    func adopt(agent: SSHAgent, key: AgentKey) -> String? {
+        guard let path = KeySource.materialize(key) else {
+            lastSyncMessage = "Could not write the public key under ~/.hangar/keys."
+            return nil
+        }
+        var updated = config
+        var ssh = updated.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
+        ssh.identityAgent = agent.socket
+        ssh.identityFile = path
+        ssh.identitiesOnly = true
+        updated.ssh = ssh
+        do {
+            try HangarConfig.write(updated)
+            config = updated
+            rebuildIndex()
+            syncSSHConfig(announce: false)
+            Log.info(.ssh, "agent key adopted",
+                     ["agent": agent.kind.rawValue, "key": Redact.host(key.title)])
+            // A key that is no longer in the vault leaves an IdentityFile pointing
+            // at a key nobody has, which fails at connect time rather than here.
+            for stale in KeySource.staleKeyFiles(keeping: agent.keys) {
+                try? FileManager.default.removeItem(atPath: stale)
+            }
+            return path
+        } catch {
+            lastSyncMessage = FleetStore.presentable(error)
+            return nil
+        }
+    }
+
+    /// Stops pinning a key, which puts ssh back to deciding for itself.
+    func clearKeyPreference() {
+        var updated = config
+        var ssh = updated.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
+        ssh.identityAgent = nil
+        ssh.identityFile = nil
+        ssh.identitiesOnly = nil
+        updated.ssh = ssh
+        guard (try? HangarConfig.write(updated)) != nil else { return }
+        config = updated
+        syncSSHConfig(announce: false)
+    }
+
+    /// Pins a key file rather than an agent key.
+    func adopt(keyFile path: String) {
+        var updated = config
+        var ssh = updated.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
+        ssh.identityAgent = nil
+        ssh.identityFile = path
+        ssh.identitiesOnly = true
+        updated.ssh = ssh
+        guard (try? HangarConfig.write(updated)) != nil else { return }
+        config = updated
+        syncSSHConfig(announce: false)
+    }
+
+    // MARK: - Hosts file
+
+    /// Copies a CSV into ~/.hangar/hosts.csv and refreshes. Importing is a file
+    /// copy and nothing else, so what Hangar reads is a file the user can open.
+    func importHosts(from url: URL) async -> String {
+        do {
+            let result = try HostsFile.install(from: url)
+            await refresh()
+            let skipped = result.skipped.isEmpty
+                ? "" : ", \(result.skipped.count) row(s) skipped"
+            return "Imported \(result.hosts.count) hosts from "
+                + "\(url.lastPathComponent)\(skipped)"
+        } catch {
+            return FleetStore.presentable(error)
+        }
+    }
+
+    /// Writes the example CSV so there is something to edit rather than a format
+    /// to guess at.
+    func writeExampleHostsFile() -> Bool {
+        guard !FileManager.default.fileExists(atPath: HangarConfig.hostsFilePath) else {
+            return true
+        }
+        return PrivateFile.write(Data((HostsFile.example + "\n").utf8),
+                                 to: HangarConfig.hostsFilePath)
+    }
+
+    /// Hosts Hangar writes into its own include, which is not the size of the
+    /// fleet: an imported host is launched from the user's file, not ours.
+    var writtenHostCount: Int {
+        SSHConfigWriter(config: config).entries(for: instances).count
+    }
+
+    var importedHostCount: Int {
+        instances.count { !$0.isWrittenToSSHConfig }
+    }
+
     /// The ssh alias Hangar wrote for an instance, when it wrote one.
     func alias(for instance: Instance) -> String? { aliasByID[instance.id] }
 
     func sshTarget(for instance: Instance) -> (command: String, target: String) {
         let alias = aliasByID[instance.id]
         let host = instance.host ?? instance.privateIP ?? instance.id
-        if let alias, isManaged(alias) {
+        // A host imported from the user's own config is already resolvable, so
+        // it gets a bare `ssh <alias>` and keeps whatever their file says about
+        // it: the port, the ProxyJump, the login. Spelling our own guesses out
+        // on the command line would override the file we imported it from.
+        if let alias, isManaged(alias) || !instance.isWrittenToSSHConfig {
             return (Launcher.sshCommand(for: alias, settings: nil, managedByConfig: true), alias)
         }
         let settings = config.sshSettings(for: instance)

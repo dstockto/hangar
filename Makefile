@@ -1,9 +1,10 @@
 # Hangar. The Swift build needs only Command Line Tools; Xcode is required for one
 # step, actool, which compiles the asset catalog.
-.PHONY: help all build test icon wordmark verify-assets bundle dmg install run uninstall clean
+.PHONY: help all build test testbed icon wordmark verify-assets bundle dmg install run uninstall clean
 
 help:
 	@echo "  make test            offline test suite, no network needed"
+	@echo "  make testbed         drive every host source against a fake home"
 	@echo "  make bundle          assemble dist/Hangar.app and sign it"
 	@echo "  make icon            re-render the app icon previews from the layer SVGs"
 	@echo "  make wordmark        re-render the wordmark @2x fallbacks and its manifest"
@@ -21,6 +22,12 @@ build:
 
 test:
 	@scripts/test.sh
+
+# Every source, the merge and the writer against a fabricated home directory,
+# then proves your own ~/.ssh/config and ~/.hangar were not touched.
+testbed:
+	@swift build --package-path app
+	@scripts/testbed.sh
 
 bundle:
 	@scripts/bundle.sh

@@ -146,4 +146,78 @@ final class SSHConfigWriterTests: TemporaryDirectoryTestCase {
                                                       encoding: .utf8)
         XCTAssertNotNil(SSHConfigWriter.validate(bad))
     }
+
+    // MARK: - Key sources
+
+    /// The bug this exists to prevent: IdentitiesOnly used to follow IdentityFile
+    /// automatically, and it tells ssh to ignore every key an agent is holding.
+    /// A vault user who filled in the key field locked themselves out of every
+    /// host at once, silently.
+    func testIdentitiesOnlyCanBeSuppressedWithAKeyPinned() {
+        var config = HangarConfig.standard()
+        config.ssh?.identityFile = "~/.ssh/id_rsa"
+        config.ssh?.identitiesOnly = false
+        let text = SSHConfigWriter(config: config).render(instances: [solo], region: "us-west-2")
+        XCTAssertTrue(text.contains("IdentityFile ~/.ssh/id_rsa"))
+        XCTAssertFalse(text.contains("IdentitiesOnly"),
+                       "an agent's keys must still be offered when the user says so")
+    }
+
+    func testPinningAKeyStillDefaultsToIdentitiesOnly() {
+        var config = HangarConfig.standard()
+        config.ssh?.identityFile = "~/.ssh/id_rsa"
+        let text = SSHConfigWriter(config: config).render(instances: [solo], region: "us-west-2")
+        XCTAssertTrue(text.contains("IdentitiesOnly yes"), "the shipped behaviour is kept")
+    }
+
+    func testAgentKeyEmitsAllThreeLines() {
+        var config = HangarConfig.standard()
+        config.ssh?.identityAgent = KeySource.onePasswordSocket
+        config.ssh?.identityFile = "~/.hangar/keys/prod-sre-abcd1234.pub"
+        config.ssh?.identitiesOnly = true
+        let text = SSHConfigWriter(config: config).render(instances: [solo], region: "us-west-2")
+        XCTAssertTrue(text.contains("IdentityAgent \"\(KeySource.onePasswordSocket)\""),
+                      "the socket path has a space in it on every Mac")
+        XCTAssertTrue(text.contains("IdentityFile ~/.hangar/keys/prod-sre-abcd1234.pub"))
+        XCTAssertTrue(text.contains("IdentitiesOnly yes"))
+    }
+
+    /// Saying nothing is what lets an agent the user already configured globally
+    /// keep working untouched. It is the default and it stays the default.
+    func testNothingIsSaidAboutKeysByDefault() {
+        let text = writer.render(instances: [solo], region: "us-west-2")
+        XCTAssertFalse(text.contains("IdentityFile"))
+        XCTAssertFalse(text.contains("IdentityAgent"))
+        XCTAssertFalse(text.contains("IdentitiesOnly"))
+    }
+
+    func testAnAgentSocketCarryingADirectiveIsRefused() {
+        var config = HangarConfig.standard()
+        config.ssh?.identityAgent = "/tmp/x.sock\nProxyCommand evil"
+        let text = SSHConfigWriter(config: config).render(instances: [solo], region: "us-west-2")
+        XCTAssertFalse(text.contains("ProxyCommand"))
+        XCTAssertFalse(text.contains("IdentityAgent"))
+    }
+
+    // MARK: - Sources
+
+    func testAnImportedHostIsNotWrittenAndIsNotAnOmission() {
+        let imported = Instance(
+            id: "ssh:web1", state: "unknown", type: "", privateIP: nil, publicIP: nil,
+            availabilityZone: nil, launchTime: "", tags: ["hostname": "10.0.0.1"],
+            source: .sshConfig, preferredAlias: "web1")
+        XCTAssertTrue(writer.entries(for: [imported]).isEmpty)
+        XCTAssertTrue(writer.omitted(from: [imported]).isEmpty)
+    }
+
+    func testProvenanceIsInTheCommentOnlyWhenItIsNotEC2() {
+        let csv = Instance(
+            id: "csv:web1", state: "unknown", type: "", privateIP: nil, publicIP: nil,
+            availabilityZone: nil, launchTime: "", tags: ["hostname": "10.0.0.1"],
+            source: .hostsFile, preferredAlias: "web1")
+        XCTAssertTrue(writer.render(instances: [csv], region: "us-west-2")
+            .contains("source=hosts_file"))
+        XCTAssertFalse(writer.render(instances: [solo], region: "us-west-2")
+            .contains("source="), "printing it on every row of an EC2 fleet tells nobody anything")
+    }
 }

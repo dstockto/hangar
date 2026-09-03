@@ -427,7 +427,15 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
                          "\(group.pets) of \(group.count)"))
         }
         if rows.isEmpty {
-            rows.append(PanelRow(.ok, "Every group spans more than one zone", ""))
+            rows.append(PanelRow(.ok, insights.described == 0
+                ? "Nothing here to place" : "Every group spans more than one zone", ""))
+        }
+        // The denominator travels with the number. A fleet of imported hosts has
+        // no zones, and a panel that answered "every group spans more than one
+        // zone" for hosts nobody ever asked EC2 about would be inventing a
+        // finding out of missing data.
+        if let coverage = insights.coverage {
+            rows.append(PanelRow(.note, "Counted over \(coverage)", ""))
         }
         return panel(title: "Placement and autoscaling",
                      symbol: "point.3.connected.trianglepath.dotted",
@@ -449,6 +457,9 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
                         family.isBurstable ? "burstable" : nil]
                 .compactMap { $0 }.joined(separator: ", ")
             rows.append(PanelRow(.family, "\(family.family), \(note)", count(family.count, "host")))
+        }
+        if let coverage = insights.coverage {
+            rows.append(PanelRow(.note, "Counted over \(coverage)", ""))
         }
         let old = insights.ages.first { $0.label == "over 180 days" }?.count ?? 0
         return panel(title: "Age and instance families", symbol: "clock.arrow.circlepath",

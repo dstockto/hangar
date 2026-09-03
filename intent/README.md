@@ -55,3 +55,5 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0020 | Fleet dashboard | Shipped |
 | 0021 | A dashboard you can navigate | Shipped |
 | 0022 | A window closes rather than quitting | Shipped |
+| 0023 | A key you never have to name | Shipped |
+| 0024 | More than one way to find a host | Shipped |

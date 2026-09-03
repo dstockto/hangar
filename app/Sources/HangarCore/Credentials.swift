@@ -120,38 +120,20 @@ public enum CredentialResolver {
     static func runCredentialProcess(
         _ command: String, timeout: TimeInterval = credentialProcessTimeout
     ) throws -> AWSCredentials {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-
-        // Waited for before reading, because readDataToEndOfFile blocks until the
-        // write end closes, which is exactly what a hung helper never does. The
-        // JSON is a few hundred bytes, well inside the pipe buffer, so nothing is
-        // lost by letting it sit there until the process is done.
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
-            usleep(20_000)
-        }
-        if process.isRunning {
-            process.terminate()
-            let grace = Date().addingTimeInterval(2)
-            while process.isRunning && Date() < grace { usleep(20_000) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        let result: ProcessRunner.Result
+        do {
+            result = try ProcessRunner.shell(command, timeout: timeout)
+        } catch {
             Log.error(.credentials, "credential_process timed out",
                       ["seconds": "\(Int(timeout))"])
             throw HangarError.timedOut(
                 "credential_process did not finish within \(Int(timeout)) seconds")
         }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
+        guard result.status == 0 else {
             throw HangarError.malformedResponse(
-                "credential_process exited \(process.terminationStatus)")
+                "credential_process exited \(result.status)")
         }
+        let data = result.stdout
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let key = obj["AccessKeyId"] as? String,
               let secret = obj["SecretAccessKey"] as? String else {

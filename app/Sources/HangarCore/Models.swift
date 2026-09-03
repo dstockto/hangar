@@ -29,6 +29,14 @@ public struct Instance: Sendable, Hashable, Codable {
     public var monitoring: String?
     public var rootDeviceType: String?
     public var stateReason: String?
+    /// Which source produced this host. Nil means EC2: a cache written before
+    /// there was more than one source has to keep decoding.
+    public var source: HostSource?
+    /// The name this host is already known by, set by every source that does not
+    /// invent its own. Kept verbatim rather than slugified, because for an
+    /// imported host it is the name ssh already resolves and changing it would
+    /// produce an alias that does not work.
+    public var preferredAlias: String?
 
     public init(id: String, state: String, type: String, privateIP: String?,
                 publicIP: String?, availabilityZone: String?, launchTime: String,
@@ -39,7 +47,8 @@ public struct Instance: Sendable, Hashable, Codable {
                 cores: Int? = nil, threadsPerCore: Int? = nil,
                 privateDNS: String? = nil, securityGroups: [String]? = nil,
                 monitoring: String? = nil, rootDeviceType: String? = nil,
-                stateReason: String? = nil) {
+                stateReason: String? = nil, source: HostSource? = nil,
+                preferredAlias: String? = nil) {
         self.id = id
         self.state = state
         self.type = type
@@ -63,7 +72,16 @@ public struct Instance: Sendable, Hashable, Codable {
         self.monitoring = monitoring
         self.rootDeviceType = rootDeviceType
         self.stateReason = stateReason
+        self.source = source
+        self.preferredAlias = preferredAlias
     }
+
+    /// The source, with the pre-provenance default filled in.
+    public var origin: HostSource { source ?? .ec2 }
+
+    /// Whether Hangar writes this host into its own ssh_config include, or leaves
+    /// it to the config the user already has.
+    public var isWrittenToSSHConfig: Bool { origin.writesSSHConfig }
 
     /// vCPUs, when the response said how the cores are laid out.
     public var vcpus: Int? {
@@ -92,6 +110,10 @@ public struct Instance: Sendable, Hashable, Codable {
     /// `ssh prod-web-1` can land on a different product's server than you meant.
     /// Ordered widest to narrowest so aliases sort into the same shape as the menu.
     public var aliasStem: String {
+        // A host that already has a name keeps it. Slugifying an imported alias
+        // would produce something ssh cannot resolve, which is worse than an
+        // alias that does not match the house style.
+        if let preferredAlias, !preferredAlias.isEmpty { return preferredAlias }
         let parts = [product, env, envName, role].map(Instance.slug).filter { !$0.isEmpty }
         return parts.isEmpty ? Instance.slug(id) : parts.joined(separator: "-")
     }
@@ -111,7 +133,7 @@ public struct Instance: Sendable, Hashable, Codable {
         return String(alias.dropFirst(prefix.count))
     }
 
-    static func slug(_ text: String) -> String {
+    public static func slug(_ text: String) -> String {
         let lowered = text.lowercased()
         var out = ""
         var lastWasDash = false

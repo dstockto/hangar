@@ -281,6 +281,29 @@ Host payments-prod-web-1
         </article>
 
         <article class="feature">
+          <h3>Four ways to find a host</h3>
+          <p>EC2, Systems Manager, the hosts already in your ssh config, and any CSV
+             you drop on the window. No AWS permission at all is required, and a
+             denied call falls back on its own instead of showing you an error.</p>
+          <div class="demo"><span class="c">EC2</span>                <span class="c">denied</span>
+<span class="c">Systems Manager</span>    <span class="ok">31 hosts</span>
+<span class="c">~/.ssh/config</span>      <span class="ok">41 hosts</span>
+<span class="c">hosts.csv</span>          <span class="ok">18 hosts</span></div>
+        </article>
+
+        <article class="feature">
+          <h3>1Password, with no setup</h3>
+          <p>If an ssh agent is holding your key, Hangar finds it and uses it. One
+             key is adopted without asking. No <code>op</code> CLI, and no private
+             key is ever read, exported or stored.</p>
+          <div class="demo"><span class="c"># ~/.ssh/config.d/hangar</span>
+Host payments-prod-web-1
+  IdentityAgent <span class="acc">"…/1password/t/agent.sock"</span>
+  IdentityFile ~/.hangar/keys/prod-sre.<span class="acc">pub</span>
+  IdentitiesOnly yes</div>
+        </article>
+
+        <article class="feature">
           <h3>Credentials stay local</h3>
           <p>The same resolution order the AWS CLI uses, read straight from your
              home directory, with the signing done here. Expired SSO tokens refresh
@@ -485,19 +508,23 @@ rsync -av ./dist/ payments-prod-web-1:/srv/app/">
         <li><strong>No account, no telemetry</strong>
             <span>Nothing to sign up for and nothing reported back.</span></li>
         <li><strong>Private keys are never read</strong>
-            <span>Key material stays with ssh and your agent.</span></li>
+            <span>Key material stays with ssh and your agent. With 1Password, only
+                  the public half of the chosen key is written, and it is asked for
+                  over the agent socket rather than read from the vault.</span></li>
         <li><strong>Read-only against AWS</strong>
             <span>One <code>ec2:DescribeInstances</code> call, signed with SigV4.
-                  That is the only IAM permission Hangar needs.</span></li>
+                  That is the only IAM permission Hangar asks for, and it works
+                  without one.</span></li>
         <li><strong>One generated file</strong>
             <span><code>~/.ssh/config.d/hangar</code>, written at 0600 after ssh
                   itself validates the syntax.</span></li>
         <li><strong>Your own config is left alone</strong>
-            <span>The Include line is added only by the explicit menu action, which
-                  keeps a backup.</span></li>
+            <span>Hosts imported from it are launched, never rewritten, so Hangar
+                  can never outrank a file you wrote by hand.</span></li>
         <li><strong>Tags are untrusted input</strong>
             <span>Values are quoted on the way into ssh_config and shell-quoted on
-                  the way into a terminal.</span></li>
+                  the way into a terminal. An imported host and a CSV row are held
+                  to exactly the same rules.</span></li>
         <li><strong>Signed and notarized</strong>
             <span>Updates install only when Apple notarized them and the signing
                   team matches.</span></li>

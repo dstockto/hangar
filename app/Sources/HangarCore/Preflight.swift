@@ -30,6 +30,9 @@ public struct Preflight: Sendable {
         case addIncludeLine
         case copyLoginCommand(String)
         case openConfig
+        /// Bring the agent's own app forward so the user can unlock it.
+        case openApp(bundleID: String, name: String)
+        case importHostsFile
     }
 
     public var checks: [Check]
@@ -64,14 +67,21 @@ public struct Preflight: Sendable {
     }
 
     /// Whether the ssh aliases Hangar writes can actually be resolved by ssh.
+    ///
+    /// `hostCount` is what Hangar wrote, not the size of the fleet. Hosts imported
+    /// from the user's own config are launched from their file rather than ours,
+    /// so quoting the fleet size here would claim aliases that are not in the file.
     public static func sshIncludeCheck(
-        includePresent: Bool, fileExists: Bool, hostCount: Int
+        includePresent: Bool, fileExists: Bool, hostCount: Int, importedCount: Int = 0
     ) -> Check {
         if includePresent {
+            let imported = importedCount > 0
+                ? " \(importedCount) more are already in your own config and are left there."
+                : ""
             return Check(
                 id: "ssh-include", title: "SSH aliases active",
                 detail: fileExists
-                    ? "~/.ssh/config includes \(hostCount) Hangar aliases."
+                    ? "~/.ssh/config includes \(hostCount) Hangar aliases.\(imported)"
                     : "~/.ssh/config has the Include line; aliases appear after the first sync.",
                 level: .ok)
         }
@@ -115,6 +125,99 @@ public struct Preflight: Sendable {
             level: .warning, remedy: .openConfig)
     }
 
+    /// Where the ssh key comes from.
+    ///
+    /// Reports rather than asks. An agent that is already holding the key needs
+    /// no configuration at all, and the common failure is not a missing key but a
+    /// locked vault, which looks identical to an empty one from outside.
+    public static func keyCheck(agents: [SSHAgent], keyFiles: [String],
+                                settings: HangarConfig.SSHSettings?) -> Check {
+        // A pinned key with IdentitiesOnly and no agent is the shape that used to
+        // lock an agent user out of every host at once, so it is called out.
+        if let agent = agents.first(where: { $0.isUsable }) {
+            let pinned = settings?.identityAgent == agent.socket
+            let count = agent.keys.count
+            return Check(
+                id: "key",
+                title: "\(agent.name) is holding your ssh key",
+                detail: pinned
+                    ? "Hangar points ssh at \(agent.name) for every host. The private "
+                        + "key stays in the vault; only its public half is written."
+                    : "\(count == 1 ? "1 key" : "\(count) keys") available. Hangar will "
+                        + "use \(count == 1 ? "it" : "the one you pick below") and never "
+                        + "reads the private half.",
+                level: .ok)
+        }
+        if let agent = agents.first {
+            return Check(
+                id: "key", title: "\(agent.name) is there but locked",
+                detail: agent.problem ?? "The agent offered no keys.",
+                level: .warning,
+                remedy: agent.kind == .onePassword
+                    ? .openApp(bundleID: "com.1password.1password", name: "1Password")
+                    : nil)
+        }
+        if settings?.identityFile?.isEmpty == false {
+            return Check(id: "key", title: "SSH key set",
+                         detail: "Hangar pins \(settings?.identityFile ?? "") on every host.",
+                         level: .ok)
+        }
+        if !keyFiles.isEmpty {
+            return Check(
+                id: "key", title: "SSH keys found in ~/.ssh",
+                detail: keyFiles.joined(separator: ", ")
+                    + ". Hangar says nothing about keys unless you pick one, so ssh "
+                    + "uses these exactly as it already does.",
+                level: .ok)
+        }
+        return Check(
+            id: "key", title: "No ssh key found",
+            detail: "No agent and no key in ~/.ssh. Hangar still connects; ssh will "
+                + "ask for a password unless your own config says otherwise.",
+            level: .warning)
+    }
+
+    /// Where the hosts came from. The point of this check is that a denied EC2
+    /// call is no longer a dead end: it sits directly above whatever did work.
+    ///
+    /// `fleetSize` is the merged count, not the sum of the rows. They differ when
+    /// two sources named the same machine, and a headline that disagrees with the
+    /// list under it is the same fault as a cluster that disagrees with the menu.
+    public static func sourcesCheck(_ reports: [SourceReport], fleetSize: Int) -> Check {
+        let working = reports.filter { $0.attempted && $0.hosts > 0 }
+        let gathered = working.reduce(0) { $0 + $1.hosts }
+        let total = fleetSize
+        let detail = reports
+            .filter { $0.attempted }
+            .map { report -> String in
+                if let problem = report.problem, report.hosts == 0 {
+                    return "\(report.source.label): \(problem)"
+                }
+                return "\(report.source.label): \(report.hosts)"
+            }
+            .joined(separator: "  ·  ")
+            + (gathered > total ? "  ·  \(gathered - total) named by two sources" : "")
+
+        if working.isEmpty {
+            return Check(
+                id: "sources", title: "No hosts from any source",
+                detail: detail.isEmpty
+                    ? "EC2 returned nothing, and there is no ~/.ssh/config and no "
+                        + "~/.hangar/hosts.csv to fall back on."
+                    : detail + ". Drop a CSV of hostnames on this window to add hosts "
+                        + "without any AWS permission at all.",
+                level: .problem, remedy: .importHostsFile)
+        }
+        let failed = reports.filter { $0.attempted && $0.problem != nil && $0.hosts == 0 }
+        return Check(
+            id: "sources",
+            title: working.count == 1
+                ? "\(total) hosts from \(working[0].source.label)"
+                : "\(total) hosts from \(working.count) sources",
+            detail: detail,
+            level: failed.isEmpty ? .ok : .warning)
+    }
+
     /// The terminal Hangar will hand sessions to.
     public static func terminalCheck(configured: String?, installed: Bool,
                                      fallbackInstalled: Bool) -> Check {
@@ -148,14 +251,23 @@ public struct Preflight: Sendable {
     /// Credentials, with a recovery only when one actually applies. The advice is
     /// computed from the profile that was tried, so a static-keys user is never
     /// told to run an SSO command they have no use for.
+    /// `hasHostsAnyway` downgrades the failure. Since hosts can come from the
+    /// user's own ssh config and from a CSV, an expired token is no longer the
+    /// difference between a working app and a broken one, and calling it a
+    /// blocker in front of a fleet that is on screen would be a lie.
     public static func credentialsCheck(sourceLabel: String?,
-                                        advice: CredentialAdvice.Advice?) -> Check {
+                                        advice: CredentialAdvice.Advice?,
+                                        hasHostsAnyway: Bool = false) -> Check {
         if let advice {
             return Check(
                 id: "credentials",
                 title: advice.command != nil ? "Credentials expired"
                                              : "Credentials unavailable",
-                detail: advice.message, level: .problem,
+                detail: hasHostsAnyway
+                    ? advice.message + " Your other sources still worked, so Hangar "
+                        + "is usable; AWS hosts are missing until this is fixed."
+                    : advice.message,
+                level: hasHostsAnyway ? .warning : .problem,
                 remedy: advice.command.map { Remedy.copyLoginCommand($0) })
         }
         return Check(id: "credentials", title: "Credentials resolved",

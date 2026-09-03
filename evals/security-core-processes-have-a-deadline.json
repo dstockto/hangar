@@ -1,0 +1,7 @@
+{
+  "id": "security-core-processes-have-a-deadline",
+  "promise": "Every external process HangarCore starts runs through ProcessRunner, which terminates and then kills it.",
+  "why": "credential_process hung forever and the fleet refreshed forever with it; a locked vault answering ssh-add is the same shape. Scoped to HangarCore because that is where somebody else's code gets run.",
+  "command": "! grep -rln 'Process()' app/Sources/HangarCore --include='*.swift' | grep -qv 'ProcessRunner.swift'",
+  "expect": "exit 0"
+}
