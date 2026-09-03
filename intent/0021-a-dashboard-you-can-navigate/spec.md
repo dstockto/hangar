@@ -21,9 +21,13 @@ public struct ClusterFocus: Equatable, Sendable {
   `leaving()` steps out by one, from a host back to the group it was in and from
   a group back towards the fleet. The fleet is the floor: leaving it is a no-op
   rather than an invalid state.
-- `nextKey(_:)` is the grouping key a click at this depth would open, and nil
-  once the next click opens a host rather than another group. That is what makes
-  the drill follow `group_by` rather than an assumption about product and env.
+- `nextLevel(_:among:)` is the key a click at this depth would open, with its
+  index in `group_by`, and nil once the next click opens a host rather than
+  another group. It skips a key none of the hosts in scope carries.
+- A `Step` records the key as well as the value, because skipping means the
+  second thing in the path is no longer the second key in `group_by`. Without
+  that, filtering compares an `env` value against the `env_name` key and matches
+  nothing.
 - `matches(_:groupingKeys:)` compares tag values level by level, so a fleet
   grouped by `["Team"]` drills by team.
 - `backDestination` is the label of the level a step out lands on: nil at the
@@ -38,7 +42,13 @@ The cluster shows exactly one level, chosen by the focus.
    `9 + 6 * sqrt(count)` capped at 52, so area tracks host count. Hosts appear
    as particles on an arc beside their group, positioned from a hash of the
    instance id so the picture is stable between refreshes.
-2. **Groups again**, one level down, when `group_by` has another key. Tier
+2. **Groups again**, one level down, when `group_by` has another key *that the
+   hosts in scope actually carry*. A key none of them carries is skipped rather
+   than drawn, because it would put the whole group behind a single "untagged"
+   circle that costs a click and says nothing. `FleetGrouping` has always done
+   this for the menubar cascade; the picture did not, and the two disagreed
+   about how deep the same fleet went. On a fleet where `env_name` is carried by
+   a third of the hosts, that was 11 of 20 product and environment groups. Tier
    orders the ring: production nearest the hub, then staging, test, development,
    other, each tier a band further out. Within a tier the order is alphabetical,
    so each band forms an arc and the same fleet lands in the same picture.

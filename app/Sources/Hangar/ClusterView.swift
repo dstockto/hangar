@@ -68,6 +68,10 @@ final class ClusterView: NSView {
     private var hubTotal = 0
     private var timer: Timer?
     private var hostLevel = false
+    /// Which key in `group_by` the circles on screen are grouped by, so opening
+    /// one records the level it came from rather than assuming the path and the
+    /// key list line up. They do not, once a level has been skipped.
+    private var currentLevel: (level: Int, key: String)?
     private var entrance: CGFloat = 1
     private var ringRadius: CGFloat = 0
     private var hovered: Int?
@@ -127,15 +131,20 @@ final class ClusterView: NSView {
     }
 
     private func inFocus(_ instance: Instance) -> Bool {
-        focus.matches(instance, groupingKeys: groupingKeys)
+        focus.matches(instance)
     }
 
     private func rebuild() {
         let visible = instances.filter { inFocus($0) }
-        // A level still to descend means circles are groups; past the last one,
-        // or with a single host open, they are hosts.
-        if focus.hostID == nil, focus.nextKey(groupingKeys) != nil, visible.count > 1 {
-            buildGroups(visible)
+        // A level still worth descending means circles are groups; past the last
+        // one, or with a single host open, they are hosts. "Worth" is the point:
+        // a key none of these hosts carries is skipped rather than drawn as one
+        // untagged circle standing in front of everything.
+        let next = focus.hostID == nil && visible.count > 1
+            ? focus.nextLevel(groupingKeys, among: visible)
+            : nil
+        if let next {
+            buildGroups(visible, level: next)
         } else {
             buildHosts(visible)
         }
@@ -203,14 +212,14 @@ final class ClusterView: NSView {
         restart()
     }
 
-    private func buildGroups(_ instances: [Instance]) {
+    private func buildGroups(_ instances: [Instance], level: (level: Int, key: String)) {
         hostLevel = false
         hubTotal = instances.count
         hubLabel = hubTitle()
-        // The level being shown is the next one down the configured cascade, so
-        // the picture drills the same way the menubar menu does: product, then
-        // environment, then the hosts themselves.
-        let levelKey = focus.nextKey(groupingKeys) ?? TagMapping.Canonical.product
+        // The level being shown is the next one worth descending, so the picture
+        // drills the same way the menubar menu does and skips the same keys.
+        currentLevel = level
+        let levelKey = level.key
         var byGroup: [String: [Instance]] = [:]
         for instance in instances {
             byGroup[value(instance, levelKey), default: []].append(instance)
@@ -813,8 +822,10 @@ final class ClusterView: NSView {
         guard nodes.indices.contains(index) else { return }
         if let id = nodes[index].instanceID {
             focus = focus.opening(host: id)
-        } else {
-            focus = focus.entering(nodes[index].product == "untagged" ? "" : nodes[index].product)
+        } else if let level = currentLevel {
+            focus = focus.entering(level: level.level, key: level.key,
+                                   value: nodes[index].product == "untagged"
+                                          ? "" : nodes[index].product)
         }
         hovered = nil
         // The selection belonged to the circles that were on screen; the new

@@ -146,7 +146,13 @@ Kept because each one cost real debugging and would be easy to reintroduce.
 17. **Uppercasing a name that came from outside.** Mistake 8 was fixed on the
     landing page and left alone in the app, where the panel's group header ran
     `product.uppercased()` on an EC2 tag value. Same bug, different file.
-18. **An external process with no deadline.** `credential_process` is the user's
+18. **Two answers to the same question.** `FleetGrouping` skips a grouping key
+    no host carries, so the menubar never shows a level holding one "untagged"
+    entry. The cluster grew its own drill and did not, so the picture and the
+    menu disagreed about how deep the same fleet went, and 89 hosts on a real
+    fleet sat behind a circle that said nothing. When a second thing answers a
+    question the first already answers, it has to call the first one.
+19. **An external process with no deadline.** `credential_process` is the user's
     own command, and `readDataToEndOfFile` waits for the pipe to close, which a
     helper that hangs never does. The fleet refreshed forever and the setup
     window sat blank. Every process Hangar runs gets a deadline and a kill.
