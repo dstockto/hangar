@@ -1,16 +1,16 @@
 import AppKit
 import HangarCore
 
-/// The fleet as a settling cluster: one node per product, one per environment
-/// inside it, and every host a particle on a ring around its environment.
+/// The fleet as a ring around a hub, one grouping level at a time: products,
+/// then environments inside one product, then the hosts themselves. Clicking a
+/// circle goes in, clicking the hub goes back out.
 ///
-/// Gource animates history, which Hangar does not have on first launch, so this
-/// animates structure instead. Product and environment nodes find their own
-/// places with a small force simulation and then stop, because a picture that
-/// never stops moving is a picture nobody reads. Hosts are not simulated: a
-/// force solve over three thousand bodies would spend the whole frame budget
-/// saying only which environment each host belongs to, which a ring says for
-/// free and says the same way every launch.
+/// The ring is solved rather than simulated. A force layout drifted, overlapped
+/// at two dozen groups, and drew a different picture every launch; this one
+/// cannot overlap and puts the same fleet in the same place every time. Hosts
+/// under a group are drawn as particles rather than laid out individually: a
+/// solve over three thousand bodies would spend the whole frame budget saying
+/// only which group each host belongs to.
 @MainActor
 final class ClusterView: NSView {
 
@@ -55,9 +55,10 @@ final class ClusterView: NSView {
     private var instances: [Instance] = []
     private var groupingKeys: [String] = []
     private var focus: ClusterFocus = .fleet
-    /// Called with whatever is now in view, so the panels below can describe the
-    /// same subset the picture does.
-    var onFocusChange: (([Instance], String) -> Void)?
+    /// Called with whatever is now in view and how deep the view is, so the
+    /// panels can describe the same subset the picture does and offer their own
+    /// way back out of it.
+    var onFocusChange: (([Instance], ClusterFocus) -> Void)?
 
     private var nodes: [Node] = []
     /// Every group hangs off one hub: the account's EC2 inventory, which is the
@@ -131,15 +132,40 @@ final class ClusterView: NSView {
         } else {
             buildHosts(visible)
         }
-        onFocusChange?(visible, focusLabel)
+        onFocusChange?(visible, focus)
     }
 
     private var focusLabel: String { focus.label }
 
+    /// What a control stepping out of `destination` should be called. One
+    /// wording, used by the hub, its accessibility title, and the button on the
+    /// Insights tab, so what is drawn and what is spoken cannot disagree.
+    static func backTitle(to destination: String) -> String {
+        "Back to \(destination.isEmpty ? "the fleet" : destination)"
+    }
+
+    /// What is written under the hub. At the fleet it is where the data came
+    /// from; below it, it is the way out, because a hub still labelled with the
+    /// account gives no sign that clicking it leaves.
+    private func hubTitle() -> String {
+        guard let destination = focus.backDestination else {
+            return region.isEmpty ? "EC2" : "EC2 · \(region)"
+        }
+        return ClusterView.backTitle(to: destination)
+    }
+
+    /// One level back out, the same move the hub makes. Public because the
+    /// Insights tab hides the hub, and a screen with no way back is a trap.
+    func stepOut() {
+        guard !focus.isFleet else { return }
+        focus = focus.leaving()
+        rebuild()
+    }
+
     /// One circle per host, for a group that has been opened.
     private func buildHosts(_ members: [Instance]) {
         hubTotal = members.count
-        hubLabel = focusLabel.isEmpty ? "EC2" : "\(focusLabel)  ·  back"
+        hubLabel = hubTitle()
         hostLevel = true
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
         nodes = members.enumerated().map { index, instance in
@@ -171,7 +197,7 @@ final class ClusterView: NSView {
     private func buildGroups(_ instances: [Instance]) {
         hostLevel = false
         hubTotal = instances.count
-        hubLabel = region.isEmpty ? "EC2" : "EC2 · \(region)"
+        hubLabel = hubTitle()
         // The level being shown is the next one down the configured cascade, so
         // the picture drills the same way the menubar menu does: product, then
         // environment, then the hosts themselves.
@@ -182,9 +208,6 @@ final class ClusterView: NSView {
         }
 
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
-        // Sorted by tier first, so each band forms an arc rather than being
-        // scattered around the ring, then by name so the order never changes
-        // between refreshes.
         // Sorted by how close to production the value reads, then by name, so
         // each band forms an arc and the order never changes between refreshes.
         let ordered = byGroup.keys.sorted { left, right in
@@ -515,7 +538,11 @@ final class ClusterView: NSView {
             .sorted { nodes[$0].count > nodes[$1].count }
             .prefix(labelBudget))
         for (index, node) in nodes.enumerated() where named.contains(index) || index == hovered {
-            let name = node.label
+            // A host that is not running says so in words. A host circle carries
+            // its instance size inside it rather than its state, so without this
+            // the only thing saying the box is stopped is its colour.
+            let name = node.state.map { $0 == "running" ? node.label : "\(node.label) · \($0)" }
+                ?? node.label
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 12, weight: .medium),
                 .foregroundColor: index == hovered ? Brand.Color.textPrimary
@@ -594,9 +621,7 @@ final class ClusterView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let centre = CGPoint(x: bounds.midX, y: bounds.midY)
         if hypot(point.x - centre.x, point.y - centre.y) <= 42 {
-            guard !focus.isFleet else { return }
-            focus = focus.leaving()
-            rebuild()
+            stepOut()
             return
         }
         guard let index = nodes.firstIndex(where: { node in
@@ -642,16 +667,11 @@ final class ClusterView: NSView {
     }
 
     private func hubElement() -> NSAccessibilityElement {
-        let element = ClusterNodeElement { [weak self] in
-            guard let self, !self.focus.isFleet else { return }
-            self.focus = self.focus.leaving()
-            self.rebuild()
-        }
+        let element = ClusterNodeElement { [weak self] in self?.stepOut() }
         element.setAccessibilityParent(self)
         element.setAccessibilityRole(.button)
-        let title = focus.isFleet
-            ? "\(hubTotal) hosts in the fleet"
-            : "Back to \(focus.leaving().label.isEmpty ? "the fleet" : focus.leaving().label)"
+        let title = focus.backDestination.map { ClusterView.backTitle(to: $0) }
+            ?? "\(hubTotal) hosts in the fleet"
         element.setAccessibilityLabel(title)
         element.setAccessibilityTitle(title)
         element.setAccessibilityFrameInParentSpace(

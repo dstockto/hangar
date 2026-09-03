@@ -64,8 +64,8 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         cluster.translatesAutoresizingMaskIntoConstraints = false
         // Opening a group narrows the panels to it, so the numbers always
         // describe whatever the picture is currently showing.
-        cluster.onFocusChange = { [weak self] hosts, label in
-            Task { @MainActor in self?.renderPanels(for: hosts, focus: label) }
+        cluster.onFocusChange = { [weak self] hosts, focus in
+            Task { @MainActor in self?.renderPanels(for: hosts, focus: focus) }
         }
 
         panels = NSStackView()
@@ -185,15 +185,23 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     // MARK: - Content
 
     private func reload() {
+        // The panels are drawn from the cluster's focus callback, which showing
+        // it always fires. Rendering them here as well would describe the whole
+        // fleet for as long as it took that callback to land.
         cluster.show(store.instances, groupBy: store.config.groupingKeys,
                      region: store.region)
-        renderPanels(for: store.instances, focus: "")
     }
 
-    private func renderPanels(for hosts: [Instance], focus: String) {
+    private func renderPanels(for hosts: [Instance], focus: ClusterFocus) {
         let insights = FleetInsights.compute(hosts)
 
         panels.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        // Below the fleet, this tab is the only thing on screen, so it carries
+        // its own way out. The hub does the same job on the Fleet tab, and it
+        // is not on this one.
+        if let destination = focus.backDestination {
+            panels.addArrangedSubview(backButton(to: destination))
+        }
         // One host open: show its record instead of fleet statistics about a
         // sample of one. Everything on it came from the same DescribeInstances
         // response; there is no second call behind this screen.
@@ -202,15 +210,8 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
                 panels.addArrangedSubview(panel)
                 panel.widthAnchor.constraint(equalTo: panels.widthAnchor).isActive = true
             }
-            renderSidebar(insights)
+            renderSidebar(insights, scope: focus.label)
             return
-        }
-        if !focus.isEmpty {
-            let scope = NSTextField(labelWithString:
-                "Showing \(focus). Click the centre circle to go back to the fleet.")
-            scope.font = .systemFont(ofSize: 11, weight: .medium)
-            scope.textColor = Brand.Color.accent
-            panels.addArrangedSubview(scope)
         }
         for panel in [hygienePanel(insights), placementPanel(insights),
                       agePanel(insights), deltaPanel(insights)] {
@@ -218,13 +219,32 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
             panel.widthAnchor.constraint(equalTo: panels.widthAnchor).isActive = true
         }
 
-        renderSidebar(insights)
+        renderSidebar(insights, scope: focus.label)
+    }
+
+    /// Named after where it goes rather than labelled "Back", so it says what
+    /// leaving this screen actually lands on.
+    private func backButton(to destination: String) -> NSButton {
+        let button = NSButton(title: ClusterView.backTitle(to: destination),
+                              target: self, action: #selector(stepOut))
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.image = Brand.Glyph.symbol("chevron.left", size: 10)
+        button.imagePosition = .imageLeading
+        return button
+    }
+
+    @objc private func stepOut() {
+        cluster.stepOut()
     }
 
     /// The facts, as cards down the side rather than a line of grey text along
     /// the bottom. Each one is a label, a number, and a colour that belongs to
     /// what it counts.
-    private func renderSidebar(_ insights: FleetInsights) {
+    /// `scope` is what the numbers are about: empty for the whole fleet, the
+    /// focus label below it. The cards are focus-scoped, so their notes have to
+    /// be too, or a single open host reads "100% of the fleet".
+    private func renderSidebar(_ insights: FleetInsights, scope: String) {
         cards.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for view in sidebar.arrangedSubviews where view !== cards {
             view.removeFromSuperview()
@@ -235,7 +255,8 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
              store.region.isEmpty ? "" : store.region, Brand.Color.accent),
             ("play.circle", "Running", "\(insights.running)",
              insights.total > 0
-                ? "\(Int((Double(insights.running) / Double(insights.total)) * 100))% of the fleet"
+                ? "\(Int((Double(insights.running) / Double(insights.total)) * 100))% of "
+                    + (scope.isEmpty ? "the fleet" : scope)
                 : "", Brand.Color.stateRunning),
             ("stop.circle", "Stopped", "\(insights.stopped)",
              insights.stopped == 0 ? "nothing parked" : "still billing for storage",
@@ -333,18 +354,18 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         let hygiene = insights.hygiene
         var rows: [(RowKind, String, String)] = []
         if hygiene.missingProduct > 0 {
-            rows.append((.tag, "No product tag", "\(hygiene.missingProduct) hosts"))
+            rows.append((.tag, "No product tag", count(hygiene.missingProduct, "host")))
         }
         if hygiene.missingEnv > 0 {
-            rows.append((.tag, "No env tag", "\(hygiene.missingEnv) hosts"))
+            rows.append((.tag, "No env tag", count(hygiene.missingEnv, "host")))
         }
         if hygiene.missingName > 0 {
             rows.append((.warn, "No name tag, alias falls back to the instance id",
-                         "\(hygiene.missingName) hosts"))
+                         count(hygiene.missingName, "host")))
         }
         if hygiene.missingHostname > 0 {
             rows.append((.note, "No hostname tag, reached by private address",
-                         "\(hygiene.missingHostname) hosts"))
+                         count(hygiene.missingHostname, "host")))
         }
         // Reported, not flagged: Hangar numbers these and ssh reaches the right
         // host either way. The number is what moves when an instance is
@@ -352,7 +373,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         let shared = hygiene.sharedNames.sorted { $0.key < $1.key }
         for (name, count) in shared.prefix(6) {
             rows.append((.note, "\(name) numbered \(name)-1 … \(name)-\(count)",
-                         "\(count) hosts"))
+                         self.count(count, "host")))
         }
         if shared.count > 6 {
             rows.append((.note, "and \(shared.count - 6) more names Hangar numbers", ""))
@@ -374,7 +395,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         var rows: [(RowKind, String, String)] = []
         for group in singleZone.prefix(6) {
             rows.append((.zone, "\(group.product) · \(group.env) is only in \(group.zones.first ?? "?")",
-                         "\(group.count) hosts"))
+                         count(group.count, "host")))
         }
         if singleZone.count > 6 {
             rows.append((.note, "and \(singleZone.count - 6) more in one zone", ""))
@@ -399,14 +420,14 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
             .filter { $0.count > 0 }
             .map { bucket in
                 (bucket.label == "over 180 days" ? .warn : .clock,
-                 "Up \(bucket.label)", "\(bucket.count) hosts")
+                 "Up \(bucket.label)", count(bucket.count, "host"))
             }
         let flagged = insights.families.filter { $0.isPreviousGeneration || $0.isBurstable }
         for family in flagged.prefix(5) {
             let note = [family.isPreviousGeneration ? "previous generation" : nil,
                         family.isBurstable ? "burstable" : nil]
                 .compactMap { $0 }.joined(separator: ", ")
-            rows.append((.family, "\(family.family), \(note)", "\(family.count) hosts"))
+            rows.append((.family, "\(family.family), \(note)", count(family.count, "host")))
         }
         let old = insights.ages.first { $0.label == "over 180 days" }?.count ?? 0
         return panel(title: "Age and instance families", symbol: "clock.arrow.circlepath",

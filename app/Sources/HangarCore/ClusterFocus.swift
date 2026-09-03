@@ -60,4 +60,11 @@ public struct ClusterFocus: Equatable, Sendable {
     public var label: String {
         path.joined(separator: " · ")
     }
+
+    /// The label of the level a step out lands on, so a control can name where
+    /// back goes. Nil at the fleet, where there is nowhere further out, and
+    /// empty when back is the whole fleet.
+    public var backDestination: String? {
+        isFleet ? nil : leaving().label
+    }
 }

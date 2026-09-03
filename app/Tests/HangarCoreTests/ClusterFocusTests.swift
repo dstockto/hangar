@@ -53,6 +53,17 @@ final class ClusterFocusTests: XCTestCase {
         XCTAssertTrue(ClusterFocus.fleet.leaving().isFleet, "the fleet is the floor")
     }
 
+    func testBackNamesWhereItGoesAtEveryDepth() {
+        XCTAssertNil(ClusterFocus.fleet.backDestination,
+                     "the fleet has nowhere further out, so nothing offers a way there")
+        let product = ClusterFocus.fleet.entering("payments")
+        XCTAssertEqual(product.backDestination, "", "back from a product is the fleet")
+        let env = product.entering("prod")
+        XCTAssertEqual(env.backDestination, "payments")
+        XCTAssertEqual(env.opening(host: "i-0").backDestination, "payments · prod",
+                       "an open host steps back to the group it was in")
+    }
+
     func testTheNextLevelComesFromTheConfiguredKeys() {
         XCTAssertEqual(ClusterFocus.fleet.nextKey(keys), "product")
         XCTAssertEqual(ClusterFocus.fleet.entering("payments").nextKey(keys), "env")
