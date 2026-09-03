@@ -137,7 +137,16 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     wide as its text column, so 30 points of padding a side became none and the
     body printed against the rounded edge. Size from the content plus the
     padding, both as numbers.
-16. **An external process with no deadline.** `credential_process` is the user's
+16. **An eval that could never fail.** `security-no-force-unwrapped-endpoints`
+    was green for weeks while checking nothing: its regex escaped a parenthesis
+    in a way `grep` read as an unbalanced group, `grep` exited 2, and the
+    leading `!` turned that error into a pass. A guard shaped `! grep …` passes
+    when the grep is broken. Plant the mistake and watch the case fail before
+    trusting it.
+17. **Uppercasing a name that came from outside.** Mistake 8 was fixed on the
+    landing page and left alone in the app, where the panel's group header ran
+    `product.uppercased()` on an EC2 tag value. Same bug, different file.
+18. **An external process with no deadline.** `credential_process` is the user's
     own command, and `readDataToEndOfFile` waits for the pipe to close, which a
     helper that hangs never does. The fleet refreshed forever and the setup
     window sat blank. Every process Hangar runs gets a deadline and a kill.

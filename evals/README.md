@@ -20,3 +20,16 @@ a failure blocks the merge.
 Every case here exists because the property it protects was once broken, or is
 the kind of thing a plausible refactor would quietly break. A case that has never
 been able to fail is noise.
+
+## Prove a new case can fail, before adding it
+
+Plant the mistake the case is meant to catch, run the case, and watch it fail.
+Then take the mistake back out and watch it pass. Do it for changes to an
+existing case too.
+
+This is not ceremony. `security-no-force-unwrapped-endpoints` sat here green for
+weeks while catching nothing: its regex escaped a parenthesis in a way `grep`
+read as an unbalanced group, so `grep` exited 2, the leading `!` turned that
+error into a pass, and the case reported success no matter what the source said.
+A case built as `! grep ...` passes when the grep is broken, which is the worst
+possible failure mode for a guard.

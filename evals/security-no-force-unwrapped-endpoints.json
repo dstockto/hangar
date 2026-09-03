@@ -2,6 +2,6 @@
   "id": "security-no-force-unwrapped-endpoints",
   "promise": "No endpoint URL is built by force-unwrapping an interpolated string.",
   "why": "A region containing a space made URL(string:) return nil and trapped the app.",
-  "command": "! grep -rnE 'URL\\\\(string: \"https://[^\"]*\\\\\\\\\\\\(' app/Sources/",
+  "command": "! grep -rnE 'URL[(]string: \"https://[^\"]*[\\\\][(][^\"]*\"[)]!' app/Sources/",
   "expect": "exit 0"
 }
