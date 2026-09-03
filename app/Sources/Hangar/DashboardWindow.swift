@@ -51,7 +51,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
     // MARK: - Construction
 
     private func build() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 940),
+        window = HangarWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 940),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
         window.title = "Hangar Fleet"

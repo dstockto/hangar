@@ -43,7 +43,7 @@ final class HostEditor: NSObject, NSWindowDelegate {
         scopes = FleetStore.OverrideScope.all(for: instance)
         effective = store.effectiveSSHSettings(for: instance)
 
-        let window = NSWindow(
+        let window = HangarWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 268),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "SSH settings"

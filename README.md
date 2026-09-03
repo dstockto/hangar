@@ -123,7 +123,10 @@ appears in System Settings under General, Login Items, where you can revoke it
 independently of Hangar.
 
 Closing the setup window leaves Hangar running in the menu bar; it says so rather
-than just vanishing. If your menu bar has an overflow manager such as Ice or
+than just vanishing. <kbd>⌘</kbd><kbd>Q</kbd> closes a Hangar window the same way
+the panel has always closed, because the reflex that shuts a window should not
+take the app out of your menu bar. **Quit Hangar** in the menubar item is the one
+thing that ends it. If your menu bar has an overflow manager such as Ice or
 Bartender, you may need to unhide the icon there once.
 
 **Help** in the menubar lists every shortcut and the intended flow, so the app
@@ -188,6 +191,9 @@ tag keys in `group_by`. One click goes in. The hub in the middle goes back out
 and is labelled with where back is; on the Insights tab, where the hub is not on
 screen, the same step out sits at the top of the column as a button.
 
+Below the fleet the hub carries a ring, and the pointer turns to a hand over it
+and over every circle, so the way back out is visible before it is read.
+
 It works without a mouse. <kbd>←</kbd> <kbd>→</kbd> move around the ring,
 <kbd>Return</kbd> opens what is selected, and <kbd>esc</kbd> steps back out.
 
@@ -220,8 +226,8 @@ count.</sub>
 
 #### The host record
 
-Open a host and the Insights tab becomes everything `DescribeInstances` said
-about that one instance: state, launch time, instance type with its vCPUs and
+Open a host and the window follows you to the Insights tab, which becomes
+everything `DescribeInstances` said about that one instance: state, launch time, instance type with its vCPUs and
 architecture, instance id, availability zone, VPC, subnet, private and public
 addresses, private DNS, hostname tag, AMI, key pair, IAM instance profile,
 security groups, spot or scheduled lifecycle, monitoring, root device, its
@@ -528,7 +534,7 @@ survive it.
 | <kbd>←</kbd> <kbd>→</kbd> | in the dashboard, move around the ring |
 | <kbd>Return</kbd> | in the dashboard, open the selected circle |
 | <kbd>esc</kbd> | in the dashboard, step back out a level |
-| <kbd>esc</kbd> / <kbd>⌘</kbd><kbd>Q</kbd> | close the panel, leaving Hangar running |
+| <kbd>esc</kbd> / <kbd>⌘</kbd><kbd>Q</kbd> | close the panel or window, leaving Hangar running |
 
 ## Architecture
 

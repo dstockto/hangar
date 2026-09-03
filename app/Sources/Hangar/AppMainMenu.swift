@@ -36,10 +36,12 @@ enum AppMainMenu {
         appMenu.addItem(withTitle: "Hide Hangar",
                         action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
-        // Closing a window leaves Hangar in the menu bar; this is the item that
-        // actually ends it, and it is the only one that does.
+        // Deliberately without Command-Q. Every Hangar window closes on that key,
+        // the way the panel always has, because the reflex that closes a window
+        // should not take the app out of the menu bar. Quitting is the menubar
+        // item that says so, and this one.
         appMenu.addItem(withTitle: "Quit Hangar",
-                        action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+                        action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         appItem.submenu = appMenu
         main.addItem(appItem)
 

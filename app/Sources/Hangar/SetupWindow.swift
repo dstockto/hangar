@@ -53,7 +53,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     // MARK: - Construction
 
     private func build() {
-        let window = NSWindow(
+        let window = HangarWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 580),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered, defer: false)

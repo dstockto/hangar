@@ -18,7 +18,7 @@ final class AboutWindow: NSObject, NSWindowDelegate {
     }
 
     private func build() {
-        let window = NSWindow(
+        let window = HangarWindow(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "About Hangar"
