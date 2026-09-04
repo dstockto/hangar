@@ -133,3 +133,16 @@ enum Launcher {
         NSPasteboard.general.setString(text, forType: .string)
     }
 }
+
+/// The `hangar` command line tool that ships inside the app bundle.
+///
+/// It lives in Contents/Helpers rather than Contents/MacOS because macOS
+/// filesystems are case insensitive and the app's own executable is `Hangar`.
+enum CommandLineTool {
+    static var path: String? {
+        let candidate = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers/hangar")
+        return FileManager.default.isExecutableFile(atPath: candidate.path)
+            ? candidate.path : nil
+    }
+}

@@ -353,19 +353,14 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         if query.isEmpty {
             matched = pool
         } else {
-            let needle = Fuzzy.Query(query)
             // Subsequence matching is monotone: if a query does not match, no
             // extension of it can either. So an added character only ever filters
             // the previous result set, never the whole fleet.
             let source = (reason == .narrowed && !lastQuery.isEmpty
                           && query.hasPrefix(lastQuery)) ? matched : pool
-            var scored: [(SearchEntry, Int)] = []
-            scored.reserveCapacity(source.count)
-            for entry in source {
-                if let score = entry.score(for: needle) { scored.append((entry, score)) }
-            }
-            scored.sort { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.alias < $1.0.alias }
-            matched = scored.map(\.0)
+            // Ranked in the core, so the panel and the hangar command cannot
+            // disagree about which host best matches a query.
+            matched = FleetIndex.ranked(source, matching: Fuzzy.Query(query))
         }
         lastQuery = query
 

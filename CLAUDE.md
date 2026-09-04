@@ -29,8 +29,10 @@ leave modules the other cannot read.
 
 ```
 app/Sources/HangarCore/   UI-free: AWS config, SigV4, SSO, EC2, ssh config writer,
-                          tag mapping, fuzzy search, truncation, sanitizing
+                          tag mapping, fuzzy search, truncation, sanitizing,
+                          the fleet cache and index both front ends read
 app/Sources/Hangar/       AppKit: menubar, panel, rows, editor, updater, brand
+app/Sources/hangar-cli/   the `hangar` command, bundled at Contents/Helpers
 app/Tests/                the offline suite
 site/                     the landing page, deployed by .github/workflows/pages.yml
 design/                   brand kit, wordmark, and their source assets

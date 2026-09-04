@@ -144,6 +144,57 @@ build_home
 "$APP_DIR/.build/debug/hangar-probe" --testbed "$ROOT"
 status=$?
 
+# The command line tool, against a cache built here rather than the developer's.
+# Documented as shipping, so it is proved to run, not assumed to.
+CLI="$APP_DIR/.build/debug/hangar-cli"
+CACHE="$ROOT/.hangar/cache/instances.json"
+mkdir -p "$(dirname "$CACHE")"
+cat > "$CACHE" <<'EOF'
+{"region":"us-west-2","fetchedAt":779000000,
+ "instances":[
+   {"id":"i-0000000000000000a","state":"running","type":"t3.small",
+    "privateIP":"10.0.0.5","availabilityZone":"us-west-2a",
+    "launchTime":"2026-08-20T15:46:42.000Z",
+    "tags":{"product":"payments","env":"prod","Name":"web","hostname":"web.example.com"}},
+   {"id":"i-0000000000000000b","state":"stopped","type":"t3.small",
+    "privateIP":"10.0.0.6","availabilityZone":"us-west-2a",
+    "launchTime":"2026-08-20T15:46:42.000Z",
+    "tags":{"product":"payments","env":"qa","Name":"db","hostname":"db.example.com"}}]}
+EOF
+chmod 600 "$CACHE"
+
+echo
+echo "command line"
+cli_aliases="$("$CLI" --cache "$CACHE" -a 2>/dev/null)"
+if [[ "$cli_aliases" == $'payments-prod-web\npayments-qa-db' ]]; then
+    echo "  ok   hangar lists the cached fleet, in menu order"
+else
+    echo "  FAIL hangar listed: $cli_aliases"
+    status=1
+fi
+if [[ "$("$CLI" --cache "$CACHE" -a -s 'qa db' 2>/dev/null)" == "payments-qa-db" ]]; then
+    echo "  ok   a fuzzy query reaches the host it names"
+else
+    echo "  FAIL the fuzzy query did not find payments-qa-db"
+    status=1
+fi
+# Captured rather than tested inline: this script runs under set -e, and the
+# non-zero exit is the thing being checked.
+rc=0; "$CLI" --cache "$CACHE" -s "nothing-like-this" >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 1 ]]; then
+    echo "  ok   nothing matched exits 1, so a pipeline can tell"
+else
+    echo "  FAIL a query matching nothing did not exit 1"
+    status=1
+fi
+rc=0; "$CLI" --cache "$ROOT/.hangar/absent.json" >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 2 ]]; then
+    echo "  ok   no cache exits 2, which is not the same as no matches"
+else
+    echo "  FAIL a missing cache did not exit 2"
+    status=1
+fi
+
 after="$(fingerprint)"
 if [[ "$before" != "$after" ]]; then
     echo

@@ -83,6 +83,9 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
 - **Native terminal launch.** <kbd>Return</kbd> opens a real session in iTerm2,
   Terminal or Ghostty, whichever you pick. <kbd>⌘</kbd><kbd>Return</kbd> copies
   the command instead.
+- **A command for the rest of your tools.** `hangar -s "web prod"` prints the
+  same ranked hosts the panel shows, for tmux, fzf, herder or a shell function.
+  No AWS call: it reads the cache the app already refreshed.
 - **Works with your tags, not ours.** `product`/`env`, `Service`/`Environment`,
   `app`/`stage`, or a single `Name` tag all work with no configuration. The setup
   screen shows the tag keys your fleet actually uses and lets you point each one
@@ -734,6 +737,46 @@ survive it.
 | <kbd>Return</kbd> | in the dashboard, open the selected circle |
 | <kbd>esc</kbd> | in the dashboard, step back out a level |
 | <kbd>esc</kbd> / <kbd>⌘</kbd><kbd>Q</kbd> | close the panel or window, leaving Hangar running |
+
+## Command line
+
+The same fleet, for tmux, fzf, herder, or anything else that can run a program.
+`hangar` ships inside the app at `Contents/Helpers/hangar`; one symlink puts it
+on your PATH, and **Settings… → Copy Command Line Install** copies the line for
+wherever you installed Hangar.
+
+```sh
+ln -sfn /Applications/Hangar.app/Contents/Helpers/hangar /usr/local/bin/hangar
+```
+
+```
+hangar                     every host, in the order the menu lists them
+hangar <query>             hosts matching a fuzzy query, best match first
+hangar -s <query>          the same, spelled out
+
+-a, --alias                aliases alone, one per line
+    --tsv                  alias, hostname, product, env, state, id
+    --json                 one JSON array
+-n, --limit <n>            at most n hosts
+-f, --filter <key=value>   only hosts carrying that tag, wildcards allowed
+```
+
+```sh
+ssh "$(hangar -a -s 'web prod' | head -1)"
+hangar | fzf | awk '{print $1}' | xargs ssh
+tmux new-window "ssh $(hangar -a db-prod | head -1)"
+hangar --json -f env=prod | jq -r '.[].hostname'
+```
+
+It reads `~/.hangar/cache`, which the app refreshes, so it costs no credential,
+no network round trip and no AWS call. The ranking is the panel's ranking:
+both call `FleetIndex`, because a menubar and a shell must not disagree about
+which host best matches `web prod`.
+
+Exit codes are meant for pipelines: `0` when hosts were printed, `1` when
+nothing matched, `2` when there is no cache yet. A cache older than
+`healthy_within_hours`, and a missing `Include` line that would stop
+`ssh <alias>` resolving, are both said once on stderr so a pipe is unaffected.
 
 ## Architecture
 

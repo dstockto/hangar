@@ -7,27 +7,10 @@ import HangarCore
 /// is far more useful than an empty one.
 @MainActor
 final class FleetStore: ObservableObject {
-    struct Cache: Codable {
-        var instances: [Instance]
-        var region: String
-        var fetchedAt: Date
-        /// The fleet's real tag keys, captured before normalization. Persisted so
-        /// the setup screen can offer them without waiting for a refresh.
-        var tagCatalog: TagCatalog?
-        /// A short history of host counts, one per successful refresh, so the
-        /// dashboard can say "223 to 209 since 14:02" rather than only what is
-        /// true this second. Optional, because a cache written before this
-        /// existed has to keep decoding.
-        var history: [Sample]?
-    }
-
-    struct Sample: Codable, Equatable, Sendable {
-        var at: Date
-        var hosts: Int
-    }
-
-    /// About a day and a half at the default refresh, and a few hundred bytes.
-    static let historyLimit = 60
+    /// The cache format lives in the core: the `hangar` command reads the same
+    /// file, and two decoders would be two answers to one question.
+    typealias Sample = FleetSample
+    static let historyLimit = FleetCache.historyLimit
 
     enum Status: Equatable {
         case idle
@@ -79,34 +62,8 @@ final class FleetStore: ObservableObject {
     /// inside the filter loop, which meant sorting all 249 entries for every
     /// instance on every keystroke.
     private func rebuildIndex() {
-        let writer = SSHConfigWriter(config: config)
-        let entries = writer.entries(for: instances)
-        aliasByID = [:]
-        aliasByID.reserveCapacity(entries.count)
-        for entry in entries {
-            aliasByID[entry.instance.id] = entry.aliases.first
-        }
-        // Hosts Hangar deliberately does not write still have a name, and it is
-        // the one ssh already resolves. Leaving them out of the table would show
-        // an imported host under a slug that connects to nothing.
-        for instance in instances where !instance.isWrittenToSSHConfig {
-            aliasByID[instance.id] = instance.aliasStem
-        }
-        searchEntries = instances
-            .map { SearchEntry(instance: $0, alias: aliasByID[$0.id] ?? $0.aliasStem) }
-            .sorted { FleetStore.sortKey($0) < FleetStore.sortKey($1) }
-    }
-
-    /// Product, environment, alias, with anything carrying no product sent to the
-    /// end rather than the front.
-    ///
-    /// An empty string sorts first, so an untagged group used to open the panel.
-    /// That was survivable when untagged meant a handful of forgotten EC2 boxes.
-    /// It is not now: a few git hosts in someone's ssh config would sit above
-    /// their whole fleet, every time.
-    static func sortKey(_ entry: SearchEntry) -> (Int, String, String, String) {
-        (entry.instance.product.isEmpty ? 1 : 0,
-         entry.instance.product, entry.instance.env, entry.alias)
+        aliasByID = FleetIndex.aliases(for: instances, config: config)
+        searchEntries = FleetIndex.entries(for: instances, config: config)
     }
 
     var isStale: Bool {
@@ -171,8 +128,7 @@ final class FleetStore: ObservableObject {
     // MARK: - Cache
 
     private func loadCache() {
-        guard let data = FileManager.default.contents(atPath: HangarConfig.cachePath),
-              let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
+        guard let cache = FleetCache.load() else { return }
         // Re-normalized on load: the mapping may have changed since the cache
         // was written, and waiting for a refresh would show stale grouping.
         instances = config.tagMapping.normalize(cache.instances)
@@ -184,12 +140,10 @@ final class FleetStore: ObservableObject {
     }
 
     private func saveCache() {
-        let cache = Cache(instances: instances, region: region, fetchedAt: Date(),
-                          tagCatalog: tagCatalog, history: history)
-        guard let data = try? JSONEncoder().encode(cache) else { return }
         // The cache is the whole fleet: ids, private addresses, every tag. It gets
         // the same 0600 the config and the ssh include get, from creation.
-        PrivateFile.write(data, to: HangarConfig.cachePath)
+        FleetCache(instances: instances, region: region, fetchedAt: Date(),
+                   tagCatalog: tagCatalog, history: history).write()
     }
 
     // MARK: - Refresh
@@ -415,12 +369,7 @@ final class FleetStore: ObservableObject {
 
     /// Search-ready entries for a hotkey's filter.
     func entries(matching filter: [String: String]?) -> [SearchEntry] {
-        guard let filter, !filter.isEmpty else { return searchEntries }
-        return searchEntries.filter { entry in
-            filter.allSatisfy { key, pattern in
-                HangarConfig.wildcard(pattern, entry.instance.tagValue(for: key))
-            }
-        }
+        FleetIndex.filtered(searchEntries, by: filter)
     }
 
     // MARK: - Per-host ssh overrides

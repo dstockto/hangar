@@ -400,6 +400,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         submenu.addItem(action("Setup Check\u{2026}", #selector(showSetup), key: ""))
         submenu.addItem(action("Edit Configuration\u{2026}", #selector(editConfig), key: ""))
         submenu.addItem(status("~/.hangar/config.json"))
+        // The command line tool ships inside the bundle, where nobody would think
+        // to look. Copying the one line that puts it on PATH is the whole feature.
+        submenu.addItem(action("Copy Command Line Install", #selector(copyCLIInstall),
+                               key: ""))
+        submenu.addItem(statusRow([.text("then "), .mono("hangar -s web prod")],
+                                  tier: .faint))
         submenu.addItem(action("Reveal Log in Finder", #selector(revealLog), key: ""))
         submenu.addItem(status("~/.hangar/logs/hangar.log"))
 
@@ -814,6 +820,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let message = store.useProfile(sender.representedObject as? String)
         Notifier.show(title: "AWS profile", body: message, seconds: 3)
         Task { @MainActor in await store.refresh() }
+    }
+
+    /// The symlink that puts `hangar` on PATH, for this copy of the app wherever
+    /// it happens to be installed. Copied rather than run: /usr/local/bin belongs
+    /// to root on a Mac without Homebrew, and an app that silently needed sudo
+    /// would fail in a way nobody could read.
+    @objc private func copyCLIInstall() {
+        guard let tool = CommandLineTool.path else {
+            Notifier.show(title: "No command line tool in this build",
+                          body: "Reinstall Hangar from a release DMG.", seconds: 4)
+            return
+        }
+        let command = "ln -sfn \(Shell.quoted(tool)) /usr/local/bin/hangar"
+        Launcher.copyToClipboard(command)
+        Notifier.show(title: "Copied", body: command, seconds: 5)
     }
 
     @objc private func copyLoginCommand() {

@@ -11,6 +11,11 @@ info "Building $APP_NAME $VERSION ($CONFIG)"
 swift build --package-path "$APP_DIR" -c "$CONFIG"
 BINARY="$APP_DIR/.build/$CONFIG/$APP_NAME"
 [[ -f "$BINARY" ]] || die "binary not found at $BINARY"
+# The command line tool ships inside the app. Its target is hangar-cli because
+# the app target is Hangar and macOS filesystems are case insensitive; it is
+# installed below as Contents/Helpers/hangar, which is the command people type.
+CLI_BINARY="$APP_DIR/.build/$CONFIG/hangar-cli"
+[[ -f "$CLI_BINARY" ]] || die "hangar-cli not found at $CLI_BINARY"
 
 # Named colours and template images come from the compiled catalog, so this is a
 # hard requirement rather than an optional nicety.
@@ -54,21 +59,29 @@ fi
 
 info "Assembling $APP_BUNDLE"
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources" \
+    "$APP_BUNDLE/Contents/Helpers"
 cp "$BINARY" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "$CLI_BINARY" "$APP_BUNDLE/Contents/Helpers/hangar"
 cp "$INFO_PLIST" "$APP_BUNDLE/Contents/Info.plist"
 cp "$DIST_DIR/assets/Assets.car" "$APP_BUNDLE/Contents/Resources/Assets.car"
 [[ -f "$DIST_DIR/AppIcon.icns" ]] && cp "$DIST_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
 
 IDENTITY="$(find_signing_identity)"
+# Nested code is signed first: the outer seal covers it, and the notary service
+# rejects a bundle carrying an unsigned Mach-O. The tool reads files and needs
+# none of the app's entitlements.
 if [[ -n "$IDENTITY" ]]; then
     info "Signing with: $IDENTITY"
     # Hardened runtime and a secure timestamp are both required for notarization.
+    codesign --force --options runtime --timestamp \
+        --sign "$IDENTITY" "$APP_BUNDLE/Contents/Helpers/hangar"
     codesign --force --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP_BUNDLE"
 else
     warn "No Developer ID Application cert: signing ad-hoc."
     warn "An ad-hoc bundle runs locally but cannot be notarized, and downloads stay quarantined."
+    codesign --force --sign - --timestamp=none "$APP_BUNDLE/Contents/Helpers/hangar"
     codesign --force --entitlements "$ENTITLEMENTS" \
         --sign - --timestamp=none "$APP_BUNDLE"
 fi

@@ -1,0 +1,7 @@
+{
+  "id": "product-command-line-tool-ships",
+  "promise": "The `hangar` command the README documents is built, bundled, and reachable from the app.",
+  "why": "Mistake 5: a documented feature that was never wired. This one lives in Contents/Helpers, where nothing else looks, so a bundle script that stopped copying it would break silently. The patterns end at the closing quote on purpose: a looser grep matched a path renamed to hangar-DISABLED, which is mistake 16 all over again.",
+  "command": "grep -q 'name: \"hangar-cli\"' app/Package.swift && grep -q 'Contents/Helpers/hangar\"' scripts/bundle.sh && grep -q 'Contents/Helpers/hangar\")' app/Sources/Hangar/Launcher.swift && grep -q 'debug/hangar-cli\"' scripts/testbed.sh",
+  "expect": "exit 0"
+}
