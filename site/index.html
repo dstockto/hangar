@@ -191,7 +191,7 @@
           <a class="btn btn-ghost" href="https://github.com/goriparthi/hangar">View on GitHub</a>
         </div>
         <p class="hero-fine">
-          <span>macOS 14+</span> · <span>No server</span> · <span>No account</span> ·
+          <span>macOS 14 or newer</span> · <span>No account</span> ·
           <span>No AWS permission required</span>
         </p>
       </div>
@@ -270,6 +270,32 @@
         </p>
       </div>
     </div>
+
+    <!-- The install steps live in the hero rather than in a band of their own.
+         They were a second section with a second headline and a second Download
+         button inside one and a half screens, which read as the page asking twice. -->
+    <div class="wrap">
+    <ol class="hero-steps" id="install">
+      <li>
+        <span class="n">1</span>
+        <strong>Download the DMG</strong>
+        <span>One file, under a megabyte. No Homebrew, no Xcode, no
+              <code>xattr</code> workaround.</span>
+      </li>
+      <li>
+        <span class="n">2</span>
+        <strong>Drag it to Applications and open it</strong>
+        <span>No Gatekeeper warning. A setup check reads your machine and says
+              what works, then Hangar sits in your menu bar.</span>
+      </li>
+      <li>
+        <span class="n">3</span>
+        <strong>Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></strong>
+        <span>Type a few characters, press <kbd>↩</kbd>, and you are on the box.</span>
+      </li>
+    </ol>
+    </div>
+
     <div class="taxiway" aria-hidden="true"></div>
   </section>
 
@@ -284,54 +310,11 @@
         <div><dt>Sources</dt><dd>Four, merged</dd></div>
         <div><dt>AWS</dt><dd>Optional</dd></div>
       </dl>
-    </div>
-  </section>
-
-  <!-- ---------------- Install ---------------- -->
-  <section class="band" id="install">
-    <div class="wrap">
-      <div class="section-head">
-        <h2>Three steps, no toolchain.</h2>
-        <p class="lede">
-          No Homebrew, no Xcode, no <code>xattr</code> workaround. The app is signed
-          with a Developer ID certificate and notarized by Apple.
-        </p>
-      </div>
-
-      <div class="install">
-        <div class="step">
-          <span class="n">1</span>
-          <h3>Download the DMG</h3>
-          <p>One file, under a megabyte.</p>
-        </div>
-        <div class="step">
-          <span class="n">2</span>
-          <h3>Drag it to Applications and open it</h3>
-          <p>No Gatekeeper warning. A setup check reads your machine and says what
-             works, then Hangar sits in your menu bar.</p>
-        </div>
-        <div class="step">
-          <span class="n">3</span>
-          <h3>Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></h3>
-          <p>Type a few characters, press <kbd>↩</kbd>, and you are on the box.</p>
-        </div>
-      </div>
-
-      <p class="panel-note" style="margin-top:26px">
+      <p class="panel-note" style="margin-top:22px">
         And one step to undo it. <strong>Settings → Uninstall Hangar</strong> removes
         <code>~/.hangar</code>, the aliases it generated, and the <code>Include</code>
         line it added to your <code>~/.ssh/config</code>, then moves the app to the
         Trash. Your AWS credentials and the rest of that file are untouched.
-      </p>
-
-      <p style="margin-top:28px">
-        <a class="btn btn-primary" href="https://github.com/goriparthi/hangar/releases/latest">
-          Download Hangar
-        </a>
-      </p>
-      <p class="hero-fine" style="margin-top:16px">
-        <span>macOS 14 or newer</span> · <span>Apple silicon and Intel</span> ·
-        <span>MIT licensed</span>
       </p>
     </div>
   </section>

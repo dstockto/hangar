@@ -153,8 +153,13 @@ code, kbd, pre { font-family: var(--mono); }
 .brand::before {
   content: "";
   position: absolute;
-  left: -10px;
-  /* Centred with a margin rather than a translate, so the keyframes own the
+  /* The mark's centre, taken from the wordmark's own geometry rather than
+     guessed: the symbol is a 1024 unit tile scaled by 0.0703125 inside a 420x96
+     viewBox, so it spans 0 to 72 horizontally and is centred at 36, which is
+     36/420 of the lockup. A percentage keeps it centred at every size. */
+  left: 8.571%;
+  margin-left: -28px;
+  /* Centred with margins rather than a translate, so the keyframes own the
      transform outright and the two cannot fight. */
   top: 50%;
   margin-top: -28px;
@@ -168,9 +173,9 @@ code, kbd, pre { font-family: var(--mono); }
   pointer-events: none;
   animation: brand-pulse 3.6s ease-in-out infinite;
 }
-.brand-lg::before { left: -12px; width: 62px; height: 62px; margin-top: -31px; }
+.brand-lg::before { width: 62px; height: 62px; margin-top: -31px; margin-left: -31px; }
 @media (max-width: 480px) {
-  .brand::before { left: -8px; width: 48px; height: 48px; margin-top: -24px; }
+  .brand::before { width: 48px; height: 48px; margin-top: -24px; margin-left: -24px; }
 }
 
 @keyframes brand-pulse {
@@ -752,6 +757,56 @@ kbd {
 .feature .demo .ok { color: var(--running); }
 .feature .demo .warn { color: var(--pending); }
 .feature .demo .acc { color: var(--accent); }
+
+/* ---------- Hero steps ---------- */
+
+/* The install steps, carried in the hero rather than in a band of their own.
+   Flat and horizontal on purpose: they are reassurance under the promise, not a
+   second pitch, so they must not compete with the headline above them. */
+.hero-steps {
+  list-style: none;
+  /* Inside a .wrap rather than being one: an ol needs padding: 0 to lose its
+     marker indent, and that also cancelled the wrap's own side padding, so the
+     strip ran to the viewport edge on any screen narrower than the measure. */
+  margin: clamp(28px, 5vw, 52px) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.hero-steps li {
+  background: var(--canvas);
+  padding: 18px 20px 20px;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: start;
+  /* Each card stretches to the tallest of the three, and auto rows stretch with
+     it, which opened a gap under the one-line titles. Pin the rows to the top. */
+  align-content: start;
+}
+.hero-steps .n {
+  grid-row: 1 / span 2;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  padding-top: 3px;
+}
+.hero-steps strong { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
+.hero-steps li > span:not(.n) { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.hero-steps code {
+  font-size: 12px;
+  color: var(--text);
+  background: var(--raised);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
 
 /* ---------- Why ---------- */
 
