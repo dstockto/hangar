@@ -285,7 +285,9 @@ for it, and every tag it carries.
 The four panels, computed in `HangarCore` and tested there:
 
 - **Tag hygiene.** Hosts missing the tags your mapping points at, hosts with no
-  hostname tag, and aliases two instances would share.
+  hostname tag, and aliases two instances would share. Every row names the hosts
+  it counted, a few inline and all of them in its tooltip: two hosts you cannot
+  identify is a number, not a finding.
 - **Placement and autoscaling.** Which zones each product and environment
   occupies, single-zone groups called out, and how many hosts sit outside an
   autoscaling group.

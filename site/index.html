@@ -45,7 +45,7 @@
       "operatingSystem": "macOS 14 or newer",
       "url": "https://goriparthi.github.io/hangar/",
       "downloadUrl": "https://github.com/goriparthi/hangar/releases/latest",
-      "softwareVersion": "0.4.0",
+      "softwareVersion": "0.5.0",
       "license": "https://github.com/goriparthi/hangar/blob/main/LICENSE",
       "image": "https://goriparthi.github.io/hangar/assets/og.png",
       "description": "A native macOS launcher for every host you can ssh to. Reads the hosts already in your ssh config, imports a CSV, and turns changing EC2 instances into stable, searchable SSH aliases. Press Command-Shift-H, type a few characters, and connect.",
@@ -519,11 +519,23 @@ Host payments-prod-web-1
 
         <article class="feature">
           <h3>Native terminal launch</h3>
-          <p>Return opens a real session in iTerm2 or Terminal.
-             <kbd>⌘</kbd><kbd>↩</kbd> copies the command instead.</p>
+          <p>Return opens a real session in iTerm2, Terminal or Ghostty, whichever
+             you pick. <kbd>⌘</kbd><kbd>↩</kbd> copies the command instead.</p>
           <div class="demo"><span class="c">$</span> ssh payments-prod-web-1
 <span class="ok">Last login: Tue 09:14 from 10.0.0.9</span>
 <span class="c">[deploy@web-1 ~]$</span></div>
+        </article>
+
+        <article class="feature">
+          <h3>The same fleet in your shell</h3>
+          <p>A <code>hangar</code> command ships inside the app, so tmux, fzf and
+             anything else that runs a program reach the hosts the panel shows. It
+             reads the cache Hangar already refreshed: no AWS call, no credential,
+             no network.</p>
+          <div class="demo"><span class="c">$</span> hangar -s "web prod"
+payments-prod-web-1   payments·prod   web-1.prod.example.com
+payments-prod-web-2   payments·prod   web-2.prod.example.com
+<span class="c">$</span> ssh "$(hangar -a -s 'web prod' | head -1)"</div>
         </article>
 
         <article class="feature">
@@ -554,10 +566,12 @@ Host payments-prod-web-1
           <p>The same resolution order the AWS CLI uses, read straight from your
              home directory, with the signing done here. Expired SSO tokens refresh
              in place, so the CLI is only needed for the first
-             <code>aws sso login</code> on a machine.</p>
-          <div class="demo"><span class="c">env</span>               <span class="c">skip</span>
-<span class="c">~/.aws/credentials</span> <span class="c">skip</span>
-<span class="c">sso profile work</span>  <span class="ok">resolved</span></div>
+             <code>aws sso login</code> on a machine. With several profiles, pick
+             the one Hangar uses; each is listed with how it authenticates, so the
+             one holding nothing is not an equal-looking choice.</p>
+          <div class="demo"><span class="c">default</span>           <span class="warn">no credentials</span>
+<span class="c">work</span>              <span class="ok">SSO · us-west-2</span>
+<span class="c">sandbox</span>           <span class="ok">static keys · us-east-1</span></div>
         </article>
 
         <article class="feature">
@@ -582,10 +596,11 @@ env        20 groups, every host tagged
         <article class="feature">
           <h3>Fleet health at a glance</h3>
           <p>The menubar aircraft turns green while the cache is fresh, and says so
-             when it is not.</p>
+             when it is not. Every finding in the dashboard names the hosts it
+             counted, because two hosts you cannot identify is not a finding.</p>
           <div class="demo"><span class="ok">●</span> 2,847 hosts · us-west-2
-<span class="c">  cache updated 2 min ago</span>
-<span class="warn">●</span> <span class="warn">stale after 24 h</span></div>
+<span class="warn">●</span> No hostname tag, reached by private address   <span class="warn">2 hosts</span>
+<span class="c">  archive-1, ccweb</span></div>
         </article>
       </div>
     </div>
