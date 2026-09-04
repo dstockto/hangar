@@ -11,11 +11,19 @@ public struct FleetInsights: Sendable, Equatable {
     /// Hosts Hangar itself serves badly, which is the half of this the user can
     /// act on today by fixing a tag.
     public struct Hygiene: Sendable, Equatable {
-        public var missingProduct: Int = 0
-        public var missingEnv: Int = 0
-        public var missingName: Int = 0
+        /// The hosts in each bucket, named, not just counted. "2 hosts" with no
+        /// way to learn which two is a finding nobody can act on, and the count
+        /// is derived from the list so the two can never disagree.
+        public var withoutProduct: [String] = []
+        public var withoutEnv: [String] = []
+        public var withoutName: [String] = []
         /// Reachable only by private address, because no hostname tag was found.
-        public var missingHostname: Int = 0
+        public var withoutHostname: [String] = []
+
+        public var missingProduct: Int { withoutProduct.count }
+        public var missingEnv: Int { withoutEnv.count }
+        public var missingName: Int { withoutName.count }
+        public var missingHostname: Int { withoutHostname.count }
         /// Names two or more hosts share, with how many share them. Not a
         /// fault: `SSHConfigWriter` numbers them `-1`, `-2` by launch time and
         /// gives each an id-suffixed alias as well, so ssh always reaches the
@@ -103,6 +111,22 @@ public struct FleetInsights: Sendable, Equatable {
         ("under 90 days", 90), ("under 180 days", 180), ("over 180 days", nil),
     ]
 
+    /// The names under a panel row: a few inline, the rest counted. Six because
+    /// the panel is a column beside the fleet rather than a table, and the view
+    /// that shows this also carries every name in its tooltip.
+    public static func caption(_ hosts: [String], inline: Int = 6) -> String {
+        guard !hosts.isEmpty else { return "" }
+        let shown = hosts.prefix(inline).joined(separator: ", ")
+        guard hosts.count > inline else { return shown }
+        return shown + ", and \(hosts.count - inline) more"
+    }
+
+    /// What to call a host in a hygiene row. `role` is the mapped name tag, so a
+    /// host missing it is named by its instance id, which is the row's own point.
+    static func label(for instance: Instance) -> String {
+        instance.role.isEmpty ? instance.id : instance.role
+    }
+
     public static func compute(_ instances: [Instance],
                                now: Date = Date()) -> FleetInsights {
         var insights = FleetInsights()
@@ -121,11 +145,12 @@ public struct FleetInsights: Sendable, Equatable {
         for instance in instances {
             // Tag hygiene applies to every host: a missing name is Hangar serving
             // it badly whatever it came from.
-            if instance.product.isEmpty { insights.hygiene.missingProduct += 1 }
-            if instance.env.isEmpty { insights.hygiene.missingEnv += 1 }
-            if instance.role.isEmpty { insights.hygiene.missingName += 1 }
+            let named = FleetInsights.label(for: instance)
+            if instance.product.isEmpty { insights.hygiene.withoutProduct.append(named) }
+            if instance.env.isEmpty { insights.hygiene.withoutEnv.append(named) }
+            if instance.role.isEmpty { insights.hygiene.withoutName.append(named) }
             if (instance.tags["hostname"] ?? "").isEmpty {
-                insights.hygiene.missingHostname += 1
+                insights.hygiene.withoutHostname.append(named)
             }
             aliasCounts[instance.aliasStem, default: 0] += 1
 
@@ -161,6 +186,12 @@ public struct FleetInsights: Sendable, Equatable {
         }
 
         insights.hygiene.sharedNames = aliasCounts.filter { $0.value > 1 }
+        // Sorted so the panel lists the same hosts in the same order every
+        // refresh, rather than in whatever order the response arrived in.
+        insights.hygiene.withoutProduct.sort()
+        insights.hygiene.withoutEnv.sort()
+        insights.hygiene.withoutName.sort()
+        insights.hygiene.withoutHostname.sort()
 
         insights.placement = groups.map { key, group in
             var resolved = group

@@ -375,18 +375,22 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         let hygiene = insights.hygiene
         var rows: [PanelRow] = []
         if hygiene.missingProduct > 0 {
-            rows.append(PanelRow(.tag, "No product tag", count(hygiene.missingProduct, "host")))
+            rows.append(PanelRow(.tag, "No product tag", count(hygiene.missingProduct, "host"),
+                         hosts: hygiene.withoutProduct))
         }
         if hygiene.missingEnv > 0 {
-            rows.append(PanelRow(.tag, "No env tag", count(hygiene.missingEnv, "host")))
+            rows.append(PanelRow(.tag, "No env tag", count(hygiene.missingEnv, "host"),
+                         hosts: hygiene.withoutEnv))
         }
         if hygiene.missingName > 0 {
             rows.append(PanelRow(.warn, "No name tag, alias falls back to the instance id",
-                         count(hygiene.missingName, "host")))
+                         count(hygiene.missingName, "host"),
+                         hosts: hygiene.withoutName))
         }
         if hygiene.missingHostname > 0 {
             rows.append(PanelRow(.note, "No hostname tag, reached by private address",
-                         count(hygiene.missingHostname, "host")))
+                         count(hygiene.missingHostname, "host"),
+                         hosts: hygiene.withoutHostname))
         }
         // Reported, not flagged: Hangar numbers these and ssh reaches the right
         // host either way. The number is what moves when an instance is
@@ -615,14 +619,20 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         var label: String
         var value: String
         var lead: Bool
+        /// The hosts behind the count, named under the row. A row that says two
+        /// hosts and will not say which two ends the thought at the number.
+        var hosts: [String]
 
-        init(_ kind: RowKind, _ label: String, _ value: String, lead: Bool = false) {
+        init(_ kind: RowKind, _ label: String, _ value: String, lead: Bool = false,
+             hosts: [String] = []) {
             self.kind = kind
             self.label = label
             self.value = value
             self.lead = lead
+            self.hosts = hosts
         }
     }
+
 
     enum RowKind {
         case ok, warn, note
@@ -710,10 +720,32 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
             detail.alignment = .right
             detail.setContentHuggingPriority(.defaultHigh, for: .horizontal)
 
-            let row = NSStackView(views: [bullet, label, NSView(), detail])
+            // The label and the hosts it counted are one column, so the count on
+            // the right still lines up with the claim it belongs to.
+            var text: NSView = label
+            if !entry.hosts.isEmpty {
+                let named = NSTextField(labelWithString:
+                    FleetInsights.caption(entry.hosts))
+                named.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+                named.textColor = Brand.Color.textSecondary
+                named.lineBreakMode = .byTruncatingTail
+                named.setContentCompressionResistancePriority(.defaultLow,
+                                                              for: .horizontal)
+                let column = NSStackView(views: [label, named])
+                column.orientation = .vertical
+                column.alignment = .leading
+                column.spacing = 1
+                text = column
+            }
+
+            let row = NSStackView(views: [bullet, text, NSView(), detail])
             row.orientation = .horizontal
-            row.alignment = .centerY
+            row.alignment = entry.hosts.isEmpty ? .centerY : .top
             row.spacing = Brand.Metric.space8
+            // Every name, for the fleet where the inline few are not all of them.
+            if !entry.hosts.isEmpty {
+                row.toolTip = entry.hosts.joined(separator: "\n")
+            }
             bullet.widthAnchor.constraint(equalToConstant: 12).isActive = true
             stack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true

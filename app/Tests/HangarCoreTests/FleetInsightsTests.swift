@@ -43,6 +43,34 @@ final class FleetInsightsTests: XCTestCase {
         XCTAssertEqual(insights.hygiene.problems, 4)
     }
 
+    /// A count with no names ends the thought at the number. The panel asks the
+    /// hygiene rows which hosts they counted, so they have to know.
+    func testHygieneNamesTheHostsItCounted() {
+        let insights = FleetInsights.compute([
+            host("payments", "prod", "web-1"),
+            host("", "prod", "web-2"),
+            host("payments", "prod", "web-4", hostname: nil),
+            host("payments", "prod", "web-3", hostname: nil),
+            host("payments", "prod", "", id: "i-0000000000000dead"),
+        ], now: now)
+        XCTAssertEqual(insights.hygiene.withoutProduct, ["web-2"])
+        XCTAssertEqual(insights.hygiene.withoutHostname, ["web-3", "web-4"],
+                       "sorted, so the panel lists them the same way every refresh")
+        XCTAssertEqual(insights.hygiene.withoutName, ["i-0000000000000dead"],
+                       "a host with no name tag is named by its id, which is the point")
+        XCTAssertEqual(insights.hygiene.missingHostname,
+                       insights.hygiene.withoutHostname.count,
+                       "the count is the list, so the two cannot disagree")
+    }
+
+    func testTheCaptionNamesAFewAndCountsTheRest() {
+        XCTAssertEqual(FleetInsights.caption([]), "")
+        XCTAssertEqual(FleetInsights.caption(["web-1", "web-2"]), "web-1, web-2")
+        XCTAssertEqual(
+            FleetInsights.caption(["a", "b", "c", "d"], inline: 2),
+            "a, b, and 2 more")
+    }
+
     func testSharedNamesAreReportedWithoutBeingCalledDirty() {
         // Two hosts whose tags produce one stem. SSHConfigWriter numbers them,
         // so this is information, not a fault, and it must not make an
