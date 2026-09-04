@@ -59,51 +59,50 @@ public enum CredentialResolver {
 
         let profile = try files.profile(named: requested)
 
-        if profile.hasStaticKeys {
+        // Switched on `profile.method` rather than re-testing the same fields in
+        // the same order, so the profile picker cannot describe a profile one way
+        // and have the resolve take another.
+        switch profile.method {
+        case .staticKeys:
             return ResolvedCredentials(
                 credentials: AWSCredentials(
-                    accessKeyId: profile.accessKeyId!,
-                    secretAccessKey: profile.secretAccessKey!,
+                    accessKeyId: profile.accessKeyId ?? "",
+                    secretAccessKey: profile.secretAccessKey ?? "",
                     sessionToken: profile.sessionToken,
                     expiration: nil),
                 source: .staticKeys(profile: profile.name),
                 region: profile.region)
-        }
 
-        if profile.isSSO {
-            let credentials = try await SSO.credentials(for: profile)
+        case .sso:
             return ResolvedCredentials(
-                credentials: credentials,
+                credentials: try await SSO.credentials(for: profile),
                 source: .sso(profile: profile.name),
                 region: profile.region)
-        }
 
-        if profile.assumesRole {
+        case .assumedRole:
+            let arn = profile.roleArn ?? ""
             let sourceName = profile.sourceProfile ?? "default"
             let base = try await resolve(profile: sourceName, files: files, depth: depth + 1)
             let assumed = try await STS.assumeRole(
                 using: base.credentials,
                 region: profile.region,
-                roleArn: profile.roleArn!,
+                roleArn: arn,
                 sessionName: profile.roleSessionName ?? "hangar",
                 externalId: profile.externalId)
             return ResolvedCredentials(
                 credentials: assumed,
-                source: .assumedRole(profile: profile.name, arn: profile.roleArn!),
+                source: .assumedRole(profile: profile.name, arn: arn),
                 region: profile.region)
-        }
 
-        if let command = profile.credentialProcess, !command.isEmpty {
+        case .credentialProcess:
             return ResolvedCredentials(
-                credentials: try runCredentialProcess(command),
+                credentials: try runCredentialProcess(profile.credentialProcess ?? ""),
                 source: .credentialProcess(profile: profile.name),
                 region: profile.region)
-        }
 
-        throw HangarError.noProfile(
-            "profile '\(profile.name)' has no credentials Hangar can use. "
-            + "It needs either aws_access_key_id and aws_secret_access_key, "
-            + "SSO settings, role_arn with source_profile, or credential_process.")
+        case .unavailable:
+            throw HangarError.noCredentials(profile: profile.name)
+        }
     }
 
     /// How long a credential helper gets. Long enough for one that waits on a

@@ -170,6 +170,9 @@ public struct AWSCredentials: Sendable {
 
 public enum HangarError: LocalizedError {
     case noProfile(String)
+    /// The profile exists but carries nothing Hangar can authenticate with, which
+    /// is a different fault from a missing profile: another profile may work.
+    case noCredentials(profile: String)
     case noSSOToken(String)
     case ssoTokenExpired(String)
     case http(Int, String)
@@ -179,6 +182,8 @@ public enum HangarError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .noProfile(let m):        return "AWS profile problem: \(m)"
+        case .noCredentials(let p):    return "AWS profile problem: profile '\(p)' has "
+                                            + "no credentials Hangar can use"
         case .noSSOToken(let m):       return "No usable SSO token: \(m)"
         case .ssoTokenExpired(let m):  return "SSO session expired: \(m)"
         case .http(let code, let m):   return "HTTP \(code): \(m)"

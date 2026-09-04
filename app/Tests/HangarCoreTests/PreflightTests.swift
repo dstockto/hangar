@@ -5,11 +5,39 @@ final class PreflightTests: TemporaryDirectoryTestCase {
 
     func testNoAWSProfilesIsABlocker() {
         let empty = AWSConfigFiles(config: [:], credentials: [:])
-        XCTAssertEqual(Preflight.profilesCheck(empty).level, .problem)
+        XCTAssertEqual(Preflight.profilesCheck(empty, env: [:]).level, .problem)
     }
 
-    func testProfilesFoundIsFine() throws {
-        XCTAssertEqual(Preflight.profilesCheck(try awsFiles()).level, .ok)
+    /// Counting the profiles without naming the pick is how a machine with three
+    /// of them failed on the one Hangar chose for itself, with nothing on screen
+    /// admitting which that was.
+    func testProfilesFoundNamesTheOneInUseAndHowItAuthenticates() throws {
+        let check = Preflight.profilesCheck(try awsFiles(), using: "legacy", env: [:])
+        XCTAssertEqual(check.level, .ok)
+        XCTAssertTrue(check.detail.contains("Using legacy"), check.detail)
+        XCTAssertTrue(check.detail.contains("static keys"), check.detail)
+        XCTAssertTrue(check.detail.contains("Also available"), check.detail)
+    }
+
+    func testWithNothingPickedItSaysTheDefaultIsADefault() throws {
+        let check = Preflight.profilesCheck(try awsFiles(), env: [:])
+        XCTAssertTrue(check.detail.contains("Using default by default"), check.detail)
+    }
+
+    /// A name that is in neither file reads as a credentials problem in the error
+    /// AWS gives back, when it is simply the wrong name.
+    func testAProfileThatIsNotInEitherFileIsCalledOut() throws {
+        let check = Preflight.profilesCheck(try awsFiles(), using: "typo", env: [:])
+        XCTAssertEqual(check.level, .warning)
+        XCTAssertTrue(check.detail.contains("not in ~/.aws/config"), check.detail)
+    }
+
+    func testExportedKeysAreReportedRatherThanAProfile() throws {
+        let check = Preflight.profilesCheck(
+            try awsFiles(),
+            env: ["AWS_ACCESS_KEY_ID": "EXAMPLE", "AWS_SECRET_ACCESS_KEY": "not-real"])
+        XCTAssertEqual(check.level, .ok)
+        XCTAssertTrue(check.detail.contains("reads no profile at all"), check.detail)
     }
 
     func testAMissingIncludeLineWarnsRatherThanBlocks() {
@@ -92,6 +120,19 @@ final class PreflightTests: TemporaryDirectoryTestCase {
         ], fleetSize: 41)
         XCTAssertEqual(check.level, .warning)
         XCTAssertTrue(check.detail.contains("not authorized"))
+    }
+
+    /// A credential paragraph on one source used to fill all three lines of this
+    /// detail, so the counts the check exists to report were off the card.
+    func testALongProblemDoesNotHideTheOtherSourcesCounts() {
+        let check = Preflight.sourcesCheck([
+            SourceReport(source: .ec2, problem:
+                "Profile default has no credentials Hangar can use. Pick one that "
+                + "does: aws-developer-collect, aws-development-admin."),
+            SourceReport(source: .sshConfig, hosts: 11),
+        ], fleetSize: 11)
+        XCTAssertTrue(check.detail.contains("~/.ssh/config: 11"), check.detail)
+        XCTAssertTrue(check.detail.count < 120, check.detail)
     }
 
     func testNoHostsAnywhereOffersTheCSVImport() {

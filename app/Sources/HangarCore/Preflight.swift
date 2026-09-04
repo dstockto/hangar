@@ -49,8 +49,14 @@ public struct Preflight: Sendable {
 
     // MARK: - Individual checks, each independently testable
 
-    /// AWS profiles found across ~/.aws/config and ~/.aws/credentials.
-    public static func profilesCheck(_ files: AWSConfigFiles) -> Check {
+    /// AWS profiles found across ~/.aws/config and ~/.aws/credentials, and which
+    /// one Hangar is using. Counting them without naming the pick was the whole
+    /// reason a machine with three profiles could fail on the one it chose for
+    /// itself with nothing on screen admitting which that was.
+    public static func profilesCheck(_ files: AWSConfigFiles,
+                                     using requested: String? = nil,
+                                     env: [String: String]
+                                        = ProcessInfo.processInfo.environment) -> Check {
         let names = files.profileNames
         if names.isEmpty {
             return Check(
@@ -58,12 +64,40 @@ public struct Preflight: Sendable {
                 detail: "No profiles found in ~/.aws/config or ~/.aws/credentials.",
                 level: .problem)
         }
-        let listed = names.prefix(4).joined(separator: ", ")
-        let suffix = names.count > 4 ? ", and \(names.count - 4) more" : ""
+        let title = names.count == 1 ? "1 AWS profile found"
+                                     : "\(names.count) AWS profiles found"
+        let others = { (active: String) -> String in
+            let rest = names.filter { $0 != active }
+            guard !rest.isEmpty else { return "" }
+            let listed = rest.prefix(3).joined(separator: ", ")
+            let more = rest.count > 3 ? ", and \(rest.count - 3) more" : ""
+            return " Also available: \(listed)\(more)."
+        }
+
+        guard let active = AWSConfigFiles.activeProfileName(requested: requested, env: env) else {
+            return Check(
+                id: "profiles", title: title,
+                detail: "AWS_ACCESS_KEY_ID is exported, so Hangar uses those "
+                    + "credentials and reads no profile at all. Pick a profile to "
+                    + "override that. Profiles: \(names.prefix(4).joined(separator: ", ")).",
+                level: .ok)
+        }
+
+        // A profile that is set but not in either file is its own fault, and one
+        // the credential error describes badly: it reads as a credentials problem
+        // when the name is simply wrong.
+        guard let summary = files.profileSummaries.first(where: { $0.name == active }) else {
+            return Check(
+                id: "profiles", title: title,
+                detail: "Hangar is set to use \(active), which is not in ~/.aws/config "
+                    + "or ~/.aws/credentials." + others(active),
+                level: .warning, remedy: .openConfig)
+        }
+
+        let how = requested == nil ? "Using \(active) by default" : "Using \(active)"
         return Check(
-            id: "profiles",
-            title: names.count == 1 ? "1 AWS profile found" : "\(names.count) AWS profiles found",
-            detail: listed + suffix, level: .ok)
+            id: "profiles", title: title,
+            detail: "\(how): \(summary.detail)." + others(active), level: .ok)
     }
 
     /// Whether the ssh aliases Hangar writes can actually be resolved by ssh.
@@ -191,7 +225,7 @@ public struct Preflight: Sendable {
             .filter { $0.attempted }
             .map { report -> String in
                 if let problem = report.problem, report.hosts == 0 {
-                    return "\(report.source.label): \(problem)"
+                    return "\(report.source.label): \(clipped(problem))"
                 }
                 return "\(report.source.label): \(report.hosts)"
             }
@@ -216,6 +250,15 @@ public struct Preflight: Sendable {
                 : "\(total) hosts from \(working.count) sources",
             detail: detail,
             level: failed.isEmpty ? .ok : .warning)
+    }
+
+    /// A failing source's problem, short enough that the other sources' counts
+    /// survive. A credential paragraph in here used to fill all three lines this
+    /// detail gets, hiding every number the check exists to report. The whole
+    /// message is on the credentials card.
+    static func clipped(_ problem: String, limit: Int = 64) -> String {
+        guard problem.count > limit else { return problem }
+        return String(problem.prefix(limit - 1)) + "\u{2026}"
     }
 
     /// The terminal Hangar will hand sessions to.

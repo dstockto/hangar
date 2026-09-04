@@ -111,6 +111,31 @@ final class CredentialAdviceTests: XCTestCase {
         XCTAssertNil(advice.command)
     }
 
+    // MARK: - A profile with nothing in it
+
+    /// The answer for someone with three profiles is to pick one, not to go and
+    /// write credentials into the one Hangar happened to try.
+    func testAProfileWithNoCredentialsNamesTheOnesThatWork() {
+        let advice = CredentialAdvice.forFailure(
+            HangarError.noCredentials(profile: "default"),
+            profile: profile("default"),
+            alternatives: ["default", "aws-developer", "aws-admin"])
+        XCTAssertTrue(advice.message.contains("aws-developer"), advice.message)
+        XCTAssertTrue(advice.message.contains("aws-admin"), advice.message)
+        XCTAssertFalse(advice.message.contains("Pick one that does: default"),
+                       "the profile that just failed is not an alternative")
+        XCTAssertNil(advice.command)
+    }
+
+    func testWithNoOtherProfileItSaysWhatAProfileNeeds() {
+        let advice = CredentialAdvice.forFailure(
+            HangarError.noCredentials(profile: "default"),
+            profile: profile("default"),
+            alternatives: ["default"])
+        XCTAssertTrue(advice.message.contains("key pair"), advice.message)
+        XCTAssertTrue(advice.message.contains("credential_process"), advice.message)
+    }
+
     // MARK: - The setup check reflects it
 
     func testSetupCheckOffersACommandOnlyWhenOneApplies() {

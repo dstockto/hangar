@@ -232,7 +232,8 @@ final class FleetStore: ObservableObject {
         }
 
         // Then AWS, which may fail without costing the user the hosts above.
-        let attempted = try? AWSConfigFiles.load().profile(named: config.profile)
+        let awsFiles = AWSConfigFiles.load()
+        let attempted = try? awsFiles.profile(named: config.profile)
         var awsFailure: Error?
         var queryRegion = region
         if settings.wantsEC2 || settings.wantsSSMAlways {
@@ -287,7 +288,10 @@ final class FleetStore: ObservableObject {
             } catch {
                 // Credentials themselves failed, so neither AWS source ran.
                 awsFailure = error
-                let advice = CredentialAdvice.forFailure(error, profile: attempted)
+                let advice = CredentialAdvice.forFailure(
+                    error, profile: attempted,
+                    alternatives: awsFiles.profileSummaries
+                        .filter(\.isUsable).map(\.name))
                 credentialAdvice = advice
                 reports.append(SourceReport(source: .ec2, problem: advice.message))
                 reports.append(.off(.ssm))
@@ -307,7 +311,10 @@ final class FleetStore: ObservableObject {
         // fleet with a note attached, and a fleet beats an error page.
         guard !merged.instances.isEmpty else {
             let message = awsFailure.map {
-                CredentialAdvice.forFailure($0, profile: attempted).message
+                CredentialAdvice.forFailure(
+                    $0, profile: attempted,
+                    alternatives: awsFiles.profileSummaries
+                        .filter(\.isUsable).map(\.name)).message
             } ?? "No hosts from any source."
             status = .failed(message)
             Log.error(.fleet, "refresh found nothing",
@@ -505,6 +512,38 @@ final class FleetStore: ObservableObject {
 
     func existingOverride(scope: OverrideScope) -> HangarConfig.Override? {
         config.override(for: scope.match)
+    }
+
+    // MARK: - AWS profile
+
+    /// Every profile the picker can offer, with how each one authenticates.
+    var profileSummaries: [ProfileSummary] { AWSConfigFiles.load().profileSummaries }
+
+    /// The profile in effect, which is not always the one in the config: nothing
+    /// is set until the user picks one. Nil when exported keys win outright.
+    var activeProfileName: String? {
+        AWSConfigFiles.activeProfileName(requested: config.profile)
+    }
+
+    /// Picks the profile the EC2 and Systems Manager sources authenticate with.
+    /// Nil hands the choice back to AWS_PROFILE and default.
+    @discardableResult
+    func useProfile(_ name: String?) -> String {
+        var updated = config
+        updated.profile = name
+        do {
+            try HangarConfig.write(updated)
+        } catch {
+            return "Could not write \(HangarConfig.path)"
+        }
+        config = updated
+        guard let name else {
+            let automatic = activeProfileName
+            return automatic == nil
+                ? "Using the credentials in your environment"
+                : "Using \(automatic ?? "") again, the AWS default"
+        }
+        return "AWS sources now use profile \(name)"
     }
 
     // MARK: - Tag mapping

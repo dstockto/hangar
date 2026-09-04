@@ -423,7 +423,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         renderProgress(checks)
 
         let files = AWSConfigFiles.load()
-        checks.append(Preflight.profilesCheck(files))
+        checks.append(Preflight.profilesCheck(files, using: store.config.profile))
         renderProgress(checks)
 
         // Refreshing is the honest credential and connectivity test: it does exactly
@@ -567,21 +567,83 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         importRow.alignment = .centerY
         sourcesStack.addView(importRow, in: .top)
 
+        renderProfileRow()
         renderKeyRow()
     }
 
-    /// The key half of the card. Nothing at all when there is nothing to say,
-    /// because a row reading "no key" teaches no one anything.
-    private func renderKeyRow() {
+    /// Which AWS profile the two AWS sources authenticate with. In the card
+    /// rather than only in the menubar: the window that reports a credential
+    /// failure is where someone with three profiles goes to change the one tried.
+    private func renderProfileRow() {
+        let summaries = store.profileSummaries
+        guard !summaries.isEmpty else { return }
+        addSubheading("Which AWS profile")
+
+        let popup = NSPopUpButton()
+        popup.controlSize = .small
+        popup.font = Brand.Font.metadata
+        popup.setAccessibilityLabel("AWS profile")
+        let automatic = store.activeProfileName
+        popup.addItem(withTitle: automatic == nil
+            ? "Automatic   environment credentials"
+            : "Automatic   \(automatic ?? "")")
+        popup.menu?.addItem(.separator())
+        for summary in summaries {
+            popup.addItem(withTitle: "\(summary.name)   \(summary.detail)")
+            popup.lastItem?.representedObject = summary.name
+        }
+        // A profile named in the config that neither ~/.aws file carries is still
+        // shown selected. Falling back to Automatic would put a lie on screen.
+        if let chosen = store.config.profile,
+           !summaries.contains(where: { $0.name == chosen }) {
+            popup.addItem(withTitle: "\(chosen)   not in ~/.aws")
+            popup.lastItem?.representedObject = chosen
+        }
+        popup.selectItem(at: popup.itemArray.firstIndex {
+            ($0.representedObject as? String) == store.config.profile
+        } ?? 0)
+        popup.target = self
+        popup.action = #selector(profileChosen(_:))
+
+        let row = NSStackView(views: [popup, hint("EC2 and Systems Manager only")])
+        row.orientation = .horizontal
+        row.spacing = Brand.Metric.space8
+        row.alignment = .centerY
+        sourcesStack.addView(row, in: .top)
+
+        let note = NSTextField(wrappingLabelWithString:
+            "Read from ~/.aws/config and ~/.aws/credentials, which Hangar never "
+            + "writes. Automatic follows AWS_PROFILE, then default, the same as the "
+            + "aws CLI. Picking one re-checks immediately.")
+        note.font = .systemFont(ofSize: 10)
+        note.textColor = Brand.Color.textSecondary
+        note.preferredMaxLayoutWidth = 520
+        sourcesStack.addView(note, in: .top)
+    }
+
+    @objc private func profileChosen(_ sender: NSPopUpButton) {
+        let name = sender.selectedItem?.representedObject as? String
+        Notifier.show(title: "AWS profile", body: store.useProfile(name), seconds: 3)
+        Task { await runChecks() }
+    }
+
+    /// One more question inside the card: a rule, then a heading.
+    private func addSubheading(_ text: String) {
         let divider = NSBox()
         divider.boxType = .separator
         sourcesStack.addView(divider, in: .top)
         divider.widthAnchor.constraint(equalTo: sourcesStack.widthAnchor).isActive = true
 
-        let heading = NSTextField(labelWithString: "Which key ssh uses")
+        let heading = NSTextField(labelWithString: text)
         heading.font = .systemFont(ofSize: 13, weight: .semibold)
         heading.textColor = Brand.Color.textPrimary
         sourcesStack.addView(heading, in: .top)
+    }
+
+    /// The key half of the card. Nothing at all when there is nothing to say,
+    /// because a row reading "no key" teaches no one anything.
+    private func renderKeyRow() {
+        addSubheading("Which key ssh uses")
 
         let row = NSStackView()
         row.orientation = .horizontal

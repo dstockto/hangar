@@ -132,7 +132,7 @@ runs a **setup check** that reads your machine and tells you exactly what works 
 what does not, with a fix button beside anything actionable:
 
 ```
-✓ 3 AWS profiles found          default, work, sandbox
+✓ 3 AWS profiles found          Using default by default: SSO · us-west-2
 ✓ Credentials resolved          SSO profile default
 ✓ 249 hosts indexed             6 products, 5 environments
 ✓ SSH aliases active            223 aliases, Include line in ~/.ssh/config
@@ -534,6 +534,13 @@ home directory:
 3. SSO, via `~/.aws/config` and the token cache in `~/.aws/sso/cache`
 4. `role_arn` with `source_profile`, assumed through STS
 5. `credential_process`
+
+Which profile, when you have several: **Setup Check → Which AWS profile**, or
+**Settings… → AWS Profile** in the menubar. Both list every profile in your
+`~/.aws` files with how each one authenticates, so the one with no credentials in
+it is not an equal-looking choice. Automatic follows `AWS_PROFILE`, then
+`default`, the same as the `aws` CLI. Only the EC2 and Systems Manager sources
+use it.
 
 Expired SSO tokens are refreshed in place using the cached refresh token, so you
 are not sent back to `aws sso login` until the refresh token itself lapses.

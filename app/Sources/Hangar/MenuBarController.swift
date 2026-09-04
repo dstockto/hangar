@@ -426,21 +426,27 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func profileMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "AWS Profile", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
-        let files = AWSConfigFiles.load()
         let active = store.config.profile
-        let auto = NSMenuItem(title: "Automatic", action: #selector(pickProfile(_:)),
-                              keyEquivalent: "")
+        let automatic = store.activeProfileName
+        let auto = NSMenuItem(title: automatic == nil
+                                ? "Automatic (environment credentials)"
+                                : "Automatic (\(automatic ?? ""))",
+                              action: #selector(pickProfile(_:)), keyEquivalent: "")
         auto.target = self
         auto.state = active == nil ? .on : .off
         submenu.addItem(auto)
         submenu.addItem(.separator())
-        for name in files.profileNames {
-            let profileItem = NSMenuItem(title: name, action: #selector(pickProfile(_:)),
+        // Each profile says how it authenticates, so the one that cannot is not
+        // an equal-looking choice in a list of three.
+        for summary in store.profileSummaries {
+            let profileItem = NSMenuItem(title: summary.name,
+                                         action: #selector(pickProfile(_:)),
                                          keyEquivalent: "")
             profileItem.target = self
-            profileItem.representedObject = name
-            profileItem.state = active == name ? .on : .off
+            profileItem.representedObject = summary.name
+            profileItem.state = active == summary.name ? .on : .off
             submenu.addItem(profileItem)
+            submenu.addItem(statusRow([.text(summary.detail)], tier: .faint))
         }
         item.submenu = submenu
         return item
@@ -769,10 +775,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func pickProfile(_ sender: NSMenuItem) {
-        var config = store.config
-        config.profile = sender.representedObject as? String
-        try? HangarConfig.write(config)
-        store.reloadConfig()
+        let message = store.useProfile(sender.representedObject as? String)
+        Notifier.show(title: "AWS profile", body: message, seconds: 3)
         Task { @MainActor in await store.refresh() }
     }
 

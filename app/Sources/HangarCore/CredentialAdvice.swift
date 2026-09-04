@@ -40,7 +40,12 @@ public enum CredentialAdvice {
             || lowered.contains("not authorized")
     }
 
-    public static func forFailure(_ error: Error, profile: AWSProfile?) -> Advice {
+    /// `alternatives` are the other profiles that do carry credentials. Without
+    /// them the only advice for a profile with nothing in it is a list of what a
+    /// profile needs, which is useless to someone who already has a working
+    /// profile a menu away.
+    public static func forFailure(_ error: Error, profile: AWSProfile?,
+                                  alternatives: [String] = []) -> Advice {
         let text = error.localizedDescription
 
         // An SSO error is unambiguous whatever the profile looks like.
@@ -48,6 +53,8 @@ public enum CredentialAdvice {
             switch hangar {
             case .ssoTokenExpired, .noSSOToken:
                 return ssoAdvice(profile: profile, text: text)
+            case .noCredentials(let name):
+                return noCredentialsAdvice(name: name, alternatives: alternatives)
             case .noProfile:
                 return Advice(message: text)
             default:
@@ -106,6 +113,24 @@ public enum CredentialAdvice {
         }
 
         return Advice(message: text)
+    }
+
+    /// A profile with nothing usable in it. Names the profiles that would work
+    /// when there are any, because on a machine with three profiles the answer is
+    /// to pick one rather than to go and write credentials into this one.
+    private static func noCredentialsAdvice(name: String, alternatives: [String]) -> Advice {
+        let others = alternatives.filter { $0 != name }
+        guard !others.isEmpty else {
+            return Advice(
+                message: "Profile \(name) has no credentials Hangar can use. It needs a "
+                    + "key pair, SSO settings, role_arn with source_profile, or "
+                    + "credential_process.")
+        }
+        let listed = others.prefix(3).joined(separator: ", ")
+        let more = others.count > 3 ? ", and \(others.count - 3) more" : ""
+        return Advice(
+            message: "Profile \(name) has no credentials Hangar can use. Pick one that "
+                + "does: \(listed)\(more).")
     }
 
     /// The environment-variable case, which has no profile behind it.

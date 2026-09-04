@@ -60,6 +60,67 @@ final class AWSConfigTests: TemporaryDirectoryTestCase {
                        "an SSO start URL legitimately ends in '#'")
     }
 
+    // MARK: - How each profile authenticates
+
+    /// The picker and the resolve read this from one place, so classifying a
+    /// profile wrongly here would mean describing it wrongly on screen too.
+    func testEachProfileIsClassifiedTheWayTheResolverWouldTryIt() throws {
+        let files = try awsFiles()
+        XCTAssertEqual(try files.profile(named: "legacy").method, .staticKeys)
+        XCTAssertEqual(try files.profile(named: "sso-admin").method, .sso)
+        XCTAssertEqual(try files.profile(named: "stepped").method, .assumedRole)
+        XCTAssertEqual(try files.profile(named: "helper").method, .credentialProcess)
+        XCTAssertEqual(try files.profile(named: "inline-comment").method, .unavailable,
+                       "a region and nothing else is not a credential")
+    }
+
+    /// A profile Hangar cannot use is still offered, labelled. Hiding it makes a
+    /// mis-set AWS_PROFILE invisible.
+    func testSummariesListEveryProfileIncludingTheUnusableOnes() throws {
+        let summaries = try awsFiles().profileSummaries
+        XCTAssertEqual(summaries.map(\.name), try awsFiles().profileNames)
+        let unusable = summaries.first { $0.name == "inline-comment" }
+        XCTAssertEqual(unusable?.isUsable, false)
+        XCTAssertEqual(unusable?.detail, "no credentials")
+        let keys = summaries.first { $0.name == "legacy" }
+        XCTAssertEqual(keys?.isUsable, true)
+        XCTAssertTrue(keys?.detail.contains("static keys") == true, keys?.detail ?? "")
+        XCTAssertTrue(keys?.detail.contains("us-west-2") == true, keys?.detail ?? "")
+    }
+
+    func testAutomaticFollowsAWSProfileThenDefault() {
+        XCTAssertEqual(
+            AWSConfigFiles.activeProfileName(requested: nil, env: [:]), "default")
+        XCTAssertEqual(
+            AWSConfigFiles.activeProfileName(requested: nil, env: ["AWS_PROFILE": "work"]),
+            "work")
+        XCTAssertEqual(
+            AWSConfigFiles.activeProfileName(requested: "picked",
+                                             env: ["AWS_PROFILE": "work"]),
+            "picked", "an explicit pick outranks the environment")
+    }
+
+    /// Exported keys shadow every profile, so naming one as active would be a
+    /// lie: the resolve would not read it.
+    func testExportedKeysMeanNoProfileIsActive() {
+        let env = ["AWS_ACCESS_KEY_ID": "EXAMPLE", "AWS_SECRET_ACCESS_KEY": "not-real"]
+        XCTAssertNil(AWSConfigFiles.activeProfileName(requested: nil, env: env))
+        XCTAssertEqual(
+            AWSConfigFiles.activeProfileName(requested: "picked", env: env), "picked",
+            "asking for a profile is what turns the exported keys off")
+    }
+
+    func testAProfileWithNoCredentialsFailsWithItsOwnError() async throws {
+        let files = try awsFiles()
+        do {
+            _ = try await CredentialResolver.resolve(profile: "inline-comment",
+                                                     files: files)
+            XCTFail("a profile with no credentials should not resolve")
+        } catch HangarError.noCredentials(let name) {
+            XCTAssertEqual(name, "inline-comment")
+        }
+    }
+
     func testStaticKeysResolveWithoutNetwork() async throws {
         let files = try awsFiles()
         let resolved = try await CredentialResolver.resolve(profile: "legacy", files: files)

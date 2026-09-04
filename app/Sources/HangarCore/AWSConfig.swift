@@ -64,6 +64,32 @@ public struct AWSConfigFiles: Sendable {
         return names.sorted()
     }
 
+    /// Every profile with what the picker needs to describe it: how it
+    /// authenticates and where it points. A profile Hangar cannot use is listed
+    /// too, labelled, because hiding it makes a mis-set AWS_PROFILE invisible.
+    public var profileSummaries: [ProfileSummary] {
+        profileNames.map { name in
+            guard let profile = try? profile(named: name) else {
+                return ProfileSummary(name: name, method: .unavailable, region: "")
+            }
+            return ProfileSummary(name: name, method: profile.method,
+                                  region: profile.region)
+        }
+    }
+
+    /// The profile a resolve with this request would actually read, which is what
+    /// "Automatic" means on screen. Nil when exported keys win and no profile is
+    /// consulted at all, so the UI never names a profile that had no say.
+    public static func activeProfileName(
+        requested: String?,
+        env: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        if let requested, !requested.isEmpty { return requested }
+        if !(env["AWS_ACCESS_KEY_ID"] ?? "").isEmpty,
+           !(env["AWS_SECRET_ACCESS_KEY"] ?? "").isEmpty { return nil }
+        return env["AWS_PROFILE"] ?? "default"
+    }
+
     func configSection(_ name: String) -> [String: String] {
         config[name == "default" ? "default" : "profile \(name)"] ?? [:]
     }
@@ -144,6 +170,33 @@ public struct AWSProfile: Sendable {
     public var roleSessionName: String?
     public var credentialProcess: String?
 
+    /// How this profile authenticates, decided in the order `CredentialResolver`
+    /// tries them so the picker cannot disagree with the result.
+    public enum CredentialMethod: Sendable, Equatable {
+        case staticKeys, sso, assumedRole, credentialProcess, unavailable
+
+        /// Short enough for a menu row.
+        public var label: String {
+            switch self {
+            case .staticKeys:        return "static keys"
+            case .sso:               return "SSO"
+            case .assumedRole:       return "assumed role"
+            case .credentialProcess: return "credential_process"
+            case .unavailable:       return "no credentials"
+            }
+        }
+
+        public var isUsable: Bool { self != .unavailable }
+    }
+
+    public var method: CredentialMethod {
+        if hasStaticKeys { return .staticKeys }
+        if isSSO { return .sso }
+        if assumesRole { return .assumedRole }
+        if !(credentialProcess ?? "").isEmpty { return .credentialProcess }
+        return .unavailable
+    }
+
     public var hasStaticKeys: Bool {
         !(accessKeyId ?? "").isEmpty && !(secretAccessKey ?? "").isEmpty
     }
@@ -156,5 +209,28 @@ public struct AWSProfile: Sendable {
     /// Convenience for callers that only need one profile.
     public static func load(profile: String? = nil) throws -> AWSProfile {
         try AWSConfigFiles.load().profile(named: profile)
+    }
+}
+
+/// One profile as the pickers show it. Kept UI-free so the setup window and the
+/// menubar describe a profile the same way.
+public struct ProfileSummary: Sendable, Equatable, Identifiable {
+    public var name: String
+    public var method: AWSProfile.CredentialMethod
+    public var region: String
+
+    public var id: String { name }
+    public var isUsable: Bool { method.isUsable }
+
+    public init(name: String, method: AWSProfile.CredentialMethod, region: String) {
+        self.name = name
+        self.method = method
+        self.region = region
+    }
+
+    /// "static keys  ·  us-west-2", per the brand kit's status format.
+    public var detail: String {
+        guard isUsable, !region.isEmpty else { return method.label }
+        return "\(method.label)  \u{00B7}  \(region)"
     }
 }
