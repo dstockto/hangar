@@ -24,6 +24,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private var loginToggle: NSButton!
     private var updateToggle: NSButton!
     private var channelPopup: NSPopUpButton!
+    private var terminalPopup: NSPopUpButton!
     private var tagsStack: NSStackView!
     private var tagsCard: NSView!
     private var tagPopups: [TagCatalog.Concept: NSPopUpButton] = [:]
@@ -206,6 +207,16 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         channelPopup.controlSize = .small
         channelPopup.font = Brand.Font.metadata
 
+        // Beside the other settings rather than in a card: the terminal is one
+        // choice, it never grows with the fleet, and it belongs where the user
+        // is already deciding how Hangar behaves.
+        terminalPopup = NSPopUpButton()
+        terminalPopup.controlSize = .small
+        terminalPopup.font = Brand.Font.metadata
+        terminalPopup.setAccessibilityLabel("Terminal")
+        terminalPopup.target = self
+        terminalPopup.action = #selector(terminalChanged)
+
         closeHint = NSTextField(labelWithString:
             "Closing this window leaves Hangar running in your menu bar.")
         closeHint.font = .systemFont(ofSize: 10, weight: .regular)
@@ -248,6 +259,14 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         updateRow.orientation = .horizontal
         updateRow.spacing = Brand.Metric.space8
 
+        let terminalLabel = NSTextField(labelWithString: "Open sessions in")
+        terminalLabel.font = Brand.Font.metadata
+        terminalLabel.textColor = Brand.Color.textSecondary
+        let terminalRow = NSStackView(views: [terminalLabel, terminalPopup])
+        terminalRow.orientation = .horizontal
+        terminalRow.spacing = Brand.Metric.space8
+        terminalRow.alignment = .centerY
+
         // Everything that grows with the fleet scrolls. The toggles and the buttons
         // are pinned below it, because a window taller than the screen with the
         // settings and Open Hangar off the bottom edge cannot be finished.
@@ -285,7 +304,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             container.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
         ])
 
-        let footer = NSStackView(views: [toggles, updateRow, closeHint, buttonRow])
+        let footer = NSStackView(views: [toggles, updateRow, terminalRow,
+                                         closeHint, buttonRow])
         footer.orientation = .vertical
         footer.alignment = .leading
         footer.spacing = Brand.Metric.space12
@@ -463,15 +483,14 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             importedCount: store.importedHostCount))
         renderProgress(checks)
 
-        let terminal = Launcher.Terminal.from(store.config.terminal)
-        checks.append(Preflight.terminalCheck(
-            configured: store.config.terminal,
-            installed: terminal.isInstalled,
-            fallbackInstalled: Launcher.Terminal.terminal.isInstalled))
+        checks.append(Preflight.terminalCheck(configured: store.terminal,
+                                              installed: Launcher.installed))
         renderProgress(checks)
 
         checks.append(Preflight.hotkeyCheck(problem: hotkeyProblem(),
                                             combination: hotkeyCombination()))
+
+        renderTerminalPopup()
 
         let preflight = Preflight(checks: checks)
         switch preflight.worst {
@@ -1311,6 +1330,36 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             self.store.adopt(keyFile: url.path)
             Task { await self.runChecks() }
         }
+    }
+
+    /// Every terminal Hangar can drive, with the ones that are not here labelled
+    /// rather than hidden: "why is Ghostty not in this list" is a worse question
+    /// than seeing it greyed out with the reason on it.
+    private func renderTerminalPopup() {
+        terminalPopup.removeAllItems()
+        // Without this AppKit recomputes every item as enabled and the terminal
+        // that is not on this Mac becomes a choice that quietly falls back.
+        terminalPopup.menu?.autoenablesItems = false
+        let installed = Launcher.installed
+        for choice in TerminalChoice.allCases {
+            let here = installed.contains(choice)
+            terminalPopup.addItem(withTitle: choice.displayName
+                                    + (here ? "" : "   not installed"))
+            terminalPopup.lastItem?.representedObject = choice.rawValue
+            terminalPopup.lastItem?.isEnabled = here
+        }
+        terminalPopup.selectItem(at: TerminalChoice.allCases
+            .firstIndex(of: store.terminal) ?? 0)
+    }
+
+    @objc private func terminalChanged() {
+        guard let raw = terminalPopup.selectedItem?.representedObject as? String
+        else { return }
+        let message = store.useTerminal(TerminalChoice.from(raw))
+        Notifier.show(title: "Terminal", body: message, seconds: 3)
+        // The terminal check reports what is installed and what will open, so it
+        // is now out of date.
+        Task { await runChecks() }
     }
 
     @objc private func toggleLogin() {

@@ -4,27 +4,21 @@ import HangarCore
 /// Opens ssh sessions in the user's terminal. Once the ssh_config include is in
 /// place every host is reachable by alias, so the command is just `ssh <alias>`
 /// and the terminal inherits user, key, and ProxyJump from ssh itself.
+@MainActor
 enum Launcher {
-    enum Terminal: String {
-        case iterm, terminal
+    /// Where a terminal lives on this machine, and whether it is here at all.
+    /// `TerminalChoice` itself stays UI-free, so the lookup is here.
+    static func location(of terminal: TerminalChoice) -> URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminal.bundleID)
+    }
 
-        static func from(_ raw: String?) -> Terminal {
-            switch (raw ?? "iterm").lowercased() {
-            case "terminal", "terminal.app", "apple": return .terminal
-            default: return .iterm
-            }
-        }
+    static func isInstalled(_ terminal: TerminalChoice) -> Bool {
+        location(of: terminal) != nil
+    }
 
-        var bundleID: String {
-            switch self {
-            case .iterm:    return "com.googlecode.iterm2"
-            case .terminal: return "com.apple.Terminal"
-            }
-        }
-
-        var isInstalled: Bool {
-            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
-        }
+    /// Every terminal Hangar can drive that is actually on this machine.
+    static var installed: [TerminalChoice] {
+        TerminalChoice.allCases.filter(isInstalled)
     }
 
     static func sshCommand(for target: String, settings: HangarConfig.SSHSettings?,
@@ -34,26 +28,54 @@ enum Launcher {
                         managedByConfig: managedByConfig)
     }
 
-    @discardableResult
-    static func open(command: String, in terminal: Terminal) -> String? {
+    /// Opens the session, and reports a problem through `report` rather than a
+    /// return value: one mechanism fails synchronously and the other fails in a
+    /// completion handler, and a caller should not have to know which is which.
+    static func open(command: String, in terminal: TerminalChoice,
+                     report: @escaping @MainActor @Sendable (String) -> Void) {
         // A newline here would end the AppleScript string literal and, worse,
         // submit the line to the shell early. Nothing legitimate contains one.
         guard Shell.isSingleLine(command) else {
-            return "That host's tags contain a line break; Hangar will not run it."
+            report("That host's tags contain a line break; Hangar will not run it.")
+            return
         }
-        let target = terminal.isInstalled ? terminal : .terminal
+        // Falls back rather than failing: Terminal ships with macOS, so a chosen
+        // terminal that has been uninstalled costs a session in a different app
+        // rather than no session at all.
+        let target = isInstalled(terminal) ? terminal : TerminalChoice.fallback
+        guard let script = script(for: target, command: command) else {
+            launch(command: command, in: target, report: report)
+            return
+        }
+
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error {
+            let code = error[NSAppleScript.errorNumber] as? Int ?? 0
+            if code == -1743 {
+                report("Hangar needs permission to control \(target.displayName). "
+                    + "Allow it in System Settings under Privacy and Security, Automation.")
+                return
+            }
+            report(error[NSAppleScript.errorMessage] as? String
+                   ?? "could not open a terminal")
+        }
+    }
+
+    /// The AppleScript that writes the command into a live session, or nil for a
+    /// terminal that is not scriptable and takes the command as arguments.
+    ///
+    /// Written into a live session rather than passed as the session's command:
+    /// passed as the command, a failing ssh exits immediately and the tab closes,
+    /// so the user sees an empty window and never learns why. A shell that
+    /// outlives ssh shows the error.
+    private static func script(for terminal: TerminalChoice, command: String) -> String? {
         let escaped = command
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-
-        // Write the command into a live session rather than passing it as the
-        // session's command. If it is passed as the command, a failing ssh exits
-        // immediately and iTerm closes the tab, so the user sees an empty window
-        // and never learns why. A shell that outlives ssh shows the error.
-        let script: String
-        switch target {
+        switch terminal {
         case .iterm:
-            script = """
+            return """
             tell application "iTerm"
               activate
               if (count of windows) is 0 then
@@ -67,25 +89,43 @@ enum Launcher {
             end tell
             """
         case .terminal:
-            script = """
+            return """
             tell application "Terminal"
               activate
               do script "\(escaped)"
             end tell
             """
+        case .ghostty:
+            return nil
         }
+    }
 
-        var error: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&error)
-        if let error {
-            let code = error[NSAppleScript.errorNumber] as? Int ?? 0
-            if code == -1743 {
-                return "Hangar needs permission to control \(target == .iterm ? "iTerm" : "Terminal"). "
-                    + "Allow it in System Settings under Privacy and Security, Automation."
-            }
-            return error[NSAppleScript.errorMessage] as? String ?? "could not open a terminal"
+    /// A terminal that takes the command in its argument vector. No AppleScript,
+    /// so no Automation permission, and no shell string of our own: the command
+    /// is one element of the vector rather than something the launch re-parses.
+    private static func launch(command: String, in terminal: TerminalChoice,
+                               report: @escaping @MainActor @Sendable (String) -> Void) {
+        guard let url = location(of: terminal) else {
+            report("\(terminal.displayName) is not installed.")
+            return
         }
-        return nil
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = TerminalChoice.arguments(for: command)
+        // Each session is its own window, which is what the scripted terminals
+        // do with a new tab. Without this the arguments reach a running copy as
+        // a reopen and the command is dropped.
+        configuration.createsNewApplicationInstance = true
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+            guard let error else { return }
+            Log.warning(.fleet, "terminal launch failed",
+                        ["terminal": terminal.rawValue,
+                         "error": error.localizedDescription])
+            Task { @MainActor in
+                report("Could not open \(terminal.displayName): "
+                       + error.localizedDescription)
+            }
+        }
     }
 
     static func copyToClipboard(_ text: String) {

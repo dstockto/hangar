@@ -392,6 +392,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         submenu.addItem(statusRow(versionRuns, tier: .faint))
 
         submenu.addItem(.separator())
+        submenu.addItem(sectionHeader("Sessions", symbol: "terminal"))
+        submenu.addItem(terminalMenuItem())
+
+        submenu.addItem(.separator())
         submenu.addItem(sectionHeader("Configuration", symbol: "slider.horizontal.3"))
         submenu.addItem(action("Setup Check\u{2026}", #selector(showSetup), key: ""))
         submenu.addItem(action("Edit Configuration\u{2026}", #selector(editConfig), key: ""))
@@ -450,6 +454,39 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         item.submenu = submenu
         return item
+    }
+
+    /// The terminal sessions open in. A terminal Hangar cannot find is listed
+    /// and disabled rather than left out, so the list is the same everywhere.
+    private func terminalMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Terminal", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        // Automatic enabling would override the explicit state below, so a
+        // terminal that is not installed would look pickable.
+        submenu.autoenablesItems = false
+        let active = store.terminal
+        let installed = Launcher.installed
+        for choice in TerminalChoice.allCases {
+            let entry = NSMenuItem(title: choice.displayName,
+                                   action: #selector(pickTerminal(_:)),
+                                   keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = choice.rawValue
+            entry.state = active == choice ? .on : .off
+            entry.isEnabled = installed.contains(choice)
+            submenu.addItem(entry)
+            if !installed.contains(choice) {
+                submenu.addItem(statusRow([.text("not installed")], tier: .faint))
+            }
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func pickTerminal(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        Notifier.show(title: "Terminal",
+                      body: store.useTerminal(TerminalChoice.from(raw)), seconds: 3)
     }
 
     /// A run of status text. `mono` marks values the user might copy or type:
@@ -768,8 +805,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             Notifier.show(title: "Copied", body: command)
             return
         }
-        if let problem = Launcher.open(command: command,
-                                       in: Launcher.Terminal.from(store.config.terminal)) {
+        Launcher.open(command: command, in: store.terminal) { problem in
             Notifier.show(title: "Could not open a terminal", body: problem, seconds: 4)
         }
     }

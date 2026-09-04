@@ -261,24 +261,41 @@ public struct Preflight: Sendable {
         return String(problem.prefix(limit - 1)) + "\u{2026}"
     }
 
-    /// The terminal Hangar will hand sessions to.
-    public static func terminalCheck(configured: String?, installed: Bool,
-                                     fallbackInstalled: Bool) -> Check {
-        let name = (configured ?? "iterm").lowercased().contains("terminal")
-            ? "Terminal" : "iTerm2"
-        if installed {
-            return Check(id: "terminal", title: "\(name) found",
-                         detail: "Sessions open in \(name).", level: .ok)
-        }
-        if fallbackInstalled {
+    /// The terminal Hangar will hand sessions to, and what else it could use.
+    ///
+    /// `installed` is what the app layer found on this machine; the core cannot
+    /// ask, and a check that assumed the answer would be reporting a guess.
+    public static func terminalCheck(configured: TerminalChoice,
+                                     installed: [TerminalChoice]) -> Check {
+        let others = installed.filter { $0 != configured }
+        let alternatives = others.isEmpty
+            ? ""
+            : " Also installed: "
+                + others.map(\.displayName).joined(separator: ", ") + "."
+        if installed.contains(configured) {
+            // Only the scripted terminals need Automation permission, and being
+            // asked for it out of nowhere on a first connect is worth a warning.
+            let permission = configured.mechanism == .appleScript
+                ? " macOS asks once for permission to control it."
+                : ""
             return Check(
-                id: "terminal", title: "\(name) not installed",
-                detail: "Sessions will open in Terminal instead. Change this in "
-                    + "~/.hangar/config.json.",
-                level: .warning, remedy: .openConfig)
+                id: "terminal", title: "\(configured.displayName) found",
+                detail: "Sessions open in \(configured.displayName)."
+                    + permission + alternatives,
+                level: .ok)
+        }
+        if installed.contains(TerminalChoice.fallback) {
+            return Check(
+                id: "terminal", title: "\(configured.displayName) not installed",
+                detail: "Sessions will open in \(TerminalChoice.fallback.displayName) "
+                    + "instead. Pick another below." + alternatives,
+                level: .warning)
         }
         return Check(id: "terminal", title: "No terminal found",
-                     detail: "Neither iTerm2 nor Terminal could be located.",
+                     detail: "None of "
+                        + TerminalChoice.allCases.map(\.displayName)
+                            .joined(separator: ", ")
+                        + " could be located on this Mac.",
                      level: .problem)
     }
 

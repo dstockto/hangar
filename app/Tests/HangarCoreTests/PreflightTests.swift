@@ -70,14 +70,37 @@ final class PreflightTests: TemporaryDirectoryTestCase {
 
     func testTerminalChecks() {
         XCTAssertEqual(
-            Preflight.terminalCheck(configured: "iterm", installed: false,
-                                    fallbackInstalled: true).level, .warning)
+            Preflight.terminalCheck(configured: .iterm, installed: [.terminal]).level,
+            .warning)
         XCTAssertEqual(
-            Preflight.terminalCheck(configured: "iterm", installed: false,
-                                    fallbackInstalled: false).level, .problem)
+            Preflight.terminalCheck(configured: .iterm, installed: []).level, .problem)
         XCTAssertEqual(
-            Preflight.terminalCheck(configured: "iterm", installed: true,
-                                    fallbackInstalled: true).level, .ok)
+            Preflight.terminalCheck(configured: .iterm,
+                                    installed: [.iterm, .terminal]).level, .ok)
+    }
+
+    /// The check names what else is on the machine, because the picker beside it
+    /// is only worth opening if something else is there to pick.
+    func testTheTerminalCheckNamesTheOtherTerminalsInstalled() {
+        let check = Preflight.terminalCheck(configured: .ghostty,
+                                            installed: [.ghostty, .terminal])
+        XCTAssertEqual(check.level, .ok)
+        XCTAssertTrue(check.title.contains("Ghostty"), check.title)
+        XCTAssertTrue(check.detail.contains("Also installed: Terminal"), check.detail)
+        XCTAssertFalse(check.detail.contains("permission"),
+                       "Ghostty is not scripted, so nothing asks for Automation")
+    }
+
+    func testAScriptedTerminalSaysMacOSWillAskForPermission() {
+        let check = Preflight.terminalCheck(configured: .iterm, installed: [.iterm])
+        XCTAssertTrue(check.detail.contains("permission to control it"), check.detail)
+    }
+
+    /// Falling back is not silent: the card says which app will actually open.
+    func testAMissingTerminalSaysWhatWillOpenInstead() {
+        let check = Preflight.terminalCheck(configured: .ghostty, installed: [.terminal])
+        XCTAssertEqual(check.level, .warning)
+        XCTAssertTrue(check.detail.contains("open in Terminal instead"), check.detail)
     }
 
     func testResolvedCredentialsAreFine() {

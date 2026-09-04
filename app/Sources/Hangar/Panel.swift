@@ -505,8 +505,7 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         guard let entry = selectedEntry() else { return }
         let (command, _) = store.sshTarget(for: entry.instance)
         hide()
-        if let problem = Launcher.open(
-            command: command, in: Launcher.Terminal.from(store.config.terminal)) {
+        Launcher.open(command: command, in: store.terminal) { problem in
             Notifier.show(title: "Could not open a terminal", body: problem, seconds: 4)
         }
     }

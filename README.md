@@ -80,8 +80,9 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
   every sync, so terminated instances drop out on their own. `ssh
   payments-prod-web-1` works from any terminal, and from `scp`, `rsync`, Ansible
   and VS Code Remote.
-- **Native terminal launch.** <kbd>Return</kbd> opens a real session in iTerm2 or
-  Terminal. <kbd>⌘</kbd><kbd>Return</kbd> copies the command instead.
+- **Native terminal launch.** <kbd>Return</kbd> opens a real session in iTerm2,
+  Terminal or Ghostty, whichever you pick. <kbd>⌘</kbd><kbd>Return</kbd> copies
+  the command instead.
 - **Works with your tags, not ours.** `product`/`env`, `Service`/`Environment`,
   `app`/`stage`, or a single `Name` tag all work with no configuration. The setup
   screen shows the tag keys your fleet actually uses and lets you point each one
@@ -136,7 +137,7 @@ what does not, with a fix button beside anything actionable:
 ✓ Credentials resolved          SSO profile default
 ✓ 249 hosts indexed             6 products, 5 environments
 ✓ SSH aliases active            223 aliases, Include line in ~/.ssh/config
-✓ iTerm2 found                  Sessions open in iTerm2
+✓ iTerm2 found                  Sessions open in iTerm2. Also installed: Terminal
 ✓ Shortcut ready                Press ⌘⇧H from any app
 ```
 
@@ -634,6 +635,21 @@ letting your agent offer its own.
 
 `sources.ssm: null` means "only when EC2 is denied". Set it to `true` to always
 ask, or `false` to never.
+
+### Which terminal
+
+`terminal` is `iterm`, `terminal` or `ghostty`, and the picker for it is **Setup
+Check → Open sessions in**, or **Settings… → Terminal** in the menubar. A
+terminal that is not on this Mac is listed and disabled rather than hidden.
+
+iTerm2 and Terminal are scripted, so macOS asks once for permission to control
+them, and the command is written into a live session: a failing `ssh` leaves its
+error on screen instead of closing the window. Ghostty is not scriptable, so it
+takes the command in its argument vector and needs no permission at all; the
+session hands over to your login shell afterwards for the same reason.
+
+If the terminal you picked has been uninstalled, Hangar opens Terminal rather
+than nothing, and the setup check says so.
 
 ### The ssh login
 

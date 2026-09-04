@@ -546,6 +546,26 @@ final class FleetStore: ObservableObject {
         return "AWS sources now use profile \(name)"
     }
 
+    // MARK: - Terminal
+
+    /// The terminal sessions open in. One reading of the config value, so the
+    /// panel, the menubar and the setup check cannot disagree about it.
+    var terminal: TerminalChoice { TerminalChoice.from(config.terminal) }
+
+    /// Picks the terminal Hangar hands sessions to.
+    @discardableResult
+    func useTerminal(_ choice: TerminalChoice) -> String {
+        var updated = config
+        updated.terminal = choice.rawValue
+        do {
+            try HangarConfig.write(updated)
+        } catch {
+            return "Could not write \(HangarConfig.path)"
+        }
+        config = updated
+        return "Sessions now open in \(choice.displayName)"
+    }
+
     // MARK: - Tag mapping
 
     /// Points one idea at one of the fleet's own tag keys, then rebuilds
