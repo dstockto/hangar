@@ -776,6 +776,57 @@ tmux new-window "ssh $(hangar -a db-prod | head -1)"
 hangar --json -f env=prod | jq -r '.[].hostname'
 ```
 
+### Finding out what to filter on
+
+`-f` is no use if you do not already know the keys and the values. Hangar knows
+both, because the fleet it cached says so.
+
+```sh
+hangar tags                  the keys, how many hosts carry each, and examples
+hangar values env            the values one key takes, most used first
+hangar values env -a         the values alone, one per line
+```
+
+```
+$ hangar tags
+env             243        4  prod, qa, stage
+product         243       12  checkout, payments, search
+team            201        9  growth, payments, platform
+cost-centre      88       14  4021, 4022, 4100
+```
+
+`hangar values` reads the fleet the way `-f` does, so its values are what a
+filter will match, including for names Hangar resolves rather than tags in their
+own right: `hangar values state` works.
+
+`hangar tags` lists the fleet's own key names, which is not the same question.
+Nine of those names are resolved by `-f` rather than looked up, so a fleet with
+its own `Role` tag alongside a `Name` tag sees `Role` here and gets the `Name`
+value back from `-f role=`.
+
+Being one of those nine is not enough to be a problem: on a fleet that spells
+them the canonical way, `env` resolves from `env` and `-f env=prod` reads the tag
+it looks like it reads. Hangar checks your fleet rather than the list, and names a key only where some
+host answers differently from the tag it carries. That is not always a key you
+cannot select on: a fleet spelling one idea two ways, `env` on some hosts and
+`Environment` on others, has `env` named here and both values still filter. What
+the line tells you is that the key was resolved rather than read, which is when
+it is worth checking:
+
+```
+-f resolves these names rather than reading the tag: Role
+```
+
+`--json` and `--tsv` carry the same fact per row, as `resolved_by_filter`.
+
+`-a` prints values verbatim, and EC2 permits a space in a tag value, so
+`for v in $(hangar values env -a)` splits `staging west` into two. Read it a line
+at a time, or take the field from `--tsv`:
+
+```sh
+hangar values env -a | while IFS= read -r v; do echo "[$v]"; done
+```
+
 ### Filters
 
 ```sh

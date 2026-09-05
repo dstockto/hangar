@@ -120,12 +120,109 @@ final class HangarCommandTests: XCTestCase {
         XCTAssertNil(command.problem)
     }
 
-    /// A typo must not stop `--help` from answering, which is the reason the
-    /// parser records a problem instead of throwing at the first one.
-    func testHelpSurvivesABadFlagOnTheSameLine() {
+    /// The parser reads the whole line before deciding, rather than throwing at
+    /// the first thing wrong, so both are recorded.
+    func testABadFlagAndHelpAreBothRecorded() {
         let command = HangarCommand.parse(["--wat", "--help"])
         XCTAssertTrue(command.help)
         XCTAssertNotNil(command.problem)
+    }
+
+    // MARK: - Commands
+
+    func testNoVerbIsAListing() {
+        XCTAssertEqual(HangarCommand.parse([]).verb, .list)
+        XCTAssertEqual(HangarCommand.parse(["web"]).verb, .list)
+    }
+
+    func testTheFirstPlainWordNamesTheCommand() {
+        XCTAssertEqual(HangarCommand.parse(["tags"]).verb, .tags)
+        XCTAssertEqual(HangarCommand.parse(["values", "env"]).verb, .values)
+        XCTAssertEqual(HangarCommand.parse(["values", "env"]).valuesKey, "env")
+    }
+
+    /// Options before the command are ordinary, so this has to keep working.
+    func testAnOptionMayComeBeforeTheCommand() {
+        let command = HangarCommand.parse(["--json", "--cache", "/tmp/c", "tags"])
+        XCTAssertEqual(command.verb, .tags)
+        XCTAssertEqual(command.format, .json)
+        XCTAssertEqual(command.cache, "/tmp/c")
+    }
+
+    /// Only the first plain word. A second one is a query or an argument, never
+    /// another command.
+    func testAWordAfterTheFirstIsNeverACommand() {
+        let command = HangarCommand.parse(["web", "tags"])
+        XCTAssertEqual(command.verb, .list)
+        XCTAssertEqual(command.searchText, "web tags")
+    }
+
+    /// Both escapes reach a host named after a command. Without one of these, a
+    /// fleet with a host called "tags" would have a host it cannot search for.
+    func testSearchFlagIsAnEscapeFromAVerb() {
+        let command = HangarCommand.parse(["-s", "tags"])
+        XCTAssertEqual(command.verb, .list)
+        XCTAssertEqual(command.searchText, "tags")
+    }
+
+    func testDoubleHyphenIsAnEscapeFromAVerb() {
+        let command = HangarCommand.parse(["--", "tags"])
+        XCTAssertEqual(command.verb, .list)
+        XCTAssertEqual(command.searchText, "tags")
+    }
+
+    /// Nothing after `--` is an option either, so a host whose name starts with
+    /// a hyphen is reachable and is not reported as a typo.
+    func testNothingAfterDoubleHyphenIsAnOption() {
+        let command = HangarCommand.parse(["--", "--json", "-f"])
+        XCTAssertEqual(command.format, .columns)
+        XCTAssertEqual(command.query, ["--json", "-f"])
+        XCTAssertNil(command.problem)
+    }
+
+    func testValuesNeedsExactlyOneKey() {
+        XCTAssertEqual(HangarCommand.parse(["values"]).problem,
+                       "values needs a tag key, as in 'hangar values env'")
+        XCTAssertEqual(HangarCommand.parse(["values", "env", "prod"]).problem,
+                       "values takes one tag key, not 2")
+        XCTAssertNil(HangarCommand.parse(["values", "env"]).problem)
+    }
+
+    /// Flags that narrow a listing mean nothing to a command that counts the
+    /// whole fleet, and taking them silently is how somebody believes they asked
+    /// a narrower question than they did.
+    func testNarrowingFlagsAreRefusedByTheCountingCommands() {
+        XCTAssertEqual(HangarCommand.parse(["values", "env", "-f", "product=web"]).problem,
+                       "-f narrows a listing; 'hangar values' counts the whole fleet")
+        XCTAssertEqual(HangarCommand.parse(["tags", "-f", "env=prod"]).problem,
+                       "-f narrows a listing; 'hangar tags' counts the whole fleet")
+        XCTAssertEqual(HangarCommand.parse(["values", "env", "-n", "2"]).problem,
+                       "-n limits a listing; 'hangar values' counts the whole fleet")
+        XCTAssertEqual(HangarCommand.parse(["tags", "-n", "3"]).problem,
+                       "-n limits a listing; 'hangar tags' counts the whole fleet")
+    }
+
+    /// A listing still takes both, and the output flags still work everywhere.
+    func testNarrowingFlagsAreFineOnAListing() {
+        XCTAssertNil(HangarCommand.parse(["-f", "env=prod", "-n", "2"]).problem)
+        XCTAssertNil(HangarCommand.parse(["tags", "--json"]).problem)
+        XCTAssertNil(HangarCommand.parse(["values", "env", "-a"]).problem)
+    }
+
+    func testTagsTakesNoArguments() {
+        XCTAssertEqual(HangarCommand.parse(["tags", "env"]).problem,
+                       "tags takes no arguments; did you mean 'hangar values env'?")
+    }
+
+    /// Asking a command for help is a question, not a mistake.
+    func testHelpBeatsAMissingArgument() {
+        XCTAssertNil(HangarCommand.parse(["values", "--help"]).problem)
+        XCTAssertTrue(HangarCommand.parse(["values", "--help"]).help)
+    }
+
+    func testValuesKeyIsOnlySetForThatCommand() {
+        XCTAssertNil(HangarCommand.parse(["web"]).valuesKey)
+        XCTAssertNil(HangarCommand.parse(["tags"]).valuesKey)
     }
 
     func testSearchTextTrimsAndJoins() {

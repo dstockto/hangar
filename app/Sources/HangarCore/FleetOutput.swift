@@ -110,6 +110,87 @@ public enum FleetOutput {
         return text + "\n"
     }
 
+    // MARK: - Tag keys
+
+    /// The tag keys a fleet uses: name, hosts carrying it, distinct values, and
+    /// a few of them, so `-f` stops being a guessing game.
+    public static func tagKeys(_ catalog: TagCatalog, shadowed: Set<String> = [],
+                               as format: HangarCommand.Format) -> String? {
+        switch format {
+        case .alias:
+            return joined(catalog.keys.map(\.name))
+        case .tsv:
+            return joined(catalog.keys.map {
+                [$0.name, String($0.instances), String($0.distinctValues),
+                 $0.samples.joined(separator: ","),
+                 shadowed.contains($0.name) ? "resolved" : ""]
+                    .joined(separator: "\t")
+            })
+        case .json:
+            return encode(catalog.keys.map {
+                ["key": $0.name, "hosts": $0.instances,
+                 "distinct_values": $0.distinctValues, "samples": $0.samples,
+                 // True when `-f <key>=` resolves the name instead of reading
+                 // this tag, which is the one thing a reader cannot guess.
+                 "resolved_by_filter": shadowed.contains($0.name)]
+            })
+        case .columns:
+            let nameWidth = min(catalog.keys.map(\.name.count).max() ?? 0, 32)
+            var lines = catalog.keys.map { key in
+                let name = key.name.padding(
+                    toLength: max(nameWidth, key.name.count), withPad: " ", startingAt: 0)
+                let hosts = String(key.instances).leftPadded(to: 6)
+                let distinct = String(key.distinctValues).leftPadded(to: 7)
+                let samples = key.samples.joined(separator: ", ")
+                return "\(name)  \(hosts)  \(distinct)  \(samples)"
+            }
+            // Said once under the table rather than as a column, because it
+            // applies to a minority of rows and the alternative is a reader
+            // cross-referencing nine names in the README to know which of their
+            // own keys a filter will resolve past.
+            let resolved = catalog.keys.map(\.name).filter(shadowed.contains)
+            if !resolved.isEmpty {
+                lines.append("")
+                lines.append("-f resolves these names rather than reading the tag: "
+                             + resolved.joined(separator: ", "))
+            }
+            return joined(lines)
+        }
+    }
+
+    // MARK: - Tag values
+
+    /// The values one key takes, most-used first, so the next `-f` can be typed
+    /// rather than guessed.
+    public static func tagValues(_ counts: [TagCatalog.ValueCount],
+                                 as format: HangarCommand.Format) -> String? {
+        switch format {
+        case .alias:
+            return joined(counts.map(\.value))
+        case .tsv:
+            return joined(counts.map { "\($0.value)\t\($0.hosts)" })
+        case .json:
+            return encode(counts.map { ["value": $0.value, "hosts": $0.hosts] })
+        case .columns:
+            let width = min(counts.map(\.value.count).max() ?? 0, 44)
+            return joined(counts.map { count in
+                let value = count.value.padding(
+                    toLength: max(width, count.value.count), withPad: " ", startingAt: 0)
+                return "\(value)  \(String(count.hosts).leftPadded(to: 6))"
+            })
+        }
+    }
+
+    /// One array, pretty printed, with the same empty-is-still-a-document rule
+    /// the host listing has.
+    static func encode(_ payload: [[String: Any]]) -> String? {
+        guard !payload.isEmpty else { return "[]\n" }
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        return text + "\n"
+    }
+
     /// The shape a parsed command asked for.
     public static func rendered(_ entries: [SearchEntry],
                                 as format: HangarCommand.Format) -> String? {
@@ -146,5 +227,12 @@ public enum FleetOutput {
     /// Nothing prints as nothing, not as a blank line.
     static func joined(_ lines: [String]) -> String {
         lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
+    }
+}
+
+extension String {
+    /// Right-aligned in a fixed column, so counts line up under each other.
+    func leftPadded(to width: Int) -> String {
+        count >= width ? self : String(repeating: " ", count: width - count) + self
     }
 }

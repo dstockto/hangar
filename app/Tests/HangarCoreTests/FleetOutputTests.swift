@@ -264,4 +264,87 @@ final class FleetOutputTests: XCTestCase {
             FleetOutput.nothingMatched(query: "web", filters: 1, fleetSize: 0),
             "the cached fleet is empty.")
     }
+
+    // MARK: - Tag keys and values
+
+    private var catalog: TagCatalog {
+        TagCatalog.discover(from: [
+            Fixture.instance(["env": "prod", "team": "platform"]),
+            Fixture.instance(["env": "prod"]),
+        ])
+    }
+
+    func testTagKeysAsAliasesAreTheKeyNamesAlone() {
+        XCTAssertEqual(FleetOutput.tagKeys(catalog, as: .alias), "env\nteam\n")
+    }
+
+    /// Five columns: key, hosts, distinct values, samples, and whether `-f`
+    /// resolves that name rather than reading the tag. `env` is one of the nine.
+    func testTagKeysAsTSVCarryCountsSamplesAndTheResolvedMarker() {
+        XCTAssertEqual(FleetOutput.tagKeys(catalog, shadowed: ["env"], as: .tsv),
+                       "env\t2\t1\tprod\tresolved\nteam\t1\t1\tplatform\t\n")
+    }
+
+    /// The marker is the whole point of the row: a fleet's own `Role` tag is
+    /// listed here and is not selectable by that key. The formatter renders what
+    /// it is told; which keys those are is `TagCatalog.shadowedKeys`.
+    func testTagKeysMarkTheNamesFilteringResolvesPast() throws {
+        let fleet = TagCatalog.discover(from: [
+            Fixture.instance(["Role": "api-gateway", "team": "platform"]),
+        ])
+        let text = try XCTUnwrap(FleetOutput.tagKeys(fleet, shadowed: ["Role"],
+                                                     as: .json))
+        let rows = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(text.utf8)) as? [[String: Any]])
+        let byKey = Dictionary(uniqueKeysWithValues: rows.map {
+            ($0["key"] as! String, $0["resolved_by_filter"] as! Bool)
+        })
+        XCTAssertEqual(byKey["Role"], true)
+        XCTAssertEqual(byKey["team"], false)
+    }
+
+    /// Said once under the table, and only when a row needs it.
+    func testColumnsFooterNamesTheResolvedKeys() throws {
+        let text = try XCTUnwrap(FleetOutput.tagKeys(catalog, shadowed: ["env"],
+                                                     as: .columns))
+        XCTAssertTrue(text.contains("-f resolves these names"))
+        XCTAssertTrue(text.contains("env"))
+
+        // Nothing shadowed, so no footer. This is the regression: the marker used
+        // to fire on env and product from a list of names, and both filter.
+        XCTAssertFalse(try XCTUnwrap(FleetOutput.tagKeys(catalog, shadowed: [],
+                                                         as: .columns))
+            .contains("-f resolves"))
+    }
+
+    func testTagKeysAsJSONAreAnArrayOfObjects() throws {
+        let text = try XCTUnwrap(FleetOutput.tagKeys(catalog, as: .json))
+        let rows = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(text.utf8)) as? [[String: Any]])
+        XCTAssertEqual(rows.first?["key"] as? String, "env")
+        XCTAssertEqual(rows.first?["hosts"] as? Int, 2)
+        XCTAssertEqual(rows.first?["distinct_values"] as? Int, 1)
+        XCTAssertEqual(rows.first?["samples"] as? [String], ["prod"])
+    }
+
+    func testTagValuesAsAliasesAreTheValuesAlone() {
+        let counts = [TagCatalog.ValueCount(value: "prod", hosts: 3),
+                      TagCatalog.ValueCount(value: "qa", hosts: 1)]
+        XCTAssertEqual(FleetOutput.tagValues(counts, as: .alias), "prod\nqa\n")
+    }
+
+    func testTagValuesInColumnsRightAlignTheCounts() {
+        let counts = [TagCatalog.ValueCount(value: "prod", hosts: 3),
+                      TagCatalog.ValueCount(value: "staging", hosts: 42)]
+        // Value padded to the widest, then the count right-aligned under itself.
+        XCTAssertEqual(FleetOutput.tagValues(counts, as: .columns),
+                       "prod          3\nstaging      42\n")
+    }
+
+    /// Same rule as the host listing: an empty answer is still a document.
+    func testEmptyTagOutputIsStillADocument() {
+        XCTAssertEqual(FleetOutput.tagKeys(.empty, as: .json), "[]\n")
+        XCTAssertEqual(FleetOutput.tagValues([], as: .json), "[]\n")
+        XCTAssertEqual(FleetOutput.tagValues([], as: .columns), "")
+    }
 }

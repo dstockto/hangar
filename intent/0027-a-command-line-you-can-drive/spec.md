@@ -10,9 +10,12 @@ writes nothing.
 hangar [verb] [query...] [options]
 ```
 
-The first argument is a **verb** only when it is exactly `ssh`, `tags` or
-`values`. Anything else is the start of the query, so `hangar web prod` is
-unchanged. Two escapes reach a host whose name is a verb:
+The **first plain word** on the line is a verb when it is exactly `ssh`, `tags`
+or `values`. Anything else is the start of the query, so `hangar web prod` is
+unchanged, and so is `hangar web tags`, whose second word is already part of a
+search. Options may come first: `hangar --json tags` is the `tags` command.
+
+Two escapes reach a host whose name is a verb:
 
 ```sh
 hangar -s ssh      # -s always means query
@@ -50,20 +53,42 @@ the host, per mistake 9.
 
 ### `hangar tags`
 
-Reads `FleetCache.tagCatalog`, which the app already persists before
-normalization. Columns: key, how many hosts carry it, how many distinct values,
-and up to three sample values. Sorted by `groupingScore` so the keys worth
-filtering on are at the top. `--json` gives the same as an array.
+Columns: key, how many hosts carry it, how many distinct values, and up to three
+sample values, most-carried first. `-a` gives the key names alone, `--tsv` and
+`--json` the same data for a machine.
 
-A cache written before the catalog existed has none. That is not an error: the
-keys are recomputed from the cached instances' own tags, which is the same
-question asked of slightly older data.
+Discovered from the fleet's own tags, **before** the mapping resolves them,
+which is the same thing `FleetCache.tagCatalog` holds.
+
+This spec said the opposite for a while and the reversal is worth keeping,
+because the reasoning that produced it was wrong in an instructive way. The
+first draft read the *normalized* fleet, on the argument that a list you cannot
+then select from is worse than no list, so `tags` should agree with `-f`.
+
+Two things were wrong with that. `normalize` writes the canonical key and keeps
+the original, so discovering from the normalized fleet listed every grouping key
+twice: a fleet tagged `Environment` saw both `Environment` and `env`, identical
+counts, identical samples. And it bought no agreement anyway, because `-f`
+resolves nine names whatever the fleet happens to call them, so a fleet's own
+`Role` tag is unreachable by that key either way.
+
+Agreement was not available. Saying so was. The table marks the rows `-f` will
+resolve past, and `values` still reads through `tagValue(for:)`, so the two
+commands answer two different questions and each says which one it answered.
 
 ### `hangar values <key>`
 
 Every distinct value of one key across the fleet, with a host count each,
 most-used first. Accepts the friendly names `tagValue(for:)` accepts, so
-`hangar values name` finds the `Name` tag. `--json` gives an array.
+`hangar values name` finds the `Name` tag, and `hangar values state` works
+although `state` is not a tag at all. `-a` gives the values alone, one per line.
+
+A key no host carries exits 1 and says to try `hangar tags`.
+
+`values` reads through `tagValue(for:)`, so what it lists is what `-f` matches.
+`tags` does not, and cannot: it lists the fleet's own key names, and `-f`
+resolves nine of them whatever the fleet calls them. The table marks those rather
+than claiming an agreement that does not exist.
 
 ## Filters
 
