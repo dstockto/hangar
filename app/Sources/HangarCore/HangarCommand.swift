@@ -47,6 +47,14 @@ public struct HangarCommand: Equatable, Sendable {
     public var first = false
     /// Print what would have been run, and run nothing.
     public var dryRun = false
+    /// The program and arguments to run once per matched host. Empty means none.
+    public var exec: [String] = []
+    /// How many of those may run at once.
+    public var parallel = 1
+    /// How long each one gets, or nothing, which is the default.
+    public var timeout: Double?
+    /// Consent to a fan-out, given in advance.
+    public var yes = false
     public var help = false
     public var version = false
     /// What is wrong with the command line, kept rather than thrown so parsing
@@ -96,6 +104,32 @@ public struct HangarCommand: Equatable, Sendable {
                 case .filter(let filter): command.filters.append(filter)
                 case .problem(let problem): command.problem = problem
                 }
+            case "--exec":
+                // Everything after this belongs to the program being run, flags
+                // included, so it is taken whole rather than parsed.
+                guard index < arguments.endIndex else {
+                    command.problem = "--exec needs a program to run"
+                    break
+                }
+                command.exec = Array(arguments[index...])
+                index = arguments.endIndex
+            case "--parallel":
+                guard let text = value(argument) else { break }
+                guard let count = Int(text), count > 0 else {
+                    command.problem = "--parallel needs a positive number, not '\(text)'"
+                    break
+                }
+                command.parallel = count
+            case "--timeout":
+                guard let text = value(argument) else { break }
+                guard let seconds = Double(text), seconds > 0 else {
+                    command.problem =
+                        "--timeout needs a positive number of seconds, not '\(text)'"
+                    break
+                }
+                command.timeout = seconds
+            case "-y", "--yes":
+                command.yes = true
             case "-1", "--first":
                 command.first = true
             case "--dry-run":
@@ -148,6 +182,14 @@ public struct HangarCommand: Equatable, Sendable {
             if limit != nil {
                 return "-n limits a listing; 'hangar \(verbName)' counts the whole fleet"
             }
+        }
+        if !exec.isEmpty, verb != .list {
+            return "--exec runs a command over a listing, not over 'hangar \(verbName)'"
+        }
+        // --first picks one host to connect to. Under --exec it did nothing at
+        // all, so a caller reading it as "just the first one" fanned out.
+        if !exec.isEmpty, first {
+            return "--first picks one host for ssh; --exec runs on all that matched"
         }
         switch verb {
         case .list:

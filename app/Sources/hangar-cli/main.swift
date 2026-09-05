@@ -29,6 +29,140 @@ func write(_ text: String) {
     FileHandle.standardOutput.write(Data(text.utf8))
 }
 
+/// Runs one vector per host, at most `parallel` at a time, and returns the exit
+/// code for the whole job.
+///
+/// **Ctrl-C does not stop the children.** Foundation starts each in its own
+/// process group, so a SIGINT the terminal generates for the foreground group
+/// reaches this process and not them: the prompt comes back and the commands
+/// keep running, reparented to init. `--timeout` does not cover it: the deadline
+/// is enforced by the loop below, so it dies with us and the orphan runs
+/// unbounded. It bounds a run left alone, not one interrupted.
+/// Fixing it means a DispatchSource signal source, which runs outside
+/// signal-handler context and can hold a lock around the live list, plus
+/// SIG_IGN so the default disposition does not kill us first. That is a change
+/// to how this program handles signals, which it currently does not do at all,
+/// so it wants its own intent rather than a hurried addition here.
+///
+/// Output goes to a file per host rather than a pipe. Reading a pipe after the
+/// process ends deadlocks on anything larger than the buffer, and unlike the
+/// helpers `ProcessRunner` was written for, this runs whatever the user asked
+/// for and has no idea how much it will say.
+///
+/// At one at a time the child inherits this process's streams instead, so an
+/// interactive program works and output is live.
+/// A deadline as a person wrote it: --timeout 0.5 is not "0 seconds".
+func seconds(_ value: Double) -> String {
+    let rounded = value.rounded()
+    let text = abs(value - rounded) < 0.001 ? String(Int(rounded)) : String(value)
+    return "\(text) second\(text == "1" ? "" : "s")"
+}
+
+func run(_ vectors: [[String]], aliases: [String],
+         parallel: Int, timeout: Double?) -> Int32 {
+    guard let program = vectors.first?.first else { return 0 }
+    let streaming = parallel == 1
+    let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("hangar-exec-\(ProcessInfo.processInfo.processIdentifier)")
+    if !streaming {
+        try? FileManager.default.createDirectory(at: scratch,
+                                                 withIntermediateDirectories: true)
+    }
+    defer { if !streaming { try? FileManager.default.removeItem(at: scratch) } }
+
+    struct Running {
+        var process: Process
+        var alias: String
+        var log: URL?
+        var startedAt: Date
+        /// Set once the deadline has fired, so the next pass escalates rather
+        /// than sending a second SIGTERM and printing the message again.
+        var signalledAt: Date?
+    }
+
+    var next = 0
+    var live: [Running] = []
+    var failures = 0
+
+    func start(_ index: Int) {
+        let process = Process()
+        // Resolved on PATH rather than assumed: the program is the user's, and
+        // herdr, tmux and ssh do not agree on where they live.
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = vectors[index]
+        var log: URL?
+        if streaming {
+            // The terminal's stdin, so an interactive command works: one at a
+            // time is a session you sit in, not a fan-out. Above one they get
+            // /dev/null instead, because eight children sharing one keyboard is
+            // not something a person can answer.
+            process.standardInput = FileHandle.standardInput
+        } else {
+            let path = scratch.appendingPathComponent("\(index).log")
+            FileManager.default.createFile(atPath: path.path, contents: nil)
+            if let handle = try? FileHandle(forWritingTo: path) {
+                process.standardOutput = handle
+                process.standardError = handle
+            }
+            process.standardInput = FileHandle.nullDevice
+            log = path
+        }
+        do {
+            try process.run()
+            live.append(Running(process: process, alias: aliases[index], log: log,
+                                startedAt: Date(), signalledAt: nil))
+        } catch {
+            stderrLine("hangar: \(aliases[index]): could not run \(program): "
+                       + error.localizedDescription)
+            failures += 1
+        }
+    }
+
+    func finish(_ entry: Running) {
+        let status = entry.process.terminationStatus
+        if let log = entry.log {
+            let text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+            write("== \(entry.alias)\(status == 0 ? "" : "  exit \(status)") ==\n")
+            if !text.isEmpty { write(text.hasSuffix("\n") ? text : text + "\n") }
+        } else if status != 0 {
+            stderrLine("hangar: \(entry.alias): exit \(status)")
+        }
+        if status != 0 { failures += 1 }
+    }
+
+    while next < vectors.count || !live.isEmpty {
+        while live.count < parallel && next < vectors.count {
+            start(next)
+            next += 1
+        }
+        guard !live.isEmpty else { continue }
+        // Polled rather than waited on, because several are outstanding and the
+        // one that finishes first is not known in advance.
+        var still: [Running] = []
+        for var entry in live {
+            if let timeout, entry.process.isRunning {
+                if let signalled = entry.signalledAt {
+                    // SIGTERM is a request. A command that traps it, which is
+                    // exactly what a shell wrapper does, ignores it forever, so
+                    // the deadline needs something it cannot decline.
+                    if Date().timeIntervalSince(signalled) > 2 {
+                        kill(entry.process.processIdentifier, SIGKILL)
+                    }
+                } else if Date().timeIntervalSince(entry.startedAt) > timeout {
+                    entry.process.terminate()
+                    entry.signalledAt = Date()
+                    stderrLine("hangar: \(entry.alias): did not finish within "
+                               + "\(seconds(timeout))")
+                }
+            }
+            if entry.process.isRunning { still.append(entry) } else { finish(entry) }
+        }
+        live = still
+        if !live.isEmpty { usleep(20_000) }
+    }
+    return failures == 0 ? 0 : 4
+}
+
 /// The version of the app this binary shipped inside, read from the bundle it
 /// sits in rather than repeated here, so it cannot drift from Info.plist.
 func version() -> String {
@@ -74,6 +208,18 @@ OUTPUT
   -n, --limit <n>            at most n hosts
   -1, --first                take the best match without asking
       --dry-run              print what would run, and run nothing
+
+RUNNING SOMETHING PER HOST
+      --exec <program> ...   run this once per matched host. Takes the rest of
+                             the line. {alias} {hostname} {id} {private_ip}
+                             {public_ip} {product} {env} {env_name} {role}
+                             {state} {type} {zone} {asg} are replaced per
+                             argument, never through a shell. Prefer {alias}:
+                             it is the only one that cannot look like a flag
+      --parallel <n>         how many at once, default 1
+      --timeout <seconds>    how long each one gets, default forever
+  -y, --yes                  agree to a fan-out in advance. Required when more
+                             than one host matches and there is no terminal
   -f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
                              key=a,b any of them   key!=a none of them
                              * is a wildcard, so quote it in zsh; \\, is a comma
@@ -92,6 +238,8 @@ EXAMPLES
   hangar tags && hangar values env
   hangar ssh web prod
   hangar ssh -1 db-prod
+  hangar -f env=prod web --exec herdr pane new --cmd 'ssh {alias}'
+  hangar -f env=prod --parallel 8 -y --exec ssh {alias} uptime
 
 The list comes from ~/.hangar/cache, which the Hangar app refreshes. Nothing
 here calls AWS, so it costs no credential and no network round trip.
@@ -101,6 +249,7 @@ EXIT
   1  nothing matched
   2  no fleet cached yet
   3  more than one host matched and none was chosen
+  4  a command run with --exec failed on at least one host
 """
 
 // MARK: - Run
@@ -221,6 +370,56 @@ guard !matched.isEmpty else {
         query: command.searchText, filters: command.filters.count,
         fleetSize: all.count))
     exit(1)
+}
+
+if !command.exec.isEmpty {
+    var vectors: [[String]] = []
+    var aliases: [String] = []
+    var refused = 0
+    for (entry, planned) in zip(matched, ExecPlan.plans(command.exec, for: matched)) {
+        switch planned {
+        case .run(let vector):
+            vectors.append(vector)
+            aliases.append(entry.alias)
+        case .refuse(let why):
+            stderrLine("hangar: \(entry.alias): \(why)")
+            refused += 1
+        }
+    }
+    guard !vectors.isEmpty else {
+        stderrLine("hangar: nothing left to run on.")
+        exit(4)
+    }
+
+    if command.dryRun {
+        write(vectors.map(ExecPlan.readable).joined(separator: "\n") + "\n")
+        exit(refused == 0 ? 0 : 4)
+    }
+
+    switch ExecPlan.consent(hosts: vectors.count, alreadyGiven: command.yes,
+                            canAsk: isatty(0) == 1
+                                && Terminal.standardError().isInteractive) {
+    case .granted:
+        break
+    case .needsExplicitYes(let hosts):
+        stderrLine("hangar: this would run on \(hosts) hosts and there is no "
+                   + "terminal to ask. Pass -y if you meant to.")
+        exit(64)
+    case .ask(let hosts):
+        stderrLine("hangar: run this on \(hosts) hosts?")
+        stderrLine("  " + ExecPlan.readable(command.exec))
+        for alias in aliases.prefix(10) { stderrLine("  " + alias) }
+        if aliases.count > 10 { stderrLine("  and \(aliases.count - 10) more") }
+        FileHandle.standardError.write(Data("Type y to run: ".utf8))
+        guard ExecPlan.agrees(readLine()) else {
+            stderrLine("hangar: nothing run.")
+            exit(3)
+        }
+    }
+
+    let status = run(vectors, aliases: aliases,
+                     parallel: command.parallel, timeout: command.timeout)
+    exit(status != 0 || refused > 0 ? 4 : 0)
 }
 
 if command.verb == .ssh {

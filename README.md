@@ -798,6 +798,73 @@ halves have to be there: the question goes to stderr, so
 `hangar ssh` replaces itself with `ssh`, so the session owns the terminal, your
 signals reach it, and its exit status is the command's.
 
+### Running something on every host that matched
+
+```sh
+hangar -f env=prod web --exec herdr pane new --cmd 'ssh {alias}'
+hangar -f env=prod --parallel 8 -y --exec ssh {alias} uptime
+```
+
+`--exec` takes the rest of the line and runs it once per matched host. These are
+replaced **per argument**, so a value never has to survive a round trip through
+a shell:
+
+```
+{alias} {hostname} {id} {private_ip} {public_ip} {product} {env} {env_name}
+{role} {state} {type} {zone} {asg}
+```
+
+**Prefer `{alias}`.** It is the only one that cannot look like a flag: aliases
+are slugged, and every other source is held to `isSafeAlias`, which refuses a
+leading hyphen. The rest are tag values, and an argument vector stops a value
+becoming a second *command* but not a second *option*. A `hostname` tag of
+`-oProxyCommand=...` under `--exec ssh {hostname}` would reach ssh as an option,
+and `ProxyCommand` is something ssh executes.
+
+Hangar refuses that host rather than running it, names it on stderr, and carries
+on with the rest, so one badly tagged instance does not stop the other twenty.
+That catches a value that becomes a flag and nothing more: a value landing in an
+option's own argument, as in `--exec ssh -o {hostname}`, is still the program's
+business, and no tool can know an arbitrary program's option grammar.
+Put `--` before the placeholder if you want it passed anyway:
+
+```sh
+hangar -f env=prod --exec ssh -- '{hostname}' uptime
+```
+
+An unknown `{name}` is left exactly as written. Silently dropping part of your
+command would be worse than failing.
+
+Nothing here goes through a shell. `$(hangar -a …)` in a shell loop re-parses
+whatever your tags contain, and tags are written by anyone who can tag the
+account: a `Name` of `web; rm -rf /` is a real shape. Under `--exec` that value
+arrives at the program as one argument and stays one argument.
+
+Hangar deliberately does not learn about multiplexers. It already drives three
+terminals; herdr, tmux, kitty and WezTerm would make that a matrix. One vector
+per host composes with all of them.
+
+**Fanning out asks first.** More than one host and it shows you the command and
+the hosts and waits for a `y`. With no terminal to ask, `-y` is required and its
+absence is an error rather than a fan-out, which is the case a script or an agent
+hits. `--parallel` bounds how many run at once, `--timeout` bounds each one, and
+`--dry-run` prints every vector and runs none of them.
+
+At one at a time the command inherits your terminal, so interactive things work.
+Above one, each host's output is collected and printed under its alias, because
+eight hosts interleaved is not output.
+
+**Ctrl-C does not stop what is running.** It returns your prompt, and the command
+keeps going against the host: Foundation starts each child in its own process
+group, so a signal the terminal generates for the foreground group never reaches
+it.
+
+`--timeout` does not rescue you here either. The deadline is enforced by
+`hangar` itself, so it dies with `hangar` and an orphan runs unbounded. It bounds
+a run you leave alone, not one you interrupt. After interrupting an `--exec`,
+check `ps` and stop the children yourself. Making Ctrl-C stop them is its own
+change.
+
 ### Reading it, versus piping it
 
 The listing has two readers, and it tells them apart with one `isatty` call.
@@ -936,11 +1003,13 @@ which host best matches `web prod`.
 
 Exit codes are meant for pipelines: `0` when hosts were printed or the work
 finished, `1` when nothing matched, `2` when there is no cache yet, `3` when
-more than one host matched and none was chosen. Under `--json`, a run that
-matched nothing and a run with no cache both still print `[]`, so stdout stays
-parseable and the code carries the difference. A cache older than
-`healthy_within_hours`, and a missing `Include` line that would stop
-`ssh <alias>` resolving, are both said once on stderr so a pipe is unaffected.
+finished, `1` when nothing matched, `2` when there is no cache yet, `3` when
+more than one host matched and none was chosen, and `4` when something run with
+`--exec` failed on at least one host. Under `--json`, a run that matched nothing
+and a run with no cache both still print `[]`, so stdout stays parseable and the
+code carries the difference. A cache older than `healthy_within_hours`, and a
+missing `Include` line that would stop `ssh <alias>` resolving, are both said
+once on stderr so a pipe is unaffected.
 
 ## Architecture
 
