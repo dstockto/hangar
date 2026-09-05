@@ -43,6 +43,15 @@ public struct Terminal: Equatable, Sendable {
         return Terminal(isInteractive: interactive, isColoured: !suppressed)
     }
 
+    /// The same question about stderr, which is where a chooser has to write:
+    /// stdout may be a pipe even while a person is sitting there to answer.
+    public static func standardError(
+        isatty: (Int32) -> Bool = { Foundation.isatty($0) == 1 },
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Terminal {
+        standardOutput(isatty: { _ in isatty(2) }, environment: environment)
+    }
+
     // MARK: - Sequences
 
     /// Wraps text in an SGR sequence, or returns it untouched when colour is off.
