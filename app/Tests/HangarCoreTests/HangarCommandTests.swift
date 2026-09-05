@@ -260,6 +260,71 @@ final class HangarCommandTests: XCTestCase {
         XCTAssertNil(HangarCommand.parse(["ssh", "web", "-n", "5"]).problem)
     }
 
+    // MARK: - Running something per host
+
+    /// Everything after --exec belongs to the program being run, flags included,
+    /// or a command could never take a flag of its own.
+    func testExecTakesTheRestOfTheLine() {
+        let command = HangarCommand.parse(
+            ["-f", "env=prod", "--exec", "herdr", "pane", "new", "--cmd", "ssh {alias}"])
+        XCTAssertEqual(command.exec, ["herdr", "pane", "new", "--cmd", "ssh {alias}"])
+        XCTAssertEqual(command.filters, [HostFilter(key: "env", patterns: ["prod"])])
+        XCTAssertNil(command.problem)
+    }
+
+    /// Including one this program has of its own, which would otherwise be
+    /// swallowed here rather than reaching the command.
+    func testAFlagAfterExecIsNotOurs() {
+        let command = HangarCommand.parse(["--exec", "ssh", "{alias}", "--json"])
+        XCTAssertEqual(command.exec, ["ssh", "{alias}", "--json"])
+        XCTAssertEqual(command.format, .columns)
+    }
+
+    func testExecNeedsSomethingToRun() {
+        XCTAssertEqual(HangarCommand.parse(["--exec"]).problem,
+                       "--exec needs a program to run")
+    }
+
+    func testParallelAndTimeoutTakePositiveNumbers() {
+        XCTAssertEqual(HangarCommand.parse(["--parallel", "8", "--exec", "x"]).parallel, 8)
+        XCTAssertEqual(HangarCommand.parse(["--timeout", "2.5", "--exec", "x"]).timeout,
+                       2.5)
+        XCTAssertEqual(HangarCommand.parse(["--parallel", "0", "--exec", "x"]).problem,
+                       "--parallel needs a positive number, not '0'")
+        XCTAssertEqual(HangarCommand.parse(["--timeout", "-1", "--exec", "x"]).problem,
+                       "--timeout needs a positive number of seconds, not '-1'")
+    }
+
+    func testOneAtATimeAndNoDeadlineAreTheDefaults() {
+        let command = HangarCommand.parse(["--exec", "x"])
+        XCTAssertEqual(command.parallel, 1)
+        XCTAssertNil(command.timeout)
+        XCTAssertFalse(command.yes)
+    }
+
+    func testConsentIsAFlag() {
+        XCTAssertTrue(HangarCommand.parse(["-y", "--exec", "x"]).yes)
+        XCTAssertTrue(HangarCommand.parse(["--yes", "--exec", "x"]).yes)
+    }
+
+    /// --exec runs over a listing. Over `tags` there is nothing to run it on, and
+    /// over `ssh` it would be two ways of connecting at once.
+    /// --first picks one host for ssh. Under --exec it did nothing at all, so a
+    /// caller reading it as "just the first one" quietly fanned out.
+    func testFirstIsRefusedUnderExec() {
+        XCTAssertEqual(HangarCommand.parse(["-1", "--exec", "echo"]).problem,
+                       "--first picks one host for ssh; --exec runs on all that matched")
+        XCTAssertNil(HangarCommand.parse(["--exec", "echo"]).problem)
+    }
+
+    func testExecOnlyAppliesToAListing() {
+        XCTAssertEqual(HangarCommand.parse(["tags", "--exec", "echo"]).problem,
+                       "--exec runs a command over a listing, not over 'hangar tags'")
+        XCTAssertEqual(HangarCommand.parse(["ssh", "web", "--exec", "echo"]).problem,
+                       "--exec runs a command over a listing, not over 'hangar ssh'")
+        XCTAssertNil(HangarCommand.parse(["web", "--exec", "echo"]).problem)
+    }
+
     func testValuesKeyIsOnlySetForThatCommand() {
         XCTAssertNil(HangarCommand.parse(["web"]).valuesKey)
         XCTAssertNil(HangarCommand.parse(["tags"]).valuesKey)
