@@ -367,6 +367,16 @@ public struct HangarConfig: Codable, Sendable {
 }
 
 public extension Instance {
+    /// The key names `tagValue(for:)` resolves instead of reading the tag, matched
+    /// without regard to case.
+    ///
+    /// Beside the switch that implements them on purpose: a second list somewhere
+    /// else would drift. Documentation and a test pin it; the marker on
+    /// `hangar tags` deliberately does not use it, because being on this list is
+    /// not the same as resolving to something other than the tag.
+    static let resolvedKeyNames = ["name", "role", "env", "env_name", "product",
+                                   "asg", "state", "id", "instance_id"]
+
     /// Tag lookup that accepts the friendly names used in config files, so a user
     /// can write `name` rather than remembering the tag is capitalised `Name`.
     func tagValue(for key: String) -> String {

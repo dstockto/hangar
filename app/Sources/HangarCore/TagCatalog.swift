@@ -89,6 +89,63 @@ public struct TagCatalog: Codable, Sendable, Equatable {
 
     public var isEmpty: Bool { keys.isEmpty }
 
+    /// The keys a filter will not read the tag for, worked out from the answers
+    /// rather than from the list of names `tagValue(for:)` intercepts.
+    ///
+    /// Membership in that list is the wrong question. Four of the nine are first
+    /// in their own candidate list, so on a fleet that spells them canonically
+    /// `env` resolves from `env` and `-f env=prod` reads the tag it looks like it
+    /// reads. Marking those would name the keys a reader uses most as the ones
+    /// they cannot select on. A key is shadowed only when some host answers
+    /// differently from the tag it carries, which also catches the cases a name
+    /// list cannot: a config that puts `Name` first in the product candidates
+    /// shadows `product`, and one that reorders the hostname candidates shadows
+    /// `hostname`, which is not in the list at all.
+    /// `raw` and `resolved` are the same hosts in the same order, which is what
+    /// `TagMapping.normalize` produces because it is a map. Stated because this
+    /// is public and zipping mismatched fleets would compare one host's answer
+    /// against another host's tag.
+    public static func shadowedKeys(among keys: [String], raw: [Instance],
+                                    resolved: [Instance]) -> Set<String> {
+        var shadowed: Set<String> = []
+        for (rawHost, resolvedHost) in zip(raw, resolved) {
+            for key in keys where !shadowed.contains(key) {
+                if resolvedHost.tagValue(for: key) != (rawHost.tags[key] ?? "") {
+                    shadowed.insert(key)
+                }
+            }
+        }
+        return shadowed
+    }
+
+    /// One value a tag takes, and how many hosts carry it.
+    public struct ValueCount: Equatable, Sendable {
+        public var value: String
+        public var hosts: Int
+
+        public init(value: String, hosts: Int) {
+            self.value = value
+            self.hosts = hosts
+        }
+    }
+
+    /// Every value one key takes across a fleet, most-used first.
+    ///
+    /// Reads through `tagValue(for:)` rather than the raw tags, so what this
+    /// lists is exactly what `-f <key>=` will match. A list of values you cannot
+    /// then select on would be worse than no list.
+    public static func values(of key: String, in instances: [Instance]) -> [ValueCount] {
+        var counts: [String: Int] = [:]
+        for instance in instances {
+            let value = instance.tagValue(for: key)
+            guard !value.isEmpty else { continue }
+            counts[value, default: 0] += 1
+        }
+        return counts
+            .map { ValueCount(value: $0.key, hosts: $0.value) }
+            .sorted { $0.hosts != $1.hosts ? $0.hosts > $1.hosts : $0.value < $1.value }
+    }
+
     public func key(named name: String) -> Key? { keys.first { $0.name == name } }
 
     /// The key a mapping would currently resolve for one idea, if the fleet has

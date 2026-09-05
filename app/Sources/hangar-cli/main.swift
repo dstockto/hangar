@@ -59,6 +59,13 @@ USAGE
   hangar <query>             hosts matching a fuzzy query, best match first
   hangar -s <query>          the same, spelled out
 
+COMMANDS
+  hangar tags                the tag keys this fleet uses, and how many carry each
+  hangar values <key>        the values one key takes, most used first
+
+  A command is the first plain word on the line. To search for a host named
+  after one, use 'hangar -s tags' or 'hangar -- tags'.
+
 OUTPUT
   -a, --alias                aliases alone, one per line
       --tsv                  alias, hostname, product, env, state, id
@@ -79,6 +86,7 @@ EXAMPLES
   tmux new-window "ssh $(hangar -a db-prod | head -1)"
   hangar --json -f env=prod | jq -r '.[].hostname'
   hangar -f env=prod,staging -f 'name!=*canary*' -f state=running
+  hangar tags && hangar values env
 
 The list comes from ~/.hangar/cache, which the Hangar app refreshes. Nothing
 here calls AWS, so it costs no credential and no network round trip.
@@ -125,15 +133,9 @@ let config = (try? HangarConfig.load()) ?? .standard()
 // Re-normalized on load for the same reason the app does it: the tag mapping may
 // have changed since the cache was written.
 let instances = config.tagMapping.normalize(cache.instances)
-let all = FleetIndex.entries(for: instances, config: config)
-
-let query = Fuzzy.Query(command.searchText)
-var matched = FleetIndex.ranked(FleetIndex.filtered(all, by: command.filters),
-                                matching: query)
-if let limit = command.limit { matched = Array(matched.prefix(limit)) }
 
 // Said once, on stderr, so a pipeline is unaffected but nobody is left wondering
-// why the list is short or the aliases do not resolve.
+// why the list is short.
 let hours = Double(config.healthyWithinHours ?? 24)
 if cache.age > hours * 3600 {
     let days = Int(cache.age / 86_400)
@@ -141,6 +143,59 @@ if cache.age > hours * 3600 {
                         : "\(Int(cache.age / 3600)) hours"
     stderrLine("hangar: the cached fleet is \(age) old; open Hangar to refresh it.")
 }
+
+/// Nothing to print is not the same failure for every command, so each one says
+/// what it found nothing of.
+func emit(_ text: String?, orElse complaint: String, empty: Bool) -> Never {
+    guard let text else {
+        stderrLine("hangar: could not encode that as JSON")
+        exit(2)
+    }
+    write(text)
+    if empty {
+        stderrLine(complaint)
+        exit(1)
+    }
+    exit(0)
+}
+
+switch command.verb {
+case .tags:
+    // The fleet's own keys, before normalization. Discovering from the normalized
+    // fleet listed every grouping key twice, because normalize writes the
+    // canonical key and keeps the original, so a fleet tagged Environment saw
+    // both `Environment` and `env` with identical counts. It bought no agreement
+    // with `-f` either, and the marker below says which keys actually answer
+    // differently on this fleet rather than promising an agreement.
+    let catalog = TagCatalog.discover(from: cache.instances)
+    // Which keys a filter answers differently from the tag, asked of this fleet
+    // rather than assumed from a list of names.
+    let shadowed = TagCatalog.shadowedKeys(among: catalog.keys.map(\.name),
+                                           raw: cache.instances, resolved: instances)
+    emit(FleetOutput.tagKeys(catalog, shadowed: shadowed, as: command.format),
+         orElse: "hangar: no host in the cached fleet carries a tag.",
+         empty: catalog.isEmpty)
+
+case .values:
+    guard let key = command.valuesKey else { exit(64) }   // parse already reported
+    let counts = TagCatalog.values(of: key, in: instances)
+    emit(FleetOutput.tagValues(counts, as: command.format),
+         orElse: "hangar: no host carries a '\(key)' tag. Try 'hangar tags'.",
+         empty: counts.isEmpty)
+
+case .list:
+    break
+}
+
+let all = FleetIndex.entries(for: instances, config: config)
+
+let query = Fuzzy.Query(command.searchText)
+var matched = FleetIndex.ranked(FleetIndex.filtered(all, by: command.filters),
+                                matching: query)
+if let limit = command.limit { matched = Array(matched.prefix(limit)) }
+
+// Only for a listing, whose whole point is aliases you then ssh to. A tag key
+// does not stop being true because ssh_config lacks an Include.
 if !SSHConfigWriter.includeLinePresent() {
     stderrLine("hangar: ~/.ssh/config has no Include for Hangar's aliases, so "
                + "'ssh <alias>' will not resolve. Setup Check can add it.")

@@ -177,3 +177,175 @@ final class TagCatalogTests: XCTestCase {
                       "every alias carries its grouping")
     }
 }
+
+/// The values one tag key takes, which is what `hangar values env` answers.
+final class TagValueCountTests: XCTestCase {
+
+    private let fleet = [
+        Fixture.instance(["env": "prod", "team": "platform"]),
+        Fixture.instance(["env": "prod", "team": "search"]),
+        Fixture.instance(["env": "prod"]),
+        Fixture.instance(["env": "qa", "team": "platform"]),
+        Fixture.instance([:]),
+    ]
+
+    func testCountsPerValueMostUsedFirst() {
+        XCTAssertEqual(TagCatalog.values(of: "env", in: fleet),
+                       [TagCatalog.ValueCount(value: "prod", hosts: 3),
+                        TagCatalog.ValueCount(value: "qa", hosts: 1)])
+    }
+
+    /// A host that does not carry the key is not a host carrying an empty value.
+    func testHostsWithoutTheKeyAreNotCounted() {
+        let total = TagCatalog.values(of: "team", in: fleet).reduce(0) { $0 + $1.hosts }
+        XCTAssertEqual(total, 3)
+    }
+
+    /// Equal counts sort by name, so two runs list the same values in the same
+    /// order.
+    func testTiesBreakByValue() {
+        XCTAssertEqual(TagCatalog.values(of: "team", in: fleet).map(\.value),
+                       ["platform", "search"])
+    }
+
+    /// Read through the same lookup `-f` uses, so what this lists is what a
+    /// filter will match. `state` is not a tag and still has values.
+    func testFriendlyKeysAreCountedToo() {
+        let states = TagCatalog.values(of: "state", in: fleet)
+        XCTAssertEqual(states, [TagCatalog.ValueCount(value: "running", hosts: 5)])
+    }
+
+    func testAKeyNobodyCarriesHasNoValues() {
+        XCTAssertTrue(TagCatalog.values(of: "nosuchkey", in: fleet).isEmpty)
+    }
+
+    func testAnEmptyFleetHasNoValues() {
+        XCTAssertTrue(TagCatalog.values(of: "env", in: []).isEmpty)
+    }
+}
+
+/// Which key names a filter resolves rather than reading, and the fact that
+/// `hangar tags` has to read the fleet's own tags to avoid inventing rows.
+final class ResolvedKeyNameTests: XCTestCase {
+
+    /// Every name in the list is genuinely intercepted. The list and the switch
+    /// in `tagValue(for:)` are two halves of one fact, so this pins them together
+    /// rather than trusting that both were edited.
+    ///
+    /// Probed through a differently-cased spelling, because for `env`, `product`
+    /// and `env_name` the canonical key *is* the tag key, so the interception
+    /// only shows as case folding. `ENV` reaching `tags["env"]` rather than
+    /// `tags["ENV"]` is the same interception that sends `Role` to `tags["Name"]`.
+    func testEveryResolvedNameIsActuallyIntercepted() {
+        let instance = Fixture.instance(["Name": "resolved-role", "env": "resolved-env",
+                                         "env_name": "resolved-envname",
+                                         "product": "resolved-product"])
+        for name in Instance.resolvedKeyNames {
+            var shadowing = instance
+            let shouted = name.uppercased()
+            shadowing.tags[shouted] = "RAW-\(name)"
+            XCTAssertNotEqual(shadowing.tagValue(for: shouted), "RAW-\(name)",
+                              "'\(name)' is listed as resolved and reads the tag")
+        }
+    }
+
+    /// The other half: a key outside the list is read straight off the instance,
+    /// which is what makes filtering on a fleet's own vocabulary work at all.
+    func testAKeyOutsideTheListIsReadFromTheTags() {
+        var instance = Fixture.instance([:])
+        instance.tags["cost-centre"] = "4021"
+        XCTAssertEqual(instance.tagValue(for: "cost-centre"), "4021")
+        XCTAssertFalse(Instance.resolvedKeyNames.contains("cost-centre"))
+    }
+
+    /// The list is lowercase and `tagValue` folds case before consulting it, so
+    /// a fleet's `Role` and `STATE` reach the same branch as `role` and `state`.
+    func testTheListIsMatchedWithoutRegardToCase() {
+        for shouted in ["Role", "STATE", "Instance_Id"] {
+            XCTAssertTrue(Instance.resolvedKeyNames.contains(shouted.lowercased()))
+        }
+        for own in ["team", "cost-centre"] {
+            XCTAssertFalse(Instance.resolvedKeyNames.contains(own))
+        }
+    }
+
+    /// Discovering from a normalized fleet listed every grouping key twice,
+    /// because normalize writes the canonical key and keeps the original.
+    func testDiscoverOnRawTagsDoesNotInventCanonicalRows() {
+        let raw = [Fixture.instance(["Environment": "prod", "Service": "checkout"]),
+                   Fixture.instance(["Environment": "qa", "Service": "checkout"])]
+        let names = TagCatalog.discover(from: raw).keys.map(\.name)
+        XCTAssertEqual(Set(names), ["Environment", "Service"])
+
+        // What the normalized fleet would have produced, for contrast.
+        let normalized = TagMapping.standard.normalize(raw)
+        let doubled = TagCatalog.discover(from: normalized).keys.map(\.name)
+        XCTAssertTrue(Set(doubled).isSuperset(of: ["Environment", "env"]))
+    }
+}
+
+/// Which keys a filter genuinely answers differently from the tag.
+///
+/// Asked of the fleet, not of a list of names. The list cannot answer it: four
+/// of the nine names are first in their own candidate list, so they resolve to
+/// the tag they look like and filter perfectly.
+final class ShadowedKeyTests: XCTestCase {
+
+    private func shadowed(_ raw: [Instance],
+                          _ mapping: TagMapping = .standard) -> Set<String> {
+        let keys = TagCatalog.discover(from: raw).keys.map(\.name)
+        return TagCatalog.shadowedKeys(among: keys, raw: raw,
+                                       resolved: mapping.normalize(raw))
+    }
+
+    /// The regression. A fleet spelling everything canonically has nothing
+    /// shadowed, and the old marker named `env` and `product` here, which are
+    /// the two keys the README filters on throughout.
+    func testACanonicallyTaggedFleetShadowsNothing() {
+        let fleet = [Fixture.instance(["env": "prod", "product": "checkout",
+                                       "team": "platform", "cost-centre": "4021"])]
+        XCTAssertEqual(shadowed(fleet), [])
+    }
+
+    /// And those keys really do filter, which is the fact the marker was denying.
+    func testTheKeysItNoLongerMarksActuallyFilter() {
+        let host = TagMapping.standard.normalize(
+            Fixture.instance(["env": "prod", "product": "checkout"]))
+        XCTAssertEqual(host.tagValue(for: "env"), "prod")
+        XCTAssertEqual(host.tagValue(for: "product"), "checkout")
+    }
+
+    /// A fleet carrying both `Name` and its own `role`: `Name` wins the role
+    /// candidates, so `-f role=` answers with the Name value and the role tag is
+    /// unreachable. `Name` itself is not shadowed, because it reads its own tag.
+    func testARealCollisionIsMarked() {
+        let fleet = [Fixture.instance(["Name": "web-1", "role": "web"])]
+        XCTAssertEqual(shadowed(fleet), ["role"])
+    }
+
+    /// Caught by comparing answers and missed by any list of names: a config that
+    /// puts `Name` first in the product candidates shadows `product`.
+    func testACustomMappingCanShadowAKeyTheListWouldClear() {
+        var mapping = TagMapping.standard
+        mapping.product = ["Name"] + mapping.product
+        let fleet = [Fixture.instance(["Name": "web-1", "product": "checkout"])]
+        XCTAssertEqual(shadowed(fleet, mapping), ["product"])
+        // The same fleet under the stock mapping shadows nothing.
+        XCTAssertEqual(shadowed(fleet), [])
+    }
+
+    /// A key outside the nine can be shadowed too, which is why the marker does
+    /// not consult the list. `hostname` is not in it.
+    func testAKeyOutsideTheResolvedListCanBeShadowed() {
+        var mapping = TagMapping.standard
+        mapping.hostname = ["fqdn"] + mapping.hostname
+        let fleet = [Fixture.instance(["hostname": "a.example.com",
+                                       "fqdn": "b.example.com"])]
+        XCTAssertTrue(shadowed(fleet, mapping).contains("hostname"))
+        XCTAssertFalse(Instance.resolvedKeyNames.contains("hostname"))
+    }
+
+    func testAnEmptyFleetShadowsNothing() {
+        XCTAssertEqual(TagCatalog.shadowedKeys(among: ["env"], raw: [], resolved: []), [])
+    }
+}
