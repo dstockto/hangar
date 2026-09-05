@@ -776,6 +776,25 @@ tmux new-window "ssh $(hangar -a db-prod | head -1)"
 hangar --json -f env=prod | jq -r '.[].hostname'
 ```
 
+### Reading it, versus piping it
+
+The listing has two readers, and it tells them apart with one `isatty` call.
+
+Piped into anything, it is byte for byte what it has always been: alias, group,
+hostname, in padded columns. Every pipeline that already exists keeps working,
+including the ones nobody mentioned.
+
+Read by a person, the fleet is grouped under headings built from the same levels
+the menu uses, `group_by` included, hosts are indented under them, and a host
+that is not running is dimmed **and** says its state in words. A fleet that none
+of those levels group gets no headings at all rather than one "untagged" over
+everything. A search is not grouped: it is ranked by relevance, and a heading
+over a ranked list would either lie about the order or throw the ranking away.
+
+`NO_COLOR` and `HANGAR_NO_COLOR` turn the sequences off when set to a non-empty
+value, per [no-color.org](https://no-color.org), so `NO_COLOR= hangar` undoes it
+for one command. `TERM=dumb` does the same. The layout stays either way.
+
 ### Finding out what to filter on
 
 `-f` is no use if you do not already know the keys and the values. Hangar knows
