@@ -20,12 +20,20 @@ final class TerminalTests: XCTestCase {
         XCTAssertTrue(tty.isColoured)
     }
 
-    /// The convention is that any value counts, including an empty one.
-    func testNoColorIsHonouredAtAnyValue() {
+    /// no-color.org specifies "present and not an empty string (regardless of its
+    /// value)". Empty is the documented way to undo it for one command, so
+    /// `NO_COLOR= hangar` has to keep colour.
+    func testNoColorIsHonouredWhenPresentAndNotEmpty() {
         XCTAssertFalse(terminal(tty: true, env: ["NO_COLOR": "1"]).isColoured)
-        XCTAssertFalse(terminal(tty: true, env: ["NO_COLOR": ""]).isColoured)
+        XCTAssertFalse(terminal(tty: true, env: ["NO_COLOR": "0"]).isColoured)
+        XCTAssertTrue(terminal(tty: true, env: ["NO_COLOR": ""]).isColoured)
         // Still a terminal: headings and layout are not colour.
         XCTAssertTrue(terminal(tty: true, env: ["NO_COLOR": "1"]).isInteractive)
+    }
+
+    func testHangarNoColorFollowsTheSameRule() {
+        XCTAssertFalse(terminal(tty: true, env: ["HANGAR_NO_COLOR": "1"]).isColoured)
+        XCTAssertTrue(terminal(tty: true, env: ["HANGAR_NO_COLOR": ""]).isColoured)
     }
 
     func testADumbTerminalGetsNoSequences() {

@@ -220,7 +220,8 @@ guard !matched.isEmpty else {
 // a person and a program, because everything else is already what a program
 // asked for by name.
 let listing: String? = command.format == .columns
-    ? FleetOutput.listing(matched, terminal: terminal, grouped: query.isEmpty)
+    ? FleetOutput.listing(matched, terminal: terminal, grouped: query.isEmpty,
+                          groupBy: config.groupingKeys)
     : FleetOutput.rendered(matched, as: command.format)
 
 guard let text = listing else {
