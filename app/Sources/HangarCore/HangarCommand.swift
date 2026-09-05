@@ -21,6 +21,8 @@ public struct HangarCommand: Equatable, Sendable {
         case tags
         /// Print the values one tag key takes. Takes the key as its argument.
         case values
+        /// Connect to the one matching host.
+        case ssh
     }
 
     /// The word, when it is one. Deliberately not `RawRepresentable`: `list` is
@@ -28,6 +30,7 @@ public struct HangarCommand: Equatable, Sendable {
     /// keep being findable.
     static func verb(for word: String) -> Verb? {
         switch word {
+        case "ssh":    return .ssh
         case "tags":   return .tags
         case "values": return .values
         default:       return nil
@@ -40,6 +43,10 @@ public struct HangarCommand: Equatable, Sendable {
     public var limit: Int?
     public var filters: [HostFilter] = []
     public var cache: String?
+    /// Take the best match without asking. What `| head -1` meant, said out loud.
+    public var first = false
+    /// Print what would have been run, and run nothing.
+    public var dryRun = false
     public var help = false
     public var version = false
     /// What is wrong with the command line, kept rather than thrown so parsing
@@ -89,6 +96,10 @@ public struct HangarCommand: Equatable, Sendable {
                 case .filter(let filter): command.filters.append(filter)
                 case .problem(let problem): command.problem = problem
                 }
+            case "-1", "--first":
+                command.first = true
+            case "--dry-run":
+                command.dryRun = true
             case "--cache":
                 if let text = value(argument) { command.cache = text }
             case "--":
@@ -139,7 +150,7 @@ public struct HangarCommand: Equatable, Sendable {
             }
         }
         switch verb {
-        case .list:
+        case .list, .ssh:
             return nil
         case .tags:
             return query.isEmpty ? nil

