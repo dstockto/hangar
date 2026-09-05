@@ -766,7 +766,7 @@ hangar -s <query>          the same, spelled out
     --tsv                  alias, hostname, product, env, state, id
     --json                 one JSON array
 -n, --limit <n>            at most n hosts
--f, --filter <key=value>   only hosts carrying that tag, wildcards allowed
+-f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
 ```
 
 ```sh
@@ -775,6 +775,26 @@ hangar | fzf | awk '{print $1}' | xargs ssh
 tmux new-window "ssh $(hangar -a db-prod | head -1)"
 hangar --json -f env=prod | jq -r '.[].hostname'
 ```
+
+### Filters
+
+```sh
+hangar -f env=prod                    exact, or a * wildcard
+hangar -f env=prod,staging            any of them
+hangar -f env!=prod                   none of them
+hangar -f name!='*canary*'            wildcards work on both sides
+hangar -f 'owner=smith\, jane'        a backslash is a comma, not a separator
+```
+
+Repeating `-f` narrows: every clause has to hold, including two on the same key,
+so `-f name='web*' -f name!='*canary*'` is the web hosts that are not canaries.
+
+The key is any tag the host carries, plus the names Hangar resolves for you:
+`name`, `product`, `env`, `env_name`, `role`, `asg`, `state` and `id`. `state` is
+how you leave out the ones that are not running.
+
+Hotkey filters in `~/.hangar/config.json` are unaffected: they keep the exact
+matching they were written against.
 
 It reads `~/.hangar/cache`, which the app refreshes, so it costs no credential,
 no network round trip and no AWS call. The ranking is the panel's ranking:

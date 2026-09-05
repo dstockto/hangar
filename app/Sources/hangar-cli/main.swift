@@ -64,7 +64,10 @@ OUTPUT
       --tsv                  alias, hostname, product, env, state, id
       --json                 one JSON array
   -n, --limit <n>            at most n hosts
-  -f, --filter <key=value>   only hosts carrying that tag, wildcards allowed
+  -f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
+                             key=a,b any of them   key!=a none of them
+                             * is a wildcard; \\, is a comma in a value
+                             keys: any tag, plus name, state, id, asg, env_name
       --cache <path>         read this cache instead of ~/.hangar/cache
 
   -h, --help                 this
@@ -75,6 +78,7 @@ EXAMPLES
   hangar | fzf | awk '{print $1}' | xargs ssh
   tmux new-window "ssh $(hangar -a db-prod | head -1)"
   hangar --json -f env=prod | jq -r '.[].hostname'
+  hangar -f env=prod,staging -f name!=*canary* -f state=running
 
 The list comes from ~/.hangar/cache, which the Hangar app refreshes. Nothing
 here calls AWS, so it costs no credential and no network round trip.
@@ -111,8 +115,7 @@ let instances = config.tagMapping.normalize(cache.instances)
 let all = FleetIndex.entries(for: instances, config: config)
 
 let query = Fuzzy.Query(command.searchText)
-var matched = FleetIndex.ranked(FleetIndex.filtered(all, by: command.filters.isEmpty
-                                                        ? nil : command.filters),
+var matched = FleetIndex.ranked(FleetIndex.filtered(all, by: command.filters),
                                 matching: query)
 if let limit = command.limit { matched = Array(matched.prefix(limit)) }
 

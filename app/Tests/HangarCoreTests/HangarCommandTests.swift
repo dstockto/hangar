@@ -56,16 +56,27 @@ final class HangarCommandTests: XCTestCase {
     }
 
     func testFilterTakesKeyEqualsValue() {
-        XCTAssertEqual(HangarCommand.parse(["-f", "env=prod"]).filters, ["env": "prod"])
+        XCTAssertEqual(HangarCommand.parse(["-f", "env=prod"]).filters,
+                       [HostFilter(key: "env", patterns: ["prod"])])
         // The value may contain an equals sign; only the first splits.
-        XCTAssertEqual(HangarCommand.parse(["-f", "tag=a=b"]).filters, ["tag": "a=b"])
+        XCTAssertEqual(HangarCommand.parse(["-f", "tag=a=b"]).filters,
+                       [HostFilter(key: "tag", patterns: ["a=b"])])
+    }
+
+    /// Two clauses on one key both survive. The dictionary this replaced kept
+    /// only the second, silently.
+    func testFiltersAccumulateInOrder() {
+        let command = HangarCommand.parse(["-f", "env=prod", "-f", "env!=canary"])
+        XCTAssertEqual(command.filters, [HostFilter(key: "env", patterns: ["prod"]),
+                                         HostFilter(key: "env", patterns: ["canary"],
+                                                    match: .none)])
     }
 
     func testFilterRejectsAnythingElse() {
         XCTAssertEqual(HangarCommand.parse(["-f", "env"]).problem,
-                       "--filter takes key=value, not 'env'")
+                       "--filter takes key=value or key!=value, not 'env'")
         XCTAssertEqual(HangarCommand.parse(["-f", "=prod"]).problem,
-                       "--filter takes key=value, not '=prod'")
+                       "--filter takes key=value or key!=value, not '=prod'")
     }
 
     func testAFlagMissingItsValueIsReported() {
@@ -102,7 +113,7 @@ final class HangarCommandTests: XCTestCase {
         let command = HangarCommand.parse(
             ["--json", "-f", "env=prod", "-n", "3", "web", "--cache", "/tmp/c"])
         XCTAssertEqual(command.format, .json)
-        XCTAssertEqual(command.filters, ["env": "prod"])
+        XCTAssertEqual(command.filters, [HostFilter(key: "env", patterns: ["prod"])])
         XCTAssertEqual(command.limit, 3)
         XCTAssertEqual(command.searchText, "web")
         XCTAssertEqual(command.cache, "/tmp/c")
