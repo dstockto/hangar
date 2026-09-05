@@ -225,6 +225,8 @@ RUNNING SOMETHING PER HOST
                              * is a wildcard, so quote it in zsh; \\, is a comma
                              keys: any tag, plus name, state, id, asg, env_name
       --cache <path>         read this cache instead of ~/.hangar/cache
+      --config <path>        read this config instead of ~/.hangar/config.json,
+                             and write none
 
   -h, --help                 this
   -V, --version              the version of Hangar this shipped with
@@ -287,7 +289,24 @@ guard let cache = FleetCache.load(path: cachePath) else {
     exit(2)
 }
 
-let config = (try? HangarConfig.load()) ?? .standard()
+// An explicit path is read and never created, so pointing this at somebody
+// else's directory, or at a testbed's, leaves nothing behind.
+//
+// Fatal when it cannot be read, the way --cache already is. `.map { try? … }`
+// made a bad path fall all the way through to the defaults, silently, and the
+// defaults rewrite every canonical tag: the aliases printed were ones that do
+// not exist in the user's ssh_config.
+let config: HangarConfig
+if let path = command.config {
+    do {
+        config = try HangarConfig.read(from: path)
+    } catch {
+        stderrLine("hangar: \(error.localizedDescription)")
+        exit(2)
+    }
+} else {
+    config = (try? HangarConfig.load()) ?? .standard()
+}
 // Re-normalized on load for the same reason the app does it: the tag mapping may
 // have changed since the cache was written.
 let instances = config.tagMapping.normalize(cache.instances)

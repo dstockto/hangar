@@ -106,6 +106,28 @@ argument unchanged, an unknown placeholder is left alone, `--parallel` never
 exceeds its bound, and more than one host without `-y` and without a terminal is
 a usage error rather than a fan-out.
 
+## 8. `cli-config-path`
+
+Not planned. `make testbed` was already failing on the machine this was written
+on, before any of the above, and the reason belongs here.
+
+The testbed builds a fake home and then proves the developer's own files are
+byte for byte unchanged. But `hangar` reads `~/.hangar/config.json` through
+`HangarConfig.load()`, which takes no path, so the tag mapping came from the
+developer rather than from the testbed. On a fleet whose config resolves
+`product` from `Name`, the aliases the testbed asserts on came out different and
+two cases failed on a machine where nothing was wrong. `load()` also *writes* a
+default when the file is absent, which is right for the app on first launch and
+wrong under a directory nobody owns.
+
+| File | Change |
+|---|---|
+| `HangarCore/HangarConfig.swift` | `read(from:)`, which creates nothing |
+| `HangarCommand.swift` | `--config <path>` |
+| `hangar-cli/main.swift` | use it when given |
+| `scripts/testbed.sh` | write a config in the fake root and pass it |
+| `Tests/ConfigTests.swift` | a missing file throws and leaves nothing behind |
+
 ## Not in any layer
 
 `hangar refresh`, `hangar doctor`, an interactive picker, and shell completion.

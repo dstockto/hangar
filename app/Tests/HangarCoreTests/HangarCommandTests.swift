@@ -109,6 +109,14 @@ final class HangarCommandTests: XCTestCase {
         XCTAssertEqual(HangarCommand.parse(["--cache", "/tmp/fleet"]).cache, "/tmp/fleet")
     }
 
+    func testConfigPath() {
+        XCTAssertEqual(HangarCommand.parse(["--config", "/tmp/c.json"]).config,
+                       "/tmp/c.json")
+        XCTAssertNil(HangarCommand.parse([]).config)
+        XCTAssertEqual(HangarCommand.parse(["--config"]).problem,
+                       "--config needs a value")
+    }
+
     func testEverythingAtOnce() {
         let command = HangarCommand.parse(
             ["--json", "-f", "env=prod", "-n", "3", "web", "--cache", "/tmp/c"])
