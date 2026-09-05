@@ -59,3 +59,4 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0024 | More than one way to find a host | Shipped |
 | 0025 | A wider door, not a different house | Shipped |
 | 0026 | Three things the first real install found | Shipped |
+| 0027 | A command line you can drive | Open |
