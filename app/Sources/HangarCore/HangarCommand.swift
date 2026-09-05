@@ -43,6 +43,8 @@ public struct HangarCommand: Equatable, Sendable {
     public var limit: Int?
     public var filters: [HostFilter] = []
     public var cache: String?
+    /// Read this config rather than ~/.hangar/config.json, and write none.
+    public var config: String?
     /// Take the best match without asking. What `| head -1` meant, said out loud.
     public var first = false
     /// Print what would have been run, and run nothing.
@@ -136,6 +138,8 @@ public struct HangarCommand: Equatable, Sendable {
                 command.dryRun = true
             case "--cache":
                 if let text = value(argument) { command.cache = text }
+            case "--config":
+                if let text = value(argument) { command.config = text }
             case "--":
                 // Everything after this is a query: never an option, never a
                 // verb. The way to search for a host called "tags".

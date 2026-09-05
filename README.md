@@ -767,6 +767,9 @@ hangar -s <query>          the same, spelled out
     --json                 one JSON array
 -n, --limit <n>            at most n hosts
 -f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
+    --cache <path>         read this cache instead of ~/.hangar/cache
+    --config <path>        read this config instead of ~/.hangar/config.json;
+                           a path that cannot be read is fatal, like --cache
 ```
 
 ```sh

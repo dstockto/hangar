@@ -155,3 +155,57 @@ final class VersionCompareTests: XCTestCase {
         XCTAssertTrue(VersionCompare.isNewer("0.5.0-beta.1", than: "0.4.1"))
     }
 }
+
+/// Reading a config from a path given rather than from the home directory.
+final class ConfigReadFromPathTests: TemporaryDirectoryTestCase {
+
+    func testReadsTheFileItWasGiven() throws {
+        let file = path("config.json")
+        try #"{"region":"eu-west-1"}"#.write(toFile: file, atomically: true,
+                                             encoding: .utf8)
+        XCTAssertEqual(try HangarConfig.read(from: file).region, "eu-west-1")
+    }
+
+    func testAnEmptyObjectIsTheStandardMapping() throws {
+        let file = path("config.json")
+        try "{}".write(toFile: file, atomically: true, encoding: .utf8)
+        XCTAssertEqual(try HangarConfig.read(from: file).tagMapping, .standard)
+    }
+
+    /// The whole point of this over `load()`, which writes a default when the
+    /// file is absent.
+    ///
+    /// Throwing is the load-bearing assertion, not the file check: `load()`
+    /// returns `.standard()` for a missing file rather than throwing, so if
+    /// `read` were ever changed to delegate to it this goes red on the first
+    /// line. The directory check only catches `read` writing under the path it
+    /// was handed; it cannot see a write to the real `~/.hangar`, which is what
+    /// `HangarConfig.home` resolves to whatever HOME says.
+    func testAMissingFileThrowsRatherThanCreatingOne() throws {
+        let file = path("absent.json")
+        XCTAssertThrowsError(try HangarConfig.read(from: file))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file))
+        XCTAssertEqual(try FileManager.default
+            .contentsOfDirectory(atPath: directory.path), [])
+    }
+
+    /// And the message names the file, which is what a person needs when they
+    /// mistyped a path. Only reachable from the command line since --config
+    /// became fatal on a bad path.
+    func testAMalformedFileNamesItself() throws {
+        let file = path("config.json")
+        try "{oops".write(toFile: file, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try HangarConfig.read(from: file)) {
+            XCTAssertTrue($0.localizedDescription.contains(file),
+                          $0.localizedDescription)
+        }
+    }
+
+    func testMalformedConfigSaysWhichFile() throws {
+        let file = path("config.json")
+        try "not json".write(toFile: file, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try HangarConfig.read(from: file)) {
+            XCTAssertTrue($0.localizedDescription.contains(file))
+        }
+    }
+}

@@ -148,6 +148,7 @@ status=$?
 # Documented as shipping, so it is proved to run, not assumed to.
 CLI="$APP_DIR/.build/debug/hangar-cli"
 CACHE="$ROOT/.hangar/cache/instances.json"
+CLI_CONFIG="$ROOT/.hangar/config.json"
 mkdir -p "$(dirname "$CACHE")"
 cat > "$CACHE" <<'EOF'
 {"region":"us-west-2","fetchedAt":779000000,
@@ -163,16 +164,23 @@ cat > "$CACHE" <<'EOF'
 EOF
 chmod 600 "$CACHE"
 
+# The tag mapping has to come from here too. Without it the command reads the
+# developer's own ~/.hangar/config.json, and a fleet whose config resolves
+# `product` from `Name` produced different aliases than this expects, on a
+# machine where nothing was wrong.
+echo '{}' > "$CLI_CONFIG"
+chmod 600 "$CLI_CONFIG"
+
 echo
 echo "command line"
-cli_aliases="$("$CLI" --cache "$CACHE" -a 2>/dev/null)"
+cli_aliases="$("$CLI" --config "$CLI_CONFIG" --cache "$CACHE" -a 2>/dev/null)"
 if [[ "$cli_aliases" == $'payments-prod-web\npayments-qa-db' ]]; then
     echo "  ok   hangar lists the cached fleet, in menu order"
 else
     echo "  FAIL hangar listed: $cli_aliases"
     status=1
 fi
-if [[ "$("$CLI" --cache "$CACHE" -a -s 'qa db' 2>/dev/null)" == "payments-qa-db" ]]; then
+if [[ "$("$CLI" --config "$CLI_CONFIG" --cache "$CACHE" -a -s 'qa db' 2>/dev/null)" == "payments-qa-db" ]]; then
     echo "  ok   a fuzzy query reaches the host it names"
 else
     echo "  FAIL the fuzzy query did not find payments-qa-db"
@@ -180,14 +188,14 @@ else
 fi
 # Captured rather than tested inline: this script runs under set -e, and the
 # non-zero exit is the thing being checked.
-rc=0; "$CLI" --cache "$CACHE" -s "nothing-like-this" >/dev/null 2>&1 || rc=$?
+rc=0; "$CLI" --config "$CLI_CONFIG" --cache "$CACHE" -s "nothing-like-this" >/dev/null 2>&1 || rc=$?
 if [[ $rc -eq 1 ]]; then
     echo "  ok   nothing matched exits 1, so a pipeline can tell"
 else
     echo "  FAIL a query matching nothing did not exit 1"
     status=1
 fi
-rc=0; "$CLI" --cache "$ROOT/.hangar/absent.json" >/dev/null 2>&1 || rc=$?
+rc=0; "$CLI" --config "$CLI_CONFIG" --cache "$ROOT/.hangar/absent.json" >/dev/null 2>&1 || rc=$?
 if [[ $rc -eq 2 ]]; then
     echo "  ok   no cache exits 2, which is not the same as no matches"
 else

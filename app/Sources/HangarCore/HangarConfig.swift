@@ -287,6 +287,23 @@ public struct HangarConfig: Codable, Sendable {
         }
     }
 
+    /// Reads a config from an explicit path, and creates nothing.
+    ///
+    /// `load()` writes a default when the file is absent, which is right for the
+    /// app on first launch and wrong for anything pointed at a directory it does
+    /// not own. A testbed whose whole claim is that it touched nothing cannot
+    /// have a file appear under it, and a reader given a path meant to be read
+    /// should read it.
+    public static func read(from path: String) throws -> HangarConfig {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        do {
+            return try JSONDecoder().decode(HangarConfig.self, from: data)
+        } catch {
+            throw HangarError.malformedResponse(
+                "\(path) is not valid Hangar config: \(error.localizedDescription)")
+        }
+    }
+
     public static func write(_ config: HangarConfig) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
