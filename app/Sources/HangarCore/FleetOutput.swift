@@ -49,6 +49,59 @@ public enum FleetOutput {
         })
     }
 
+    /// The listing a person reads.
+    ///
+    /// Falls straight through to `columns` when the destination is not a
+    /// terminal, which is what makes this safe to add: every pipeline that
+    /// existed before gets the bytes it always got, and the decision is one
+    /// place rather than sprinkled through the formatter.
+    ///
+    /// Grouped only when the fleet is in menu order. A query ranks by relevance,
+    /// and headings over a ranked list would either lie about the order or throw
+    /// away the ranking, so a search stays flat.
+    public static func listing(_ entries: [SearchEntry], terminal: Terminal,
+                               grouped: Bool) -> String {
+        guard terminal.isInteractive else { return columns(entries) }
+        let indent = grouped ? "  " : ""
+        let aliasWidth = min(entries.map(\.alias.count).max() ?? 0, 44)
+        let groupWidth = grouped ? 0 : min(entries.map { group($0).count }.max() ?? 0, 28)
+
+        var lines: [String] = []
+        var heading: String?
+        for entry in entries {
+            if grouped {
+                let current = group(entry)
+                if current != heading {
+                    if heading != nil { lines.append("") }
+                    // A host carrying neither product nor environment still has to
+                    // sit under something a reader can name.
+                    lines.append(terminal.styled(current.isEmpty ? "untagged" : current,
+                                                 .heading))
+                    heading = current
+                }
+            }
+            var row = indent + pad(entry.alias, to: aliasWidth) + "  "
+            if !grouped { row += pad(group(entry), to: groupWidth) + "  " }
+
+            // A stopped host says so in words and is dimmed. Never only dimmed:
+            // colour that carries the only copy of a fact is a fact some readers
+            // do not get.
+            let running = entry.instance.state == "running"
+            if running {
+                row += terminal.styled(entry.hostname, .secondary)
+                lines.append(row)
+            } else {
+                row += entry.hostname + "  " + entry.instance.state
+                lines.append(terminal.styled(row, .dimmed))
+            }
+        }
+        return joined(lines)
+    }
+
+    static func pad(_ text: String, to width: Int) -> String {
+        text.padding(toLength: max(width, text.count), withPad: " ", startingAt: 0)
+    }
+
     /// Aliases and nothing else, one per line, which is the shape a `while read`
     /// loop and `xargs` both want: one token per line, no columns to cut out of.
     public static func aliases(_ entries: [SearchEntry]) -> String {
@@ -115,7 +168,8 @@ public enum FleetOutput {
     /// The tag keys a fleet uses: name, hosts carrying it, distinct values, and
     /// a few of them, so `-f` stops being a guessing game.
     public static func tagKeys(_ catalog: TagCatalog, shadowed: Set<String> = [],
-                               as format: HangarCommand.Format) -> String? {
+                               as format: HangarCommand.Format,
+                               terminal: Terminal = .plain) -> String? {
         switch format {
         case .alias:
             return joined(catalog.keys.map(\.name))
@@ -135,21 +189,27 @@ public enum FleetOutput {
                  "resolved_by_filter": shadowed.contains($0.name)]
             })
         case .columns:
-            let nameWidth = min(catalog.keys.map(\.name.count).max() ?? 0, 32)
+            let nameWidth = max(min(catalog.keys.map(\.name.count).max() ?? 0, 32),
+                                terminal.isInteractive ? 3 : 0)
             var lines = catalog.keys.map { key in
-                let name = key.name.padding(
-                    toLength: max(nameWidth, key.name.count), withPad: " ", startingAt: 0)
-                let hosts = String(key.instances).leftPadded(to: 6)
-                let distinct = String(key.distinctValues).leftPadded(to: 7)
-                let samples = key.samples.joined(separator: ", ")
-                return "\(name)  \(hosts)  \(distinct)  \(samples)"
+                "\(pad(key.name, to: nameWidth))  "
+                    + "\(String(key.instances).leftPadded(to: 6))  "
+                    + "\(String(key.distinctValues).leftPadded(to: 7))  "
+                    + key.samples.joined(separator: ", ")
             }
-            // Said once under the table rather than as a column, because it
-            // applies to a minority of rows and the alternative is a reader
-            // cross-referencing nine names in the README to know which of their
-            // own keys a filter will resolve past.
+            // Four unlabelled columns of numbers need a header, and only a person
+            // reading them does. A pipe gets what it always got.
+            if terminal.isInteractive, !lines.isEmpty {
+                lines.insert(terminal.styled(
+                    "\(pad("KEY", to: nameWidth))  \("HOSTS".leftPadded(to: 6))  "
+                        + "\("VALUES".leftPadded(to: 7))  EXAMPLES", .heading), at: 0)
+            }
+            // Which of these names a filter answers differently from the tag,
+            // said once under the table rather than as a column, because it
+            // applies to a minority of rows. For a person, like the header: a
+            // pipe takes the same fact per row from --json or --tsv.
             let resolved = catalog.keys.map(\.name).filter(shadowed.contains)
-            if !resolved.isEmpty {
+            if terminal.isInteractive, !resolved.isEmpty {
                 lines.append("")
                 lines.append("-f resolves these names rather than reading the tag: "
                              + resolved.joined(separator: ", "))

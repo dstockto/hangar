@@ -100,6 +100,9 @@ EXIT
 // MARK: - Run
 
 let command = HangarCommand.parse(Array(CommandLine.arguments.dropFirst()))
+// Asked once, here, so every formatter is handed the answer rather than each
+// one deciding for itself what the other end of the pipe is.
+let terminal = Terminal.standardOutput()
 
 if let problem = command.problem {
     stderrLine("hangar: \(problem)")
@@ -172,7 +175,8 @@ case .tags:
     // rather than assumed from a list of names.
     let shadowed = TagCatalog.shadowedKeys(among: catalog.keys.map(\.name),
                                            raw: cache.instances, resolved: instances)
-    emit(FleetOutput.tagKeys(catalog, shadowed: shadowed, as: command.format),
+    emit(FleetOutput.tagKeys(catalog, shadowed: shadowed, as: command.format,
+                             terminal: terminal),
          orElse: "hangar: no host in the cached fleet carries a tag.",
          empty: catalog.isEmpty)
 
@@ -212,7 +216,14 @@ guard !matched.isEmpty else {
     exit(1)
 }
 
-guard let text = FleetOutput.rendered(matched, as: command.format) else {
+// The one shape that differs by reader. Everything else is the same bytes for
+// a person and a program, because everything else is already what a program
+// asked for by name.
+let listing: String? = command.format == .columns
+    ? FleetOutput.listing(matched, terminal: terminal, grouped: query.isEmpty)
+    : FleetOutput.rendered(matched, as: command.format)
+
+guard let text = listing else {
     stderrLine("hangar: could not encode the fleet as JSON")
     exit(2)
 }

@@ -303,17 +303,27 @@ final class FleetOutputTests: XCTestCase {
         XCTAssertEqual(byKey["team"], false)
     }
 
-    /// Said once under the table, and only when a row needs it.
+    /// Said once under the table, and only when a row needs it. For a person,
+    /// like the header: a pipe takes the same fact per row from --json or --tsv.
     func testColumnsFooterNamesTheResolvedKeys() throws {
+        let interactive = Terminal(isInteractive: true, isColoured: false)
         let text = try XCTUnwrap(FleetOutput.tagKeys(catalog, shadowed: ["env"],
-                                                     as: .columns))
+                                                     as: .columns,
+                                                     terminal: interactive))
         XCTAssertTrue(text.contains("-f resolves these names"))
         XCTAssertTrue(text.contains("env"))
 
         // Nothing shadowed, so no footer. This is the regression: the marker used
         // to fire on env and product from a list of names, and both filter.
         XCTAssertFalse(try XCTUnwrap(FleetOutput.tagKeys(catalog, shadowed: [],
-                                                         as: .columns))
+                                                         as: .columns,
+                                                         terminal: interactive))
+            .contains("-f resolves"))
+
+        // A pipe gets rows and nothing else.
+        XCTAssertFalse(try XCTUnwrap(FleetOutput.tagKeys(catalog, shadowed: ["env"],
+                                                         as: .columns,
+                                                         terminal: .plain))
             .contains("-f resolves"))
     }
 
@@ -346,5 +356,98 @@ final class FleetOutputTests: XCTestCase {
         XCTAssertEqual(FleetOutput.tagKeys(.empty, as: .json), "[]\n")
         XCTAssertEqual(FleetOutput.tagValues([], as: .json), "[]\n")
         XCTAssertEqual(FleetOutput.tagValues([], as: .columns), "")
+    }
+
+    // MARK: - The listing a person reads
+
+    private var tty: Terminal { Terminal(isInteractive: true, isColoured: true) }
+    private var monochrome: Terminal { Terminal(isInteractive: true, isColoured: false) }
+
+    /// The promise that makes this safe to add at all: a pipeline gets exactly
+    /// the bytes it has always got.
+    func testAPipeGetsTheOldListingByteForByte() {
+        let entries = [entry("web-1"), entry("web-2", env: "qa", state: "stopped")]
+        XCTAssertEqual(FleetOutput.listing(entries, terminal: .plain, grouped: true),
+                       FleetOutput.columns(entries))
+        XCTAssertEqual(FleetOutput.listing(entries, terminal: .plain, grouped: false),
+                       FleetOutput.columns(entries))
+    }
+
+    func testATerminalGetsGroupHeadings() {
+        let entries = [entry("web-1"), entry("web-2"),
+                       entry("api-1", product: "search")]
+        let lines = FleetOutput.listing(entries, terminal: monochrome, grouped: true)
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        XCTAssertEqual(lines[0], "payments\u{00B7}prod")
+        XCTAssertEqual(lines[1], "  web-1  web-1.example.com")
+        XCTAssertEqual(lines[2], "  web-2  web-2.example.com")
+        XCTAssertEqual(lines[3], "")
+        XCTAssertEqual(lines[4], "search\u{00B7}prod")
+    }
+
+    /// A ranked list is in relevance order, and a heading over it would either
+    /// lie about that order or throw the ranking away.
+    func testASearchIsNotGrouped() {
+        let entries = [entry("web-1"), entry("api-1", product: "search")]
+        let text = FleetOutput.listing(entries, terminal: monochrome, grouped: false)
+        XCTAssertFalse(text.contains("\n\n"))
+        // The group is still a column, so a flat list does not lose the context.
+        XCTAssertTrue(text.contains("payments\u{00B7}prod"))
+    }
+
+    /// Mistake 8 and 17 in a third place: a host that carries neither still has
+    /// to sit under something a reader can name.
+    func testAnUntaggedHostGetsANamedHeading() {
+        let entries = [entry("orphan", product: "", env: "")]
+        XCTAssertTrue(FleetOutput.listing(entries, terminal: monochrome, grouped: true)
+            .hasPrefix("untagged"))
+    }
+
+    /// Colour never carries a fact on its own. A reader who cannot see the
+    /// dimming, or who pasted the line somewhere else, gets the same answer.
+    func testAStoppedHostSaysSoInWords() {
+        let entries = [entry("web-1", state: "stopped")]
+        let text = FleetOutput.listing(entries, terminal: monochrome, grouped: true)
+        XCTAssertTrue(text.contains("stopped"))
+    }
+
+    func testARunningHostDoesNotSayItsState() {
+        let entries = [entry("web-1", state: "running")]
+        XCTAssertFalse(FleetOutput.listing(entries, terminal: monochrome, grouped: true)
+            .contains("running"))
+    }
+
+    /// With colour off there is not one escape sequence anywhere, which is what
+    /// NO_COLOR and TERM=dumb are asking for.
+    func testColourOffProducesNoEscapeSequences() {
+        let entries = [entry("web-1"), entry("web-2", state: "stopped"),
+                       entry("api-1", product: "search")]
+        for grouped in [true, false] {
+            let text = FleetOutput.listing(entries, terminal: monochrome, grouped: grouped)
+            XCTAssertFalse(text.contains("\u{1B}"))
+        }
+    }
+
+    /// Nesting one sequence inside another would let the inner reset cancel the
+    /// outer style for the rest of the row, so a dimmed row is styled once.
+    func testADimmedRowIsStyledOnce() {
+        let entries = [entry("web-1", state: "stopped")]
+        let text = FleetOutput.listing(entries, terminal: tty, grouped: false)
+        XCTAssertEqual(text.components(separatedBy: "\u{1B}[0m").count - 1, 1)
+    }
+
+    func testTagKeysGetAHeaderOnlyAtATerminal() throws {
+        let plain = try XCTUnwrap(FleetOutput.tagKeys(catalog, as: .columns,
+                                                      terminal: .plain))
+        XCTAssertFalse(plain.contains("KEY"))
+        let interactive = try XCTUnwrap(FleetOutput.tagKeys(catalog, as: .columns,
+                                                            terminal: monochrome))
+        XCTAssertTrue(interactive.hasPrefix("KEY"))
+        XCTAssertTrue(interactive.contains("HOSTS"))
+    }
+
+    /// A header over nothing is a header describing nothing.
+    func testNoHeaderWhenThereAreNoKeys() {
+        XCTAssertEqual(FleetOutput.tagKeys(.empty, as: .columns, terminal: monochrome), "")
     }
 }
