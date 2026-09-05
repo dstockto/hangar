@@ -1,7 +1,7 @@
 {
   "id": "security-core-processes-have-a-deadline",
-  "promise": "Every external process HangarCore starts runs through ProcessRunner, which terminates and then kills it.",
-  "why": "credential_process hung forever and the fleet refreshed forever with it; a locked vault answering ssh-add is the same shape. Scoped to HangarCore because that is where somebody else's code gets run.",
-  "command": "! grep -rln 'Process()' app/Sources/HangarCore --include='*.swift' | grep -qv 'ProcessRunner.swift'",
+  "promise": "Every external process HangarCore or the `hangar` command starts has a deadline it cannot outlive: HangarCore through ProcessRunner, and `hangar --exec` through its own loop, which signals the process group so a wrapped command cannot outlive it.",
+  "why": "Was scoped to HangarCore alone, and went green over the spawn in hangar-cli, which is the riskiest in the repo because the program is whatever the user typed after --exec. The killpg half exists because terminate() and kill() reach the direct child only: `sh -c 'trap \"\" TERM; sleep 25'` left the grandchild running while the deadline reported it had finished. Deliberately not widened to all of app/Sources: Updates.swift and Uninstaller.swift also start processes, under the updater's own gates, and this case has never checked them. Blessing them by widening a grep would be a claim nobody made.",
+  "command": "! grep -rln 'Process()' app/Sources/HangarCore app/Sources/hangar-cli --include='*.swift' | grep -qvE 'ProcessRunner.swift|main.swift' && grep -q 'killpg(entry.process.processIdentifier, SIGTERM)' app/Sources/hangar-cli/main.swift && grep -q 'killpg(entry.process.processIdentifier, SIGKILL)' app/Sources/hangar-cli/main.swift",
   "expect": "exit 0"
 }
