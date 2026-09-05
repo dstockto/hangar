@@ -65,10 +65,45 @@ public enum FleetOutput {
         })
     }
 
+    /// One host as JSON: everything `fields` carries, plus what the cache knows
+    /// and a flat string map cannot hold.
+    ///
+    /// The whole tag map is here because the cache has it and dropping it made
+    /// reasonable questions unanswerable: "the m5.large ones", "everything in the
+    /// payments ASG". `vcpus` is a number, because a reader filtering on it
+    /// should not have to parse a string first.
+    ///
+    /// `tags` is the map after the configured mapping resolved it, not the raw
+    /// one from AWS: the canonical keys carry the resolved value and every other
+    /// tag is the fleet's own. That is deliberate, because it is the same map
+    /// `-f` filters against, and a document whose tags disagreed with the filters
+    /// that read them would be two answers to one question.
+    static func jsonFields(_ entry: SearchEntry) -> [String: Any] {
+        let instance = entry.instance
+        var row: [String: Any] = fields(entry)
+        row["type"] = instance.type
+        row["launch_time"] = instance.launchTime
+        row["asg"] = instance.asg
+        row["lifecycle"] = instance.lifecycle ?? ""
+        row["private_dns"] = instance.privateDNS ?? ""
+        row["tags"] = instance.tags
+        // Absent rather than zero: a host whose response did not say how its
+        // cores are laid out does not have nought of them.
+        if let vcpus = instance.vcpus { row["vcpus"] = vcpus }
+        return row
+    }
+
     /// One JSON array, or nil when it could not be encoded, which the caller
     /// reports rather than printing half a document.
+    ///
+    /// An empty list is `[]`, not nothing. Printing nothing made `jq` downstream
+    /// fail on empty input for a query that simply matched no host, which is an
+    /// answer rather than a parse error.
     public static func json(_ entries: [SearchEntry]) -> String? {
-        let payload = entries.map(fields)
+        // Pretty printing an empty array gives "[\n\n]", which is valid and
+        // reads like a bug. Say it in the two characters it takes.
+        guard !entries.isEmpty else { return "[]\n" }
+        let payload = entries.map(jsonFields)
         guard let data = try? JSONSerialization.data(
             withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
               let text = String(data: data, encoding: .utf8) else { return nil }

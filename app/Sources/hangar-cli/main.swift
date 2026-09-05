@@ -62,7 +62,7 @@ USAGE
 OUTPUT
   -a, --alias                aliases alone, one per line
       --tsv                  alias, hostname, product, env, state, id
-      --json                 one JSON array
+      --json                 one JSON array, always valid, [] when nothing matched
   -n, --limit <n>            at most n hosts
   -f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
                              key=a,b any of them   key!=a none of them
@@ -101,8 +101,21 @@ if let problem = command.problem {
 if command.help { write(usage + "\n"); exit(0) }
 if command.version { write(version() + "\n"); exit(0) }
 
+/// An empty answer in the shape that was asked for.
+///
+/// FleetOutput decides what empty looks like in each format, rather than this
+/// file carrying a second copy of which ones are machine readable. A format
+/// that prints nothing at all bottoms out in write's own guard.
+func writeEmptyResult() {
+    write(FleetOutput.rendered([], as: command.format) ?? "")
+}
+
 let cachePath = command.cache ?? HangarConfig.cachePath
 guard let cache = FleetCache.load(path: cachePath) else {
+    // A document here too. No cache is the first thing a fresh install hits, so
+    // it is the likeliest place a first --json pipeline runs, and printing
+    // nothing is the jq-on-empty-input failure this format exists to avoid.
+    writeEmptyResult()
     stderrLine("hangar: no fleet cached yet at \(cachePath).")
     stderrLine("Open Hangar once and let it refresh, then try again.")
     exit(2)
@@ -134,6 +147,10 @@ if !SSHConfigWriter.includeLinePresent() {
 }
 
 guard !matched.isEmpty else {
+    // Nothing matching is an answer, and printing nothing made jq downstream
+    // fail on empty input for a query that was simply specific. The exit code
+    // still says nothing matched.
+    writeEmptyResult()
     stderrLine("hangar: " + FleetOutput.nothingMatched(
         query: command.searchText, filters: command.filters.count,
         fleetSize: all.count))

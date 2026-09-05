@@ -795,10 +795,47 @@ nothing. Bare `-f env=` still means "any value", which is what it always meant.
 
 The key is any tag the host carries, plus the names Hangar resolves for you:
 `name`, `product`, `env`, `env_name`, `role`, `asg`, `state` and `id`. `state` is
-how you leave out the ones that are not running.
+how you leave out the ones that are not running. Those names take precedence: a
+fleet with its own tag called `Role` or `State` filters on Hangar's resolved
+value under that key, not on the tag. See [JSON](#json).
 
 Hotkey filters in `~/.hangar/config.json` are unaffected: they keep the exact
 matching they were written against.
+
+### JSON
+
+`--json` prints one array. **Every run that reaches the fleet prints a valid
+document**: the matching hosts, `[]` when nothing matched, and `[]` when there
+is no cache yet, which is the state a fresh install is in and the likeliest
+place a first pipeline runs. The exit code says which of the three it was, and
+`jq` downstream always has something to read.
+
+A usage error is the exception, deliberately: `hangar --json --oops` writes
+nothing to stdout and exits 64, because the command never ran.
+
+Each host carries `alias`, `hostname`, `command`, `id`, `state`, `type`,
+`vcpus`, `launch_time`, `zone`, `private_ip`, `public_ip`, `private_dns`,
+`lifecycle`, `asg`, `source`, the resolved `product`, `env`, `env_name` and
+`role`, and `tags`.
+
+`tags` is the host's tags as Hangar resolved them: the keys it knows carry the
+resolved value, and every other tag is the fleet's own, untouched.
+
+Seeing a tag here is not quite the same as being able to select on it. Nine key
+names are *resolved* rather than looked up, matched without regard to case:
+`name`, `role`, `env`, `env_name`, `product`, `asg`, `state`, `id` and
+`instance_id`. If your fleet has its own tag called `Role`, the document shows
+it and `-f Role=...` still filters on the role Hangar resolved, which is
+probably a different value. Filter on a key outside that list, or on the
+resolved value.
+
+```sh
+hangar --json -f env=prod | jq -r '.[] | select(.type|startswith("m5")) | .alias'
+hangar --json | jq -r '.[] | select(.tags["cost-centre"]=="4021") | .command'
+```
+
+`vcpus` is a number, and it is absent rather than zero on a host whose response
+did not say how its cores are laid out.
 
 It reads `~/.hangar/cache`, which the app refreshes, so it costs no credential,
 no network round trip and no AWS call. The ranking is the panel's ranking:
@@ -806,9 +843,12 @@ both call `FleetIndex`, because a menubar and a shell must not disagree about
 which host best matches `web prod`.
 
 Exit codes are meant for pipelines: `0` when hosts were printed, `1` when
-nothing matched, `2` when there is no cache yet. A cache older than
-`healthy_within_hours`, and a missing `Include` line that would stop
-`ssh <alias>` resolving, are both said once on stderr so a pipe is unaffected.
+nothing matched, `2` when there is no cache yet. Under `--json`, a run that
+matched nothing and a run with no cache both still print `[]`, so stdout stays
+parseable and the code carries the difference.
+A cache older than `healthy_within_hours`, and a missing `Include` line that
+would stop `ssh <alias>` resolving, are both said once on stderr so a pipe is
+unaffected.
 
 ## Architecture
 
