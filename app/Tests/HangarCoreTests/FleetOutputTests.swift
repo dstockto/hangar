@@ -113,6 +113,101 @@ final class FleetOutputTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(FleetOutput.json([entry("web-1")])).hasSuffix("\n"))
     }
 
+    /// The one promise here that used to be false. Nothing matching is an answer,
+    /// so it has to parse; the exit code is what says nothing matched.
+    func testNothingMatchingIsStillAValidDocument() throws {
+        let text = try XCTUnwrap(FleetOutput.json([]))
+        let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8))
+        XCTAssertEqual(try XCTUnwrap(parsed as? [Any]).count, 0)
+        XCTAssertEqual(text, "[]\n")
+    }
+
+    func testJSONCarriesTheFieldsAFlatMapCannotHold() throws {
+        var instance = Fixture.instance(["product": "payments", "env": "prod",
+                                         "team": "platform"])
+        instance.cores = 2
+        instance.threadsPerCore = 2
+        instance.lifecycle = "spot"
+        instance.privateDNS = "ip-10-0-0-1.internal"
+        instance.tags["aws:autoscaling:groupName"] = "payments-web"
+        let row = try firstRow(SearchEntry(instance: instance, alias: "web-1"))
+
+        XCTAssertEqual(row["type"] as? String, "t3.small")
+        XCTAssertEqual(row["launch_time"] as? String, "2026-08-20T15:46:42.000Z")
+        XCTAssertEqual(row["asg"] as? String, "payments-web")
+        XCTAssertEqual(row["lifecycle"] as? String, "spot")
+        XCTAssertEqual(row["private_dns"] as? String, "ip-10-0-0-1.internal")
+    }
+
+    /// A number, so a reader filtering on size does not parse a string first.
+    func testVCPUsIsANumber() throws {
+        var instance = Fixture.instance([:])
+        instance.cores = 4
+        instance.threadsPerCore = 2
+        let row = try firstRow(SearchEntry(instance: instance, alias: "web-1"))
+        XCTAssertEqual(row["vcpus"] as? Int, 8)
+    }
+
+    /// Absent rather than zero: a response that did not say how the cores are
+    /// laid out is not a host with none.
+    func testVCPUsIsAbsentWhenUnknown() throws {
+        let row = try firstRow(entry("web-1"))
+        XCTAssertNil(row["vcpus"])
+    }
+
+    /// The tag map, so "everything in the payments ASG" and "the m5.large ones"
+    /// are answerable from the document. It is the map after the mapping resolved
+    /// it, which is the same map `-f` filters against.
+    func testTagsAreNestedWhole() throws {
+        let row = try firstRow(entry("web-1"))
+        let tags = try XCTUnwrap(row["tags"] as? [String: String])
+        XCTAssertEqual(tags["product"], "payments")
+        XCTAssertEqual(tags["Name"], "web")
+    }
+
+    /// A tag the mapping has no candidate for is passed through untouched, which
+    /// is what makes filtering on a fleet's own vocabulary possible.
+    func testATagTheMappingDoesNotKnowSurvives() throws {
+        var instance = Fixture.instance(["product": "payments", "team": "platform"])
+        instance.tags["cost-centre"] = "4021"
+        let row = try firstRow(SearchEntry(instance: instance, alias: "web-1"))
+        let tags = try XCTUnwrap(row["tags"] as? [String: String])
+        XCTAssertEqual(tags["team"], "platform")
+        XCTAssertEqual(tags["cost-centre"], "4021")
+    }
+
+    /// The document publishes every tag, but `-f` resolves nine key names rather
+    /// than looking them up, so a fleet with its own `Role` tag can see it here
+    /// and not be able to select on it. Pinned because the README promised
+    /// otherwise, and the promise was the thing that was wrong.
+    func testATagCanBeInTheDocumentAndNotSelectableByItsOwnKey() throws {
+        let instance = Fixture.instance(["Name": "web-1", "Role": "api-gateway"])
+        let row = try firstRow(SearchEntry(instance: instance, alias: "web-1"))
+        let tags = try XCTUnwrap(row["tags"] as? [String: String])
+        XCTAssertEqual(tags["Role"], "api-gateway")
+        // What -f would match on instead: the resolved role, from the Name tag.
+        XCTAssertEqual(instance.tagValue(for: "Role"), "web-1")
+        XCTAssertEqual(instance.tagValue(for: "role"), "web-1")
+    }
+
+    /// A tag value is written by anyone who can tag the account. It has to come
+    /// back as one string rather than breaking the document.
+    func testAnAwkwardTagValueSurvivesEncoding() throws {
+        var instance = Fixture.instance(["product": "payments"])
+        instance.tags["note"] = "quote \" backslash \\ newline \n done"
+        let row = try firstRow(SearchEntry(instance: instance, alias: "web-1"))
+        let tags = try XCTUnwrap(row["tags"] as? [String: String])
+        XCTAssertEqual(tags["note"], "quote \" backslash \\ newline \n done")
+    }
+
+    /// Parses what `json` produced, which is what a reader downstream actually
+    /// gets, rather than trusting the dictionary that went in.
+    private func firstRow(_ entry: SearchEntry) throws -> [String: Any] {
+        let text = try XCTUnwrap(FleetOutput.json([entry]))
+        let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8))
+        return try XCTUnwrap((parsed as? [[String: Any]])?.first)
+    }
+
     // MARK: - Dispatch
 
     func testRenderedPicksTheShapeTheCommandAskedFor() {
