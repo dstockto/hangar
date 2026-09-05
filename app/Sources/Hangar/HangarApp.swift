@@ -77,6 +77,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Notifier.show(title: "Using the ssh key from your agent",
                               body: adopted, seconds: 5)
             }
+            // Every launch, not only the first: a feature only the setup window
+            // could reach is one every upgrade misses. Mistake 25.
+            if let at = CommandLineTool.installIfUnclaimed() {
+                Notifier.show(title: "hangar is on your PATH",
+                              body: "\(at)  ·  try hangar -s \"web prod\"", seconds: 5)
+            }
             // After the key, because the probe should use it.
             if let login = await store.learnLoginIfUnset() {
                 Notifier.show(title: "Learned your ssh login",

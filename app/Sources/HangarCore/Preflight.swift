@@ -33,6 +33,10 @@ public struct Preflight: Sendable {
         /// Bring the agent's own app forward so the user can unlock it.
         case openApp(bundleID: String, name: String)
         case importHostsFile
+        /// Put `hangar` on the user's PATH.
+        case installCommandLine
+        /// Nothing on PATH is writable, so the user runs one line themselves.
+        case copyCommand(String)
     }
 
     public var checks: [Check]
@@ -259,6 +263,56 @@ public struct Preflight: Sendable {
     static func clipped(_ problem: String, limit: Int = 64) -> String {
         guard problem.count > limit else { return problem }
         return String(problem.prefix(limit - 1)) + "\u{2026}"
+    }
+
+    /// The `hangar` command, and whether the shell can find it.
+    ///
+    /// Reported rather than assumed: the tool ships inside the bundle, where
+    /// nobody would look, so an install that quietly did not happen would leave
+    /// "command not found" as the only evidence.
+    public static func commandLineCheck(_ state: CommandLineInstall.State,
+                                        toolPath: String?) -> Check {
+        guard toolPath != nil else {
+            return Check(id: "cli", title: "No command line tool in this build",
+                         detail: "Reinstall Hangar from a release DMG to get the "
+                            + "hangar command.",
+                         level: .warning)
+        }
+        switch state {
+        case .installed(let link):
+            return Check(
+                id: "cli", title: "hangar is on your PATH",
+                detail: "\(link) runs the same search the panel does. "
+                    + "Try hangar -s \"web prod\".",
+                level: .ok)
+        case .broken(let link):
+            return Check(
+                id: "cli", title: "hangar points at a copy that is gone",
+                detail: "\(link) is a link Hangar wrote to an app that has moved or "
+                    + "been deleted. Installing again points it here.",
+                level: .warning, remedy: .installCommandLine)
+        case .claimed(let link):
+            return Check(
+                id: "cli", title: "Something else is called hangar",
+                detail: "\(link) is not Hangar's, so it was left alone. Rename or "
+                    + "remove it if you want this one on your PATH.",
+                level: .warning)
+        case .absent(let destination):
+            guard let destination else {
+                return Check(
+                    id: "cli", title: "hangar is not on your PATH",
+                    detail: "No directory on your PATH can be written without sudo, "
+                        + "so this one is yours to run.",
+                    level: .warning,
+                    remedy: .copyCommand(
+                        CommandLineInstall.manualCommand(tool: toolPath ?? "")))
+            }
+            return Check(
+                id: "cli", title: "hangar is not on your PATH yet",
+                detail: "The command ships inside the app. Hangar can link it into "
+                    + "\(destination), which is already on your PATH.",
+                level: .warning, remedy: .installCommandLine)
+        }
     }
 
     /// The terminal Hangar will hand sessions to, and what else it could use.

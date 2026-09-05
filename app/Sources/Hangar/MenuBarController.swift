@@ -402,10 +402,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         submenu.addItem(status("~/.hangar/config.json"))
         // The command line tool ships inside the bundle, where nobody would think
         // to look. Copying the one line that puts it on PATH is the whole feature.
-        submenu.addItem(action("Copy Command Line Install", #selector(copyCLIInstall),
-                               key: ""))
-        submenu.addItem(statusRow([.text("then "), .mono("hangar -s web prod")],
-                                  tier: .faint))
+        submenu.addItem(commandLineItem())
         submenu.addItem(action("Reveal Log in Finder", #selector(revealLog), key: ""))
         submenu.addItem(status("~/.hangar/logs/hangar.log"))
 
@@ -822,19 +819,41 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         Task { @MainActor in await store.refresh() }
     }
 
-    /// The symlink that puts `hangar` on PATH, for this copy of the app wherever
-    /// it happens to be installed. Copied rather than run: /usr/local/bin belongs
-    /// to root on a Mac without Homebrew, and an app that silently needed sudo
-    /// would fail in a way nobody could read.
-    @objc private func copyCLIInstall() {
-        guard let tool = CommandLineTool.path else {
-            Notifier.show(title: "No command line tool in this build",
-                          body: "Reinstall Hangar from a release DMG.", seconds: 4)
-            return
+    /// The `hangar` command: where it is, or an action to put it there. Hangar
+    /// installs it into a directory the user already owns on their PATH, so the
+    /// common case is a status line rather than a chore.
+    private func commandLineItem() -> NSMenuItem {
+        switch CommandLineTool.state() {
+        case .installed(let link):
+            let row = statusRow([.mono("hangar"), .text(" at "), .mono(link)],
+                                tier: .faint)
+            row.image = Brand.Glyph.symbol("terminal", size: 12)
+            return row
+        case .claimed(let link):
+            return statusRow([.text("another "), .mono("hangar"), .text(" is at "),
+                              .mono(link)], tier: .faint)
+        case .broken, .absent:
+            let item = action("Install \u{2018}hangar\u{2019} Command",
+                              #selector(installCommandLine), key: "")
+            item.image = Brand.Glyph.symbol("terminal", size: 13)
+            return item
         }
-        let command = "ln -sfn \(Shell.quoted(tool)) /usr/local/bin/hangar"
-        Launcher.copyToClipboard(command)
-        Notifier.show(title: "Copied", body: command, seconds: 5)
+    }
+
+    @objc private func installCommandLine() {
+        switch CommandLineTool.install() {
+        case .linked(let at):
+            Notifier.show(title: "hangar installed",
+                          body: "\(at)  \u{00B7}  try hangar -s \"web prod\"", seconds: 5)
+        case .needsCommand(let command):
+            // /usr/local/bin belongs to root on a stock Mac. Copying the line the
+            // user runs beats an app that silently needed sudo.
+            Launcher.copyToClipboard(command)
+            Notifier.show(title: "Nothing on your PATH is writable",
+                          body: "Copied: \(command)", seconds: 6)
+        case .failed(let problem):
+            Notifier.show(title: "Could not install hangar", body: problem, seconds: 5)
+        }
     }
 
     @objc private func copyLoginCommand() {

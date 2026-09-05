@@ -528,10 +528,11 @@ Host payments-prod-web-1
 
         <article class="feature">
           <h3>The same fleet in your shell</h3>
-          <p>A <code>hangar</code> command ships inside the app, so tmux, fzf and
-             anything else that runs a program reach the hosts the panel shows. It
-             reads the cache Hangar already refreshed: no AWS call, no credential,
-             no network.</p>
+          <p>A <code>hangar</code> command ships inside the app and installs
+             itself onto your PATH, so tmux, fzf and anything else that runs a
+             program reach the hosts the panel shows. It reads the cache Hangar
+             already refreshed: no AWS call, no credential, no network, and no
+             sudo.</p>
           <div class="demo"><span class="c">$</span> hangar -s "web prod"
 payments-prod-web-1   payments·prod   web-1.prod.example.com
 payments-prod-web-2   payments·prod   web-2.prod.example.com

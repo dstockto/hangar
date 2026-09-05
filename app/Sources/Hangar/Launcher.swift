@@ -134,7 +134,8 @@ enum Launcher {
     }
 }
 
-/// The `hangar` command line tool that ships inside the app bundle.
+/// The `hangar` command line tool that ships inside the app bundle, and the
+/// symlink that puts it on the user's PATH.
 ///
 /// It lives in Contents/Helpers rather than Contents/MacOS because macOS
 /// filesystems are case insensitive and the app's own executable is `Hangar`.
@@ -144,5 +145,96 @@ enum CommandLineTool {
             .appendingPathComponent("Contents/Helpers/hangar")
         return FileManager.default.isExecutableFile(atPath: candidate.path)
             ? candidate.path : nil
+    }
+
+    /// Running from the mounted DMG. Linking to a volume that is about to be
+    /// ejected would leave a dangling command behind on every download.
+    static var isRunningFromDiskImage: Bool {
+        Bundle.main.bundlePath.hasPrefix("/Volumes/")
+    }
+
+    /// Where the shell would find `hangar` today, and whether it is ours.
+    static func state() -> CommandLineInstall.State {
+        let fm = FileManager.default
+        let onPath = CommandLineInstall.searchPath()
+        for directory in onPath {
+            let link = (directory as NSString)
+                .appendingPathComponent(CommandLineInstall.commandName)
+            guard fm.fileExists(atPath: link) || isSymlink(link) else { continue }
+            guard let destination = try? fm.destinationOfSymbolicLink(atPath: link),
+                  destination.contains("/Contents/Helpers/") else {
+                return .claimed(link: link)
+            }
+            if !fm.isExecutableFile(atPath: destination) { return .broken(link: link) }
+            return .installed(link: link)
+        }
+        let writable = Set(CommandLineInstall.preferred.filter {
+            fm.isWritableFile(atPath: $0)
+        })
+        return .absent(destination: CommandLineInstall.destination(onPath: onPath,
+                                                                  writable: writable))
+    }
+
+    /// A dangling symlink is not a file, so `fileExists` says no while the name
+    /// is very much taken.
+    private static func isSymlink(_ path: String) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.type]) as? FileAttributeType
+            == .typeSymbolicLink
+    }
+
+    enum Outcome: Equatable {
+        case linked(String)
+        case failed(String)
+        /// Nowhere on PATH is writable, so the user runs one line themselves.
+        case needsCommand(String)
+    }
+
+    /// Installs, or replaces a link of ours that points at a bundle that has
+    /// gone. Never touches a `hangar` somebody else put on the PATH.
+    @discardableResult
+    static func install() -> Outcome {
+        guard let tool = path else {
+            return .failed("This build carries no command line tool.")
+        }
+        let fm = FileManager.default
+        switch state() {
+        case .installed(let link):
+            return .linked(link)
+        case .claimed(let link):
+            return .failed("\(link) is already something else; Hangar left it alone.")
+        case .broken(let existing):
+            try? fm.removeItem(atPath: existing)
+            return symlink(tool, to: existing)
+        case .absent(let destination):
+            guard let destination else {
+                return .needsCommand(CommandLineInstall.manualCommand(tool: tool))
+            }
+            return symlink(tool, to: (destination as NSString)
+                .appendingPathComponent(CommandLineInstall.commandName))
+        }
+    }
+
+    private static func symlink(_ tool: String, to link: String) -> Outcome {
+        do {
+            try FileManager.default.createSymbolicLink(atPath: link,
+                                                       withDestinationPath: tool)
+            Log.info(.app, "command line tool linked", ["at": link])
+            return .linked(link)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// The automatic case: nothing named `hangar` on the PATH yet, a writable
+    /// directory to put it in, and an app that is not running from a disk image.
+    /// Anything else waits to be asked, the way adopting an agent key does.
+    @discardableResult
+    static func installIfUnclaimed() -> String? {
+        guard !isRunningFromDiskImage, path != nil else { return nil }
+        guard case .absent(let destination) = state(), destination != nil else {
+            return nil
+        }
+        if case .linked(let at) = install() { return at }
+        return nil
     }
 }

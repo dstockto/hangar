@@ -743,13 +743,19 @@ survive it.
 ## Command line
 
 The same fleet, for tmux, fzf, herder, or anything else that can run a program.
-`hangar` ships inside the app at `Contents/Helpers/hangar`; one symlink puts it
-on your PATH, and **Settings… → Copy Command Line Install** copies the line for
-wherever you installed Hangar.
 
-```sh
-ln -sfn /Applications/Hangar.app/Contents/Helpers/hangar /usr/local/bin/hangar
-```
+`hangar` ships inside the app at `Contents/Helpers/hangar` and **installs itself**:
+on launch, if nothing on your PATH is called `hangar` already, Hangar links it
+into the first directory you own that is on your PATH, preferring
+`~/.local/bin`, then the Homebrew prefix, then `~/bin`. Setup Check reports where
+it went, and offers the install if it has not happened. `/usr/local/bin` is last
+on that list on purpose: it belongs to root on a stock Mac, so reaching for it
+first turns a one-second install into a sudo prompt.
+
+A `hangar` that Hangar did not write is never overwritten. It is far more likely
+to be something you put there deliberately, so it is reported and left alone.
+When nothing on your PATH can be written, Setup Check hands you the one line to
+run yourself.
 
 ```
 hangar                     every host, in the order the menu lists them

@@ -44,6 +44,20 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     /// where it was last left rather than in the middle of whatever is there.
     private static let frameName = "HangarSetupWindow"
 
+    /// The checks read as a grid rather than a column of full-width bars: ten of
+    /// them stacked one per row made a window taller than most screens, and every
+    /// card was three quarters empty space.
+    private static let checkColumns = 2
+    /// Content width, and what the cards inside it get. Named once because the
+    /// wrapping labels are laid out against these numbers rather than measured:
+    /// a label with no explicit wrap width lays out as one long line.
+    private static let contentWidth: CGFloat = 860
+    private static let cardTextWidth: CGFloat = 760
+    /// One check card: the content width, less the insets, split in two, less the
+    /// badge and the padding inside the card.
+    private static let checkTextWidth: CGFloat =
+        (contentWidth - Brand.Metric.space32 - Brand.Metric.space8) / 2 - 90
+
     init(store: FleetStore,
          hotkeyProblem: @escaping () -> String?,
          hotkeyCombination: @escaping () -> String,
@@ -60,7 +74,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     private func build() {
         let window = HangarWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 580),
+            contentRect: NSRect(x: 0, y: 0, width: SetupWindow.contentWidth, height: 620),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered, defer: false)
         window.title = "Hangar Setup"
@@ -251,13 +265,18 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         let buttonRow = NSStackView(views: [NSView(), rightButtons])
         buttonRow.orientation = .horizontal
 
-        let toggles = NSStackView(views: [syncToggle, loginToggle])
-        toggles.orientation = .horizontal
-        toggles.spacing = Brand.Metric.space24
-
         let updateRow = NSStackView(views: [updateToggle, channelPopup])
         updateRow.orientation = .horizontal
+        updateRow.alignment = .centerY
         updateRow.spacing = Brand.Metric.space8
+
+        // Spread across the width rather than stacked in the left third. At 860
+        // points a column of four controls left two thirds of the footer empty.
+        let toggles = NSStackView(views: [syncToggle, loginToggle, updateRow])
+        toggles.orientation = .horizontal
+        toggles.alignment = .centerY
+        toggles.distribution = .equalSpacing
+        toggles.spacing = Brand.Metric.space24
 
         let terminalLabel = NSTextField(labelWithString: "Open sessions in")
         terminalLabel.font = Brand.Font.metadata
@@ -304,8 +323,12 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             container.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
         ])
 
-        let footer = NSStackView(views: [toggles, updateRow, terminalRow,
-                                         closeHint, buttonRow])
+        let sessionRow = NSStackView(views: [terminalRow, NSView(), closeHint])
+        sessionRow.orientation = .horizontal
+        sessionRow.alignment = .centerY
+        sessionRow.spacing = Brand.Metric.space16
+
+        let footer = NSStackView(views: [toggles, sessionRow, buttonRow])
         footer.orientation = .vertical
         footer.alignment = .leading
         footer.spacing = Brand.Metric.space12
@@ -357,12 +380,16 @@ final class SetupWindow: NSObject, NSWindowDelegate {
                                               constant: -Brand.Metric.space32),
             buttonRow.widthAnchor.constraint(equalTo: footer.widthAnchor,
                                              constant: -Brand.Metric.space32),
+            toggles.widthAnchor.constraint(equalTo: footer.widthAnchor,
+                                           constant: -Brand.Metric.space32),
+            sessionRow.widthAnchor.constraint(equalTo: footer.widthAnchor,
+                                              constant: -Brand.Metric.space32),
         ])
 
         window.contentView = content
         // Resizable vertically only: the wrapping labels are laid out for this width.
-        window.contentMinSize = NSSize(width: 600, height: 360)
-        window.contentMaxSize = NSSize(width: 600, height: 20_000)
+        window.contentMinSize = NSSize(width: SetupWindow.contentWidth, height: 360)
+        window.contentMaxSize = NSSize(width: SetupWindow.contentWidth, height: 20_000)
         // Reopen where it was left. Centring every time moved the window out from
         // under whoever had put it somewhere deliberate.
         if !window.setFrameUsingName(Self.frameName) { window.center() }
@@ -429,7 +456,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         ("Hosts and tags", "Indexing what came back."),
         ("SSH key", "Looking for an agent holding it, then in ~/.ssh."),
         ("SSH aliases", "Looking for Hangar's include in ~/.ssh/config."),
-        ("Terminal", "Looking for iTerm2 and Terminal."),
+        ("Terminal", "Looking for iTerm2, Terminal and Ghostty."),
+        ("Command line", "Looking for hangar on your PATH."),
         ("Shortcut", "Checking the shortcut is free."),
     ]
 
@@ -487,6 +515,13 @@ final class SetupWindow: NSObject, NSWindowDelegate {
                                               installed: Launcher.installed))
         renderProgress(checks)
 
+        // Installed before it is reported, so the row says what is true now
+        // rather than offering a button for something Hangar could have done.
+        installCommandLineIfUnclaimed()
+        checks.append(Preflight.commandLineCheck(CommandLineTool.state(),
+                                                 toolPath: CommandLineTool.path))
+        renderProgress(checks)
+
         checks.append(Preflight.hotkeyCheck(problem: hotkeyProblem(),
                                             combination: hotkeyCombination()))
 
@@ -513,6 +548,15 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         fitToScreen()
         recheckButton.isEnabled = true
         running = false
+    }
+
+    /// Puts `hangar` on the PATH when the name is free and a directory the user
+    /// owns is on it. The same shape as adopting the only ssh key: an answer with
+    /// no alternative is not a question worth asking, and anything else waits.
+    private func installCommandLineIfUnclaimed() {
+        guard let at = CommandLineTool.installIfUnclaimed() else { return }
+        Notifier.show(title: "hangar is on your PATH",
+                      body: "\(at)  ·  try hangar -s \"web prod\"", seconds: 5)
     }
 
     /// Adopts the only key there is.
@@ -545,7 +589,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             + "A source that finds nothing costs nothing, so they are all on.")
         subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = Brand.Color.textSecondary
-        subtitle.preferredMaxLayoutWidth = 520
+        subtitle.preferredMaxLayoutWidth = SetupWindow.cardTextWidth
         sourcesStack.addView(subtitle, in: .top)
 
         let grid = NSGridView()
@@ -574,6 +618,10 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
             grid.addRow(with: [toggle, count, detail])
         }
+        // Hugs its content rather than stretching: a grid with no opinion about
+        // its width spreads three short columns across the whole card, and the
+        // requirement ends up an inch from the count it belongs to.
+        grid.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         sourcesStack.addView(grid, in: .top)
 
         let importRow = NSStackView(views: [
@@ -636,7 +684,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             + "aws CLI. Picking one re-checks immediately.")
         note.font = .systemFont(ofSize: 10)
         note.textColor = Brand.Color.textSecondary
-        note.preferredMaxLayoutWidth = 520
+        note.preferredMaxLayoutWidth = SetupWindow.cardTextWidth
         sourcesStack.addView(note, in: .top)
     }
 
@@ -708,7 +756,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             + "offer instead of trying every key in the vault.")
         note.font = .systemFont(ofSize: 10)
         note.textColor = Brand.Color.textSecondary
-        note.preferredMaxLayoutWidth = 520
+        note.preferredMaxLayoutWidth = SetupWindow.cardTextWidth
         sourcesStack.addView(note, in: .top)
     }
 
@@ -825,7 +873,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             + "hosts. Point each one at the tag you use; it takes effect immediately.")
         subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = Brand.Color.textSecondary
-        subtitle.preferredMaxLayoutWidth = 520
+        subtitle.preferredMaxLayoutWidth = SetupWindow.cardTextWidth
         tagsStack.addView(subtitle, in: .top)
 
         let grid = NSGridView()
@@ -913,7 +961,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
               + ". One level is enough; remove any you do not want.")
         summary.font = .systemFont(ofSize: 11)
         summary.textColor = Brand.Color.textSecondary
-        summary.preferredMaxLayoutWidth = 520
+        summary.preferredMaxLayoutWidth = SetupWindow.cardTextWidth
         levelsStack.addView(summary, in: .top)
 
         // What each level does where it actually sits. A key is not good or bad
@@ -1026,17 +1074,38 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     /// the waiting ones, so the window looks like it is discovering rather than
     /// hung, and the list never jumps: every step has a card from the first frame.
     private func renderProgress(_ done: [Preflight.Check]) {
-        checksStack.subviews.forEach { $0.removeFromSuperview() }
-        for check in done { add(row(for: check)) }
+        var cards = done.map { row(for: $0) }
         for (offset, step) in SetupWindow.plan.dropFirst(done.count).enumerated() {
-            add(pendingRow(title: step.title, detail: step.detail,
-                           active: offset == 0, delay: Double(offset) * 0.14))
+            cards.append(pendingRow(title: step.title, detail: step.detail,
+                                    active: offset == 0, delay: Double(offset) * 0.14))
         }
+        layout(cards)
     }
 
-    private func add(_ card: NSView) {
-        checksStack.addView(card, in: .top)
-        card.widthAnchor.constraint(equalTo: checksStack.widthAnchor).isActive = true
+    /// The cards in rows and columns.
+    ///
+    /// Cards in a row are given the same width and the same height, so a long
+    /// detail on the left does not leave the card beside it floating with a
+    /// ragged edge between them. A last odd card takes the full width, which
+    /// reads as deliberate rather than as a gap.
+    private func layout(_ cards: [NSView]) {
+        checksStack.subviews.forEach { $0.removeFromSuperview() }
+        let columns = SetupWindow.checkColumns
+        var index = 0
+        while index < cards.count {
+            let slice = Array(cards[index..<min(index + columns, cards.count)])
+            let row = NSStackView(views: slice)
+            row.orientation = .horizontal
+            row.alignment = .top
+            row.distribution = .fillEqually
+            row.spacing = Brand.Metric.space8
+            checksStack.addView(row, in: .top)
+            row.widthAnchor.constraint(equalTo: checksStack.widthAnchor).isActive = true
+            for card in slice.dropFirst() {
+                card.heightAnchor.constraint(equalTo: slice[0].heightAnchor).isActive = true
+            }
+            index += columns
+        }
     }
 
     /// A step that has not answered yet. Same geometry as a finished card, so
@@ -1087,7 +1156,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         detailField.font = .systemFont(ofSize: 11, weight: .regular)
         detailField.textColor = Brand.Color.textSecondary
         detailField.maximumNumberOfLines = 2
-        detailField.preferredMaxLayoutWidth = 380
+        detailField.preferredMaxLayoutWidth = SetupWindow.checkTextWidth
 
         let text = NSStackView(views: [titleField, detailField])
         text.orientation = .vertical
@@ -1142,12 +1211,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     }
 
     private func render(_ checks: [Preflight.Check]) {
-        checksStack.subviews.forEach { $0.removeFromSuperview() }
-        for check in checks {
-            let card = row(for: check)
-            checksStack.addView(card, in: .top)
-            card.widthAnchor.constraint(equalTo: checksStack.widthAnchor).isActive = true
-        }
+        layout(checks.map { row(for: $0) })
     }
 
     /// One check as a card: status glyph, a status word, the title, the detail, and
@@ -1196,21 +1260,22 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         detail.maximumNumberOfLines = 3
         // A wrapping label needs an explicit wrap width or it lays out as one long
         // line and the row silently grows past the window.
-        detail.preferredMaxLayoutWidth = 380
+        detail.preferredMaxLayoutWidth = SetupWindow.checkTextWidth
 
         let text = NSStackView(views: [title, detail])
         text.orientation = .vertical
         text.alignment = .leading
         text.spacing = 2
 
-        var views: [NSView] = [badge, text]
+        // The fix sits under the text rather than beside it. Beside it worked at
+        // one card per row and squeezes the detail to nothing in a column.
         if let remedy = check.remedy, let button = remedyButton(remedy) {
-            views.append(NSView())
-            views.append(button)
+            text.addArrangedSubview(button)
+            text.setCustomSpacing(Brand.Metric.space8, after: detail)
         }
-        let content = NSStackView(views: views)
+        let content = NSStackView(views: [badge, text])
         content.orientation = .horizontal
-        content.alignment = .centerY
+        content.alignment = .top
         content.spacing = Brand.Metric.space12
         content.translatesAutoresizingMaskIntoConstraints = false
 
@@ -1247,6 +1312,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         case .copyLoginCommand:  title = "Copy Login Command"
         case .openApp(_, let name): title = "Open \(name)"
         case .importHostsFile:   title = "Import Hosts CSV\u{2026}"
+        case .installCommandLine: title = "Install hangar"
+        case .copyCommand:       title = "Copy Command"
         }
         let button = NSButton(title: title, target: self, action: #selector(applyRemedy(_:)))
         button.bezelStyle = .rounded
@@ -1285,6 +1352,20 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         case .importHostsFile:
             chooseHostsFile()
             return
+        case .installCommandLine:
+            switch CommandLineTool.install() {
+            case .linked(let at):
+                Notifier.show(title: "hangar installed", body: at, seconds: 4)
+            case .needsCommand(let command):
+                Launcher.copyToClipboard(command)
+                Notifier.show(title: "Copied", body: command, seconds: 5)
+            case .failed(let problem):
+                Notifier.show(title: "Could not install hangar",
+                              body: problem, seconds: 4)
+            }
+        case .copyCommand(let command):
+            Launcher.copyToClipboard(command)
+            Notifier.show(title: "Copied", body: command, seconds: 5)
         }
         Task { await runChecks() }
     }
