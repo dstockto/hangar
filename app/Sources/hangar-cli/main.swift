@@ -91,7 +91,12 @@ func stderrLine(_ text: String) {
 /// The version of the app this binary shipped inside, read from the bundle it
 /// sits in rather than repeated here, so it cannot drift from Info.plist.
 func version() -> String {
-    let executable = URL(fileURLWithPath: CommandLine.arguments[0])
+    // Bundle.main.executablePath, not argv[0]: a shell that found this on the
+    // PATH passes the bare command name, and a path relative to the working
+    // directory resolves to nothing, which reported every install as a
+    // development build.
+    let executable = URL(fileURLWithPath: Bundle.main.executablePath
+                            ?? CommandLine.arguments[0])
         .resolvingSymlinksInPath()
     let plist = executable
         .deletingLastPathComponent()      // Helpers
