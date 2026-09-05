@@ -182,6 +182,7 @@ public enum SSHCommand {
         /// A tag, a hand-edited config value, or a user's own path.
         case value(String)
 
+        /// The argument as `ssh` receives it, unquoted, for an argument vector.
         public var text: String {
             switch self {
             case .literal(let text), .value(let text): return text
@@ -244,6 +245,13 @@ public enum SSHCommand {
 /// supplies a string and gets back an index or nothing, and nothing always means
 /// connect to no one.
 public enum Chooser {
+    /// The index the answer names, or nil for every other answer.
+    ///
+    /// One-based on the way in, because a person types what the list showed and
+    /// `FleetOutput.numbered` labels from one. Zero-based on the way out,
+    /// because the caller indexes an array. That conversion is the one place an
+    /// off-by-one opens a session on the wrong host, so it lives here with a
+    /// test against the labels rather than at the call site.
     public static func choice(_ input: String?, count: Int) -> Int? {
         guard count > 0 else { return nil }
         // EOF, an empty line, or anything that is not one of the numbers offered.
@@ -252,5 +260,31 @@ public enum Chooser {
         guard let text = input?.trimmingCharacters(in: .whitespaces), !text.isEmpty,
               let number = Int(text), number >= 1, number <= count else { return nil }
         return number - 1
+    }
+}
+
+/// What to do when a query matched some number of hosts.
+///
+/// Here rather than in `main.swift` for the reason `Chooser` is: the executable
+/// target is not reachable from the suite, and this is the rule that decides
+/// whether a command opens a session on a host nobody named.
+public enum ConnectDecision: Equatable, Sendable {
+    /// Exactly one candidate, or the caller said to take the best one.
+    case connect(index: Int)
+    /// Several, and there is somebody to ask.
+    case ask
+    /// Several, and nobody to ask. The caller has to be specific.
+    case tooMany(hosts: Int)
+    /// Nothing matched.
+    case none
+
+    /// `canAsk` is both halves of a conversation: something to read the question
+    /// and something to answer it. Asking on a stream nobody is reading leaves a
+    /// command blocked on a prompt that was never seen.
+    public static func decide(matches: Int, takeFirst: Bool,
+                              canAsk: Bool) -> ConnectDecision {
+        guard matches > 0 else { return .none }
+        if matches == 1 || takeFirst { return .connect(index: 0) }
+        return canAsk ? .ask : .tooMany(hosts: matches)
     }
 }

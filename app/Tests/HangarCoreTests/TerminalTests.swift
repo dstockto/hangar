@@ -73,3 +73,22 @@ final class TerminalTests: XCTestCase {
         }
     }
 }
+
+/// stderr, which is where a chooser writes. stdout may be a pipe while a person
+/// is still sitting there to answer.
+final class StandardErrorTerminalTests: XCTestCase {
+
+    private func stderrTerminal(fd2: Bool, env: [String: String] = [:]) -> Terminal {
+        Terminal.standardError(isatty: { $0 == 2 ? fd2 : false }, environment: env)
+    }
+
+    func testItAsksAboutDescriptorTwo() {
+        XCTAssertTrue(stderrTerminal(fd2: true).isInteractive)
+        XCTAssertFalse(stderrTerminal(fd2: false).isInteractive)
+    }
+
+    func testItHonoursTheSameColourSuppression() {
+        XCTAssertFalse(stderrTerminal(fd2: true, env: ["NO_COLOR": "1"]).isColoured)
+        XCTAssertTrue(stderrTerminal(fd2: true, env: ["NO_COLOR": ""]).isColoured)
+    }
+}

@@ -242,6 +242,11 @@ public enum FleetOutput {
     ///
     /// Numbered from one because the answer is typed by a person, and every
     /// other list a person is asked to pick from starts there.
+    ///
+    /// Every tag-derived field goes through `display` first. This is the one
+    /// place a person reads a row and then types a number that acts on it, so a
+    /// tag that can redraw the row decides which host gets the session. 0.6.1
+    /// printed these bytes too, and nothing branched on the answer.
     public static func numbered(_ entries: [SearchEntry], terminal: Terminal) -> String {
         let width = String(entries.count).count
         let aliasWidth = min(entries.map(\.alias.count).max() ?? 0, 44)
@@ -249,9 +254,11 @@ public enum FleetOutput {
         return joined(entries.enumerated().map { index, entry in
             let number = terminal.styled(String(index + 1).leftPadded(to: width + 2),
                                          .heading)
-            let state = entry.instance.state == "running" ? "" : "  " + entry.instance.state
-            return "\(number)  \(pad(entry.alias, to: aliasWidth))  "
-                + "\(pad(group(entry), to: groupWidth))  \(entry.hostname)\(state)"
+            let state = entry.instance.state == "running"
+                ? "" : "  " + display(entry.instance.state)
+            return "\(number)  \(pad(display(entry.alias), to: aliasWidth))  "
+                + "\(pad(display(group(entry)), to: groupWidth))  "
+                + display(entry.hostname) + state
         })
     }
 

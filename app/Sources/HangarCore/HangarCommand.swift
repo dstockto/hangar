@@ -150,8 +150,14 @@ public struct HangarCommand: Equatable, Sendable {
             }
         }
         switch verb {
-        case .list, .ssh:
+        case .list:
             return nil
+        case .ssh:
+            // Without either, every host matches and --first opens a session on
+            // whatever sorts first. "The best match" needs a match.
+            return query.isEmpty && filters.isEmpty
+                ? "ssh needs a query or a filter, as in 'hangar ssh web prod'"
+                : nil
         case .tags:
             return query.isEmpty ? nil
                 : "tags takes no arguments; did you mean 'hangar values \(query[0])'?"
@@ -172,6 +178,7 @@ public struct HangarCommand: Equatable, Sendable {
         case .list:   return "list"
         case .tags:   return "tags"
         case .values: return "values"
+        case .ssh:    return "ssh"
         }
     }
 

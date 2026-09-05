@@ -785,10 +785,15 @@ hangar ssh web --dry-run     print the command, run nothing
 ```
 
 One match connects. Several, and it asks: the matches are numbered on stderr and
-you type one, or press Return to cancel. Several with nothing to ask, because
-stdout or stdin is not a terminal, exits **3** and lists them rather than picking
-one for you. That is the case a script or an agent hits, and having a host chosen
-for it is exactly what `| head -1` was quietly doing.
+you type one, or press Return to cancel. Several with nobody to ask, because
+stdin has no terminal or stderr is not one either, exits **3** and lists them
+rather than picking one for you. That is the case a script or an agent hits, and
+having a host chosen for it is exactly what `| head -1` was quietly doing. Both
+halves have to be there: the question goes to stderr, so
+`hangar ssh web 2>/dev/null` would otherwise block on a prompt you could not see.
+
+`hangar ssh` needs a query or a filter. Without either every host matches, and
+`--first` would open a session on whatever sorts first.
 
 `hangar ssh` replaces itself with `ssh`, so the session owns the terminal, your
 signals reach it, and its exit status is the command's.

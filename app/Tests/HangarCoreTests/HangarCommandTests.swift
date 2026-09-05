@@ -220,6 +220,46 @@ final class HangarCommandTests: XCTestCase {
         XCTAssertTrue(HangarCommand.parse(["values", "--help"]).help)
     }
 
+    // MARK: - Connecting
+
+    func testSshIsAVerbAndTakesAQuery() {
+        let command = HangarCommand.parse(["ssh", "web", "prod"])
+        XCTAssertEqual(command.verb, .ssh)
+        XCTAssertEqual(command.searchText, "web prod")
+        XCTAssertNil(command.problem)
+    }
+
+    func testFirstAndDryRunAreFlags() {
+        XCTAssertTrue(HangarCommand.parse(["ssh", "web", "-1"]).first)
+        XCTAssertTrue(HangarCommand.parse(["ssh", "web", "--first"]).first)
+        XCTAssertTrue(HangarCommand.parse(["ssh", "web", "--dry-run"]).dryRun)
+        XCTAssertFalse(HangarCommand.parse(["ssh", "web"]).first)
+        XCTAssertFalse(HangarCommand.parse(["ssh", "web"]).dryRun)
+    }
+
+    /// `-1` starts with a hyphen and would otherwise be reported as a typo.
+    func testDashOneIsAFlagNotAnUnknownOption() {
+        XCTAssertNil(HangarCommand.parse(["ssh", "web", "-1"]).problem)
+    }
+
+    /// Without a query or a filter every host matches, so --first would open a
+    /// session on whatever sorts first. "The best match" needs a match.
+    func testSshNeedsSomethingToMatchOn() {
+        XCTAssertEqual(HangarCommand.parse(["ssh"]).problem,
+                       "ssh needs a query or a filter, as in 'hangar ssh web prod'")
+        XCTAssertEqual(HangarCommand.parse(["ssh", "-1"]).problem,
+                       "ssh needs a query or a filter, as in 'hangar ssh web prod'")
+        XCTAssertNil(HangarCommand.parse(["ssh", "web"]).problem)
+        XCTAssertNil(HangarCommand.parse(["ssh", "-f", "env=prod"]).problem)
+    }
+
+    /// Narrowing an ssh selection is the point of it, so the counting-command
+    /// refusal must not reach here.
+    func testSshTakesFiltersAndLimits() {
+        XCTAssertNil(HangarCommand.parse(["ssh", "web", "-f", "env=prod"]).problem)
+        XCTAssertNil(HangarCommand.parse(["ssh", "web", "-n", "5"]).problem)
+    }
+
     func testValuesKeyIsOnlySetForThatCommand() {
         XCTAssertNil(HangarCommand.parse(["web"]).valuesKey)
         XCTAssertNil(HangarCommand.parse(["tags"]).valuesKey)
