@@ -86,6 +86,28 @@ public enum FleetOutput {
         }
     }
 
+    /// Why nothing came back, naming the set that was actually searched.
+    ///
+    /// Mistake 26: a number on screen has to name the set it counted. "The
+    /// cached fleet is empty" was said whenever the query was empty, so a filter
+    /// that matched nothing sent the reader off to refresh a fleet that was
+    /// already there and already full.
+    public static func nothingMatched(query: String, filters: Int,
+                                      fleetSize: Int) -> String {
+        guard fleetSize > 0 else { return "the cached fleet is empty." }
+        let clause = filters == 1 ? "that filter" : "those \(filters) filters"
+        guard !query.isEmpty else {
+            // A fleet with hosts in it cannot come back empty from no query and
+            // no filter, so say the true thing rather than count filters nobody
+            // passed.
+            return filters > 0
+                ? "no host matched \(clause), out of \(fleetSize)."
+                : "no host matched, out of \(fleetSize)."
+        }
+        let narrowed = filters > 0 ? " with \(clause)" : ""
+        return "nothing matched \"\(query)\"\(narrowed) in \(fleetSize) hosts."
+    }
+
     /// Nothing prints as nothing, not as a blank line.
     static func joined(_ lines: [String]) -> String {
         lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"

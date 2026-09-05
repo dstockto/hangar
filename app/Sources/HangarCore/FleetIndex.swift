@@ -62,8 +62,20 @@ public enum FleetIndex {
         return scored.map(\.0)
     }
 
+    /// Entries whose host satisfies every clause. Clauses AND, including two on
+    /// the same key, which the dictionary below cannot express because the
+    /// second value silently replaces the first.
+    public static func filtered(_ entries: [SearchEntry],
+                                by filters: [HostFilter]) -> [SearchEntry] {
+        guard !filters.isEmpty else { return entries }
+        return entries.filter { entry in
+            filters.allSatisfy { $0.matches(entry.instance) }
+        }
+    }
+
     /// Entries whose host satisfies a filter, e.g. `["env": "prod"]`. The same
-    /// wildcard rules the hotkey filters use.
+    /// wildcard rules the hotkey filters use. Kept for the hotkeys, whose filters
+    /// come from a config file written against exactly these rules.
     public static func filtered(_ entries: [SearchEntry],
                                 by filter: [String: String]?) -> [SearchEntry] {
         guard let filter, !filter.isEmpty else { return entries }

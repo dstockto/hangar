@@ -13,7 +13,7 @@ public struct HangarCommand: Equatable, Sendable {
     public var query: [String] = []
     public var format: Format = .columns
     public var limit: Int?
-    public var filters: [String: String] = [:]
+    public var filters: [HostFilter] = []
     public var cache: String?
     public var help = false
     public var version = false
@@ -60,12 +60,10 @@ public struct HangarCommand: Equatable, Sendable {
                 command.limit = count
             case "-f", "--filter":
                 guard let text = value(argument) else { break }
-                let parts = text.split(separator: "=", maxSplits: 1)
-                guard parts.count == 2, !parts[0].isEmpty else {
-                    command.problem = "--filter takes key=value, not '\(text)'"
-                    break
+                switch HostFilter.parse(text) {
+                case .filter(let filter): command.filters.append(filter)
+                case .problem(let problem): command.problem = problem
                 }
-                command.filters[String(parts[0])] = String(parts[1])
             case "--cache":
                 if let text = value(argument) { command.cache = text }
             case "-h", "--help":
