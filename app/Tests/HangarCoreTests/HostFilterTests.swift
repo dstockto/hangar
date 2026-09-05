@@ -69,6 +69,40 @@ final class HostFilterTests: XCTestCase {
                        .problem("--filter takes key=value or key!=value, not '!=prod'"))
     }
 
+    /// A stray comma left an empty alternative in the list, and an empty pattern
+    /// is the wildcard, so the clause quietly became true for every host and the
+    /// values either side of it said nothing. Silent and wrong is the worst of
+    /// the three outcomes, so it is reported.
+    func testAnEmptyAlternativeIsReported() {
+        for text in ["env=prod,", "env=,prod", "env=prod,,qa", "env=,"] {
+            guard case .problem(let problem) = HostFilter.parse(text) else {
+                return XCTFail("'\(text)' parsed as a filter")
+            }
+            XCTAssertTrue(problem.contains(text), problem)
+            XCTAssertTrue(problem.contains("every host"), problem)
+        }
+    }
+
+    func testAnEmptyAlternativeIsReportedWhenNegatedToo() {
+        guard case .problem = HostFilter.parse("env!=prod,") else {
+            return XCTFail("a negated clause kept its empty alternative")
+        }
+    }
+
+    /// The regression in one line: this used to list the whole fleet.
+    func testAStrayCommaCannotMatchEveryHost() {
+        let fleet = entries([host(["env": "prod"]), host(["env": "qa"]),
+                             host(["env": "stage"])])
+        guard case .filter(let good) = HostFilter.parse("env=prod") else {
+            return XCTFail("the well formed clause did not parse")
+        }
+        XCTAssertEqual(FleetIndex.filtered(fleet, by: [good]).count, 1)
+        // And the malformed one never reaches a filter at all.
+        guard case .problem = HostFilter.parse("env=prod,") else {
+            return XCTFail("the stray comma produced a filter")
+        }
+    }
+
     /// An empty value still parses, and still means "anything", which is what the
     /// wildcard rule has always done.
     func testEmptyValueKeepsItsOldMeaning() throws {

@@ -789,6 +789,10 @@ hangar -f 'owner=smith\, jane'        a backslash is a comma, not a separator
 Repeating `-f` narrows: every clause has to hold, including two on the same key,
 so `-f name='web*' -f name!='*canary*'` is the web hosts that are not canaries.
 
+A stray comma is an error rather than a filter. An empty value is the wildcard,
+so `-f env=prod,` would quietly match every host and the `prod` would count for
+nothing. Bare `-f env=` still means "any value", which is what it always meant.
+
 The key is any tag the host carries, plus the names Hangar resolves for you:
 `name`, `product`, `env`, `env_name`, `role`, `asg`, `state` and `id`. `state` is
 how you leave out the ones that are not running.

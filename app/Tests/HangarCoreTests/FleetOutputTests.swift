@@ -124,4 +124,49 @@ final class FleetOutputTests: XCTestCase {
                        FleetOutput.columns(entries))
         XCTAssertEqual(FleetOutput.rendered(entries, as: .json), FleetOutput.json(entries))
     }
+
+    // MARK: - Why nothing came back
+
+    /// Mistake 26: a number on screen has to name the set it counted. A filter
+    /// that matched nothing used to report an empty cache, sending the reader to
+    /// refresh a fleet that was already there.
+    func testAFilterThatMatchedNothingDoesNotBlameTheCache() {
+        XCTAssertEqual(
+            FleetOutput.nothingMatched(query: "", filters: 1, fleetSize: 249),
+            "no host matched that filter, out of 249.")
+        XCTAssertEqual(
+            FleetOutput.nothingMatched(query: "", filters: 3, fleetSize: 249),
+            "no host matched those 3 filters, out of 249.")
+    }
+
+    func testAQueryThatMatchedNothingKeepsItsOldWording() {
+        XCTAssertEqual(
+            FleetOutput.nothingMatched(query: "web", filters: 0, fleetSize: 249),
+            "nothing matched \"web\" in 249 hosts.")
+    }
+
+    func testAQueryAndAFilterNameBoth() {
+        XCTAssertEqual(
+            FleetOutput.nothingMatched(query: "web", filters: 2, fleetSize: 249),
+            "nothing matched \"web\" with those 2 filters in 249 hosts.")
+    }
+
+    /// Nothing narrowed it and the fleet is not empty, which main.swift cannot
+    /// reach: with no query and no filters the match is the whole fleet. It is
+    /// public API though, and "those 0 filters" is not a sentence.
+    func testNoQueryAndNoFilterDoesNotCountFiltersNobodyPassed() {
+        XCTAssertEqual(
+            FleetOutput.nothingMatched(query: "", filters: 0, fleetSize: 249),
+            "no host matched, out of 249.")
+    }
+
+    /// The one case where blaming the cache is the truth.
+    func testAnEmptyCacheStillSaysSo() {
+        XCTAssertEqual(
+            FleetOutput.nothingMatched(query: "", filters: 0, fleetSize: 0),
+            "the cached fleet is empty.")
+        XCTAssertEqual(
+            FleetOutput.nothingMatched(query: "web", filters: 1, fleetSize: 0),
+            "the cached fleet is empty.")
+    }
 }

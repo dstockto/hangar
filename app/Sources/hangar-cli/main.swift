@@ -66,7 +66,7 @@ OUTPUT
   -n, --limit <n>            at most n hosts
   -f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
                              key=a,b any of them   key!=a none of them
-                             * is a wildcard; \\, is a comma in a value
+                             * is a wildcard, so quote it in zsh; \\, is a comma
                              keys: any tag, plus name, state, id, asg, env_name
       --cache <path>         read this cache instead of ~/.hangar/cache
 
@@ -78,7 +78,7 @@ EXAMPLES
   hangar | fzf | awk '{print $1}' | xargs ssh
   tmux new-window "ssh $(hangar -a db-prod | head -1)"
   hangar --json -f env=prod | jq -r '.[].hostname'
-  hangar -f env=prod,staging -f name!=*canary* -f state=running
+  hangar -f env=prod,staging -f 'name!=*canary*' -f state=running
 
 The list comes from ~/.hangar/cache, which the Hangar app refreshes. Nothing
 here calls AWS, so it costs no credential and no network round trip.
@@ -134,9 +134,9 @@ if !SSHConfigWriter.includeLinePresent() {
 }
 
 guard !matched.isEmpty else {
-    stderrLine(query.isEmpty
-        ? "hangar: the cached fleet is empty."
-        : "hangar: nothing matched \"\(command.searchText)\" in \(all.count) hosts.")
+    stderrLine("hangar: " + FleetOutput.nothingMatched(
+        query: command.searchText, filters: command.filters.count,
+        fleetSize: all.count))
     exit(1)
 }
 

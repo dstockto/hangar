@@ -43,8 +43,17 @@ public struct HostFilter: Equatable, Sendable {
         guard let rawKey, let rawValue, !rawKey.isEmpty else {
             return .problem("--filter takes key=value or key!=value, not '\(text)'")
         }
-        return .filter(HostFilter(key: rawKey, patterns: patterns(in: rawValue),
-                                  match: match))
+        let alternatives = patterns(in: rawValue)
+        // An empty alternative is the wildcard, so one stray comma quietly makes
+        // the clause true for every host and the values either side of it say
+        // nothing. Reported rather than guessed at, because there is no reading
+        // of it that means something else: an empty pattern cannot mean "hosts
+        // with no value here", it already means "any value at all".
+        if !rawValue.isEmpty, alternatives.contains(where: \.isEmpty) {
+            return .problem("--filter has an empty value in '\(text)', which "
+                            + "would match every host. Use \\, for a comma in a value.")
+        }
+        return .filter(HostFilter(key: rawKey, patterns: alternatives, match: match))
     }
 
     /// Splits on the first `!=` or `=`, whichever comes first, so a value may
