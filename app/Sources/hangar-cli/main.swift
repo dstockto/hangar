@@ -224,12 +224,25 @@ guard !matched.isEmpty else {
 }
 
 if command.verb == .ssh {
+    // Both halves of a conversation: something to read the question and
+    // something to answer it. The question goes to stderr, so testing stdin
+    // alone left `hangar ssh web 2>/dev/null` blocked on a prompt nobody saw.
+    //
+    // Descriptor 1 is deliberately not consulted: a piped stdout is no reason
+    // not to ask. That independence lives on this line and nowhere else, and it
+    // is not assertable from the suite, which cannot reach this target. A test
+    // that appeared to cover it could only restate what standardError() already
+    // does, so there is not one.
+    let canAsk = isatty(0) == 1 && Terminal.standardError().isInteractive
     let chosen: SearchEntry
-    if matched.count == 1 || command.first {
-        chosen = matched[0]
-    } else if isatty(0) == 1 {
-        // Asked on stderr so that --dry-run piped somewhere still writes only
-        // the command to stdout.
+
+    switch ConnectDecision.decide(matches: matched.count, takeFirst: command.first,
+                                  canAsk: canAsk) {
+    case .none:
+        exit(1)                                   // already reported above
+    case .connect(let index):
+        chosen = matched[index]
+    case .ask:
         stderrLine("hangar: \(matched.count) hosts match "
                    + "\"\(command.searchText)\". Which one?")
         FileHandle.standardError.write(
@@ -240,11 +253,11 @@ if command.verb == .ssh {
             exit(3)
         }
         chosen = matched[index]
-    } else {
-        // Nobody to ask. A script or an agent has to be specific, or say so with
-        // --first, rather than have a host picked for it.
-        stderrLine("hangar: \(matched.count) hosts match "
-                   + "\"\(command.searchText)\". Narrow it, or use --first.")
+    case .tooMany(let hosts):
+        // A script or an agent has to be specific, or say so with --first,
+        // rather than have a host picked for it.
+        stderrLine("hangar: \(hosts) hosts match \"\(command.searchText)\". "
+                   + "Narrow it, or use --first.")
         FileHandle.standardError.write(
             Data(FleetOutput.numbered(matched, terminal: .plain).utf8))
         exit(3)
@@ -255,8 +268,8 @@ if command.verb == .ssh {
     let vector = SSHCommand.arguments(target: chosen.alias, user: nil,
                                       identityFile: nil, managedByConfig: true)
     if command.dryRun {
-        print(SSHCommand.line(target: chosen.alias, user: nil,
-                              identityFile: nil, managedByConfig: true))
+        write(SSHCommand.line(target: chosen.alias, user: nil,
+                              identityFile: nil, managedByConfig: true) + "\n")
         exit(0)
     }
     // Replaced rather than spawned: ssh then owns the terminal, signals reach it

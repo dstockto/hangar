@@ -294,3 +294,87 @@ final class SSHVectorTests: XCTestCase {
         XCTAssertNil(Chooser.choice("1", count: 0))
     }
 }
+
+/// The rule that decides whether a command opens a session on a host nobody
+/// named, and the pairing between what the chooser prints and what it reads.
+final class ConnectDecisionTests: XCTestCase {
+
+    func testNothingMatchedConnectsToNothing() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 0, takeFirst: false, canAsk: true),
+                       .none)
+        XCTAssertEqual(ConnectDecision.decide(matches: 0, takeFirst: true, canAsk: false),
+                       .none)
+    }
+
+    func testOneMatchConnectsWithoutAsking() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 1, takeFirst: false, canAsk: true),
+                       .connect(index: 0))
+        XCTAssertEqual(ConnectDecision.decide(matches: 1, takeFirst: false, canAsk: false),
+                       .connect(index: 0))
+    }
+
+    func testSeveralAskWhenThereIsSomebodyToAsk() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 4, takeFirst: false, canAsk: true),
+                       .ask)
+    }
+
+    /// The case a script or an agent hits. Having a host picked for it is what
+    /// `| head -1` was doing quietly.
+    func testSeveralWithNobodyToAskRefuses() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 4, takeFirst: false, canAsk: false),
+                       .tooMany(hosts: 4))
+    }
+
+    func testFirstSkipsTheQuestionEitherWay() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 9, takeFirst: true, canAsk: true),
+                       .connect(index: 0))
+        XCTAssertEqual(ConnectDecision.decide(matches: 9, takeFirst: true, canAsk: false),
+                       .connect(index: 0))
+    }
+
+    // MARK: - What it prints and what it reads
+
+    private func entries(_ count: Int) -> [SearchEntry] {
+        (1...count).map {
+            SearchEntry(instance: Fixture.instance(["product": "payments",
+                                                    "env": "prod"],
+                                                   id: "i-\($0)"),
+                        alias: "web-\($0)")
+        }
+    }
+
+    /// The one pairing where an off-by-one opens a session on the wrong host:
+    /// every label the list prints must select the host printed beside it.
+    func testEveryPrintedLabelSelectsTheHostBesideIt() {
+        let hosts = entries(4)
+        let lines = FleetOutput.numbered(hosts, terminal: .plain)
+            .split(separator: "\n").map(String.init)
+        XCTAssertEqual(lines.count, hosts.count)
+
+        for (line, host) in zip(lines, hosts) {
+            let label = line.trimmingCharacters(in: .whitespaces)
+                .prefix { $0.isNumber }
+            let index = Chooser.choice(String(label), count: hosts.count)
+            XCTAssertEqual(index.map { hosts[$0].alias }, host.alias,
+                           "label \(label) does not select \(host.alias)")
+        }
+    }
+
+    func testTheListIsNumberedFromOne() {
+        let text = FleetOutput.numbered(entries(3), terminal: .plain)
+        XCTAssertTrue(text.hasPrefix("  1  "), text)
+        XCTAssertFalse(text.contains("  0  "))
+    }
+
+    func testANonRunningHostSaysSoInTheChooser() {
+        var stopped = Fixture.instance(["product": "payments"], state: "stopped")
+        stopped.tags["hostname"] = "web.example.com"
+        let text = FleetOutput.numbered([SearchEntry(instance: stopped, alias: "web-1")],
+                                        terminal: .plain)
+        XCTAssertTrue(text.contains("stopped"))
+    }
+
+    func testTheChooserPrintsNothingForNoHosts() {
+        XCTAssertEqual(FleetOutput.numbered([], terminal: .plain), "")
+    }
+}
