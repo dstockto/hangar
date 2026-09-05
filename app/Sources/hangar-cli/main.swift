@@ -17,8 +17,13 @@ func stderrLine(_ text: String) {
     FileHandle.standardError.write(Data((text + "\n").utf8))
 }
 
-/// Written rather than printed because every shape carries its own trailing
-/// newline, and nothing at all prints nothing rather than a blank line.
+/// The one way this program writes to stdout.
+///
+/// One way on purpose. `print` goes through stdio, which block-buffers whenever
+/// stdout is not a terminal, and this is an unbuffered write on the descriptor:
+/// mixing them lets output arrive in an order neither one chose, in a pipe,
+/// which is exactly where nobody looks. Every shape also carries its own
+/// trailing newline, so nothing at all prints nothing rather than a blank line.
 func write(_ text: String) {
     guard !text.isEmpty else { return }
     FileHandle.standardOutput.write(Data(text.utf8))
@@ -89,8 +94,8 @@ if let problem = command.problem {
     stderrLine("Try 'hangar --help'.")
     exit(64)
 }
-if command.help { print(usage); exit(0) }
-if command.version { print(version()); exit(0) }
+if command.help { write(usage + "\n"); exit(0) }
+if command.version { write(version() + "\n"); exit(0) }
 
 let cachePath = command.cache ?? HangarConfig.cachePath
 guard let cache = FleetCache.load(path: cachePath) else {

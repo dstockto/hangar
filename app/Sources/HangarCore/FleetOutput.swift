@@ -49,10 +49,14 @@ public enum FleetOutput {
         })
     }
 
+    /// Aliases and nothing else, one per line, which is the shape a `while read`
+    /// loop and `xargs` both want: one token per line, no columns to cut out of.
     public static func aliases(_ entries: [SearchEntry]) -> String {
         joined(entries.map(\.alias))
     }
 
+    /// Six fixed columns, tab separated, so `cut -f` and `awk -F'\t'` can take one
+    /// by number. Fixed rather than every field: the order is the documented part.
     public static func tsv(_ entries: [SearchEntry]) -> String {
         joined(entries.map { entry in
             let row = fields(entry)

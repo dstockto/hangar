@@ -23,6 +23,9 @@ public struct HangarCommand: Equatable, Sendable {
 
     public init() {}
 
+    /// Reads the whole line and never throws: what is wrong lands in `problem`
+    /// and parsing continues, so `--help` still answers on a line that also has
+    /// a typo, and the caller decides what a bad command line costs.
     public static func parse(_ arguments: [String]) -> HangarCommand {
         var command = HangarCommand()
         var index = arguments.startIndex
