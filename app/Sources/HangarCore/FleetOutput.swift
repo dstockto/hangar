@@ -216,6 +216,23 @@ public enum FleetOutput {
         return text + "\n"
     }
 
+    /// The same hosts, numbered, for "which of these did you mean?".
+    ///
+    /// Numbered from one because the answer is typed by a person, and every
+    /// other list a person is asked to pick from starts there.
+    public static func numbered(_ entries: [SearchEntry], terminal: Terminal) -> String {
+        let width = String(entries.count).count
+        let aliasWidth = min(entries.map(\.alias.count).max() ?? 0, 44)
+        let groupWidth = min(entries.map { group($0).count }.max() ?? 0, 28)
+        return joined(entries.enumerated().map { index, entry in
+            let number = terminal.styled(String(index + 1).leftPadded(to: width + 2),
+                                         .heading)
+            let state = entry.instance.state == "running" ? "" : "  " + entry.instance.state
+            return "\(number)  \(pad(entry.alias, to: aliasWidth))  "
+                + "\(pad(group(entry), to: groupWidth))  \(entry.hostname)\(state)"
+        })
+    }
+
     // MARK: - Tag keys
 
     /// The tag keys a fleet uses: name, hosts carrying it, distinct values, and

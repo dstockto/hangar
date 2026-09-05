@@ -776,6 +776,28 @@ tmux new-window "ssh $(hangar -a db-prod | head -1)"
 hangar --json -f env=prod | jq -r '.[].hostname'
 ```
 
+### Connecting
+
+```sh
+hangar ssh web prod          connect to the one host that matches
+hangar ssh -1 db-prod        take the best match without asking
+hangar ssh web --dry-run     print the command, run nothing
+```
+
+One match connects. Several, and it asks: the matches are numbered on stderr and
+you type one, or press Return to cancel. Several with nobody to ask, because
+stdin has no terminal or stderr is not one either, exits **3** and lists them
+rather than picking one for you. That is the case a script or an agent hits, and
+having a host chosen for it is exactly what `| head -1` was quietly doing. Both
+halves have to be there: the question goes to stderr, so
+`hangar ssh web 2>/dev/null` would otherwise block on a prompt you could not see.
+
+`hangar ssh` needs a query or a filter. Without either every host matches, and
+`--first` would open a session on whatever sorts first.
+
+`hangar ssh` replaces itself with `ssh`, so the session owns the terminal, your
+signals reach it, and its exit status is the command's.
+
 ### Reading it, versus piping it
 
 The listing has two readers, and it tells them apart with one `isatty` call.
@@ -912,13 +934,13 @@ no network round trip and no AWS call. The ranking is the panel's ranking:
 both call `FleetIndex`, because a menubar and a shell must not disagree about
 which host best matches `web prod`.
 
-Exit codes are meant for pipelines: `0` when hosts were printed, `1` when
-nothing matched, `2` when there is no cache yet. Under `--json`, a run that
+Exit codes are meant for pipelines: `0` when hosts were printed or the work
+finished, `1` when nothing matched, `2` when there is no cache yet, `3` when
+more than one host matched and none was chosen. Under `--json`, a run that
 matched nothing and a run with no cache both still print `[]`, so stdout stays
-parseable and the code carries the difference.
-A cache older than `healthy_within_hours`, and a missing `Include` line that
-would stop `ssh <alias>` resolving, are both said once on stderr so a pipe is
-unaffected.
+parseable and the code carries the difference. A cache older than
+`healthy_within_hours`, and a missing `Include` line that would stop
+`ssh <alias>` resolving, are both said once on stderr so a pipe is unaffected.
 
 ## Architecture
 

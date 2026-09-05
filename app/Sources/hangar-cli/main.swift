@@ -60,6 +60,7 @@ USAGE
   hangar -s <query>          the same, spelled out
 
 COMMANDS
+  hangar ssh <query>         connect to the one matching host
   hangar tags                the tag keys this fleet uses, and how many carry each
   hangar values <key>        the values one key takes, most used first
 
@@ -71,6 +72,8 @@ OUTPUT
       --tsv                  alias, hostname, product, env, state, id
       --json                 one JSON array, always valid, [] when nothing matched
   -n, --limit <n>            at most n hosts
+  -1, --first                take the best match without asking
+      --dry-run              print what would run, and run nothing
   -f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
                              key=a,b any of them   key!=a none of them
                              * is a wildcard, so quote it in zsh; \\, is a comma
@@ -87,14 +90,17 @@ EXAMPLES
   hangar --json -f env=prod | jq -r '.[].hostname'
   hangar -f env=prod,staging -f 'name!=*canary*' -f state=running
   hangar tags && hangar values env
+  hangar ssh web prod
+  hangar ssh -1 db-prod
 
 The list comes from ~/.hangar/cache, which the Hangar app refreshes. Nothing
 here calls AWS, so it costs no credential and no network round trip.
 
 EXIT
-  0  hosts were printed
+  0  hosts were printed, or the work finished
   1  nothing matched
   2  no fleet cached yet
+  3  more than one host matched and none was chosen
 """
 
 // MARK: - Run
@@ -187,7 +193,8 @@ case .values:
          orElse: "hangar: no host carries a '\(key)' tag. Try 'hangar tags'.",
          empty: counts.isEmpty)
 
-case .list:
+case .list, .ssh:
+    // Both need the matched hosts below; ssh then picks one of them.
     break
 }
 
@@ -214,6 +221,64 @@ guard !matched.isEmpty else {
         query: command.searchText, filters: command.filters.count,
         fleetSize: all.count))
     exit(1)
+}
+
+if command.verb == .ssh {
+    // Both halves of a conversation: something to read the question and
+    // something to answer it. The question goes to stderr, so testing stdin
+    // alone left `hangar ssh web 2>/dev/null` blocked on a prompt nobody saw.
+    //
+    // Descriptor 1 is deliberately not consulted: a piped stdout is no reason
+    // not to ask. That independence lives on this line and nowhere else, and it
+    // is not assertable from the suite, which cannot reach this target. A test
+    // that appeared to cover it could only restate what standardError() already
+    // does, so there is not one.
+    let canAsk = isatty(0) == 1 && Terminal.standardError().isInteractive
+    let chosen: SearchEntry
+
+    switch ConnectDecision.decide(matches: matched.count, takeFirst: command.first,
+                                  canAsk: canAsk) {
+    case .none:
+        exit(1)                                   // already reported above
+    case .connect(let index):
+        chosen = matched[index]
+    case .ask:
+        stderrLine("hangar: \(matched.count) hosts match "
+                   + "\"\(command.searchText)\". Which one?")
+        FileHandle.standardError.write(
+            Data(FleetOutput.numbered(matched, terminal: Terminal.standardError()).utf8))
+        FileHandle.standardError.write(Data("Number, or Return to cancel: ".utf8))
+        guard let index = Chooser.choice(readLine(), count: matched.count) else {
+            stderrLine("hangar: nothing chosen.")
+            exit(3)
+        }
+        chosen = matched[index]
+    case .tooMany(let hosts):
+        // A script or an agent has to be specific, or say so with --first,
+        // rather than have a host picked for it.
+        stderrLine("hangar: \(hosts) hosts match \"\(command.searchText)\". "
+                   + "Narrow it, or use --first.")
+        FileHandle.standardError.write(
+            Data(FleetOutput.numbered(matched, terminal: .plain).utf8))
+        exit(3)
+    }
+
+    // The bare alias, which is what the listing's own `command` field has always
+    // advertised: ssh_config already carries the user, the key and the ProxyJump.
+    let vector = SSHCommand.arguments(target: chosen.alias, user: nil,
+                                      identityFile: nil, managedByConfig: true)
+    if command.dryRun {
+        write(SSHCommand.line(target: chosen.alias, user: nil,
+                              identityFile: nil, managedByConfig: true) + "\n")
+        exit(0)
+    }
+    // Replaced rather than spawned: ssh then owns the terminal, signals reach it
+    // rather than us, and its exit status is this command's without being copied.
+    var vectorC: [UnsafeMutablePointer<CChar>?] = vector.map { strdup($0) }
+    vectorC.append(nil)
+    execv("/usr/bin/ssh", &vectorC)
+    stderrLine("hangar: could not run /usr/bin/ssh: \(String(cString: strerror(errno)))")
+    exit(2)
 }
 
 // The one shape that differs by reader. Everything else is the same bytes for

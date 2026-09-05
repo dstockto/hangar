@@ -161,24 +161,130 @@ public struct LoginProbeState: Codable, Sendable, Equatable {
     }
 }
 
-/// The `ssh …` line Hangar hands to a terminal. Kept out of the UI layer so it
-/// can be tested: it is typed into a live shell, and for an unmanaged host the
-/// target is a hostname tag rather than one of our own slugified aliases.
+/// What `ssh` gets for a host. Kept out of the UI layer so it can be tested: for
+/// an unmanaged host the target is a hostname tag rather than one of our own
+/// slugified aliases.
+///
+/// One question, one answer. The panel types a line into a live terminal and the
+/// `hangar` command replaces itself with the process, and those must not be two
+/// different opinions about which user or key a host gets. `vector` decides;
+/// both other forms render it.
 public enum SSHCommand {
-    public static func line(target: String, user: String?, identityFile: String?,
-                            managedByConfig: Bool) -> String {
+
+    /// One element of the vector, and whether it came from outside.
+    ///
+    /// The distinction is not decoration: a line typed into a shell has to quote
+    /// everything a tag or a config file supplied, and quoting the flags we wrote
+    /// ourselves would make it unreadable.
+    public enum Argument: Equatable, Sendable {
+        /// Written in this file.
+        case literal(String)
+        /// A tag, a hand-edited config value, or a user's own path.
+        case value(String)
+
+        /// The argument as `ssh` receives it, unquoted, for an argument vector.
+        public var text: String {
+            switch self {
+            case .literal(let text), .value(let text): return text
+            }
+        }
+
+        var shell: String {
+            switch self {
+            case .literal(let text): return text
+            case .value(let text):   return Shell.quoted(text)
+            }
+        }
+    }
+
+    /// The decision, once.
+    ///
+    /// `--` before the target for the reason `SSHProbe` carries it: a hostname
+    /// tag of `-oProxyCommand=…` is read as an option wherever it reaches an
+    /// argument vector, and `ProxyCommand` is something ssh executes. Quoting
+    /// stops a shell reading it. Only `--` stops ssh reading it.
+    public static func vector(target: String, user: String?, identityFile: String?,
+                              managedByConfig: Bool) -> [Argument] {
         // A host Hangar wrote into ssh_config needs no flags at all; ssh already
         // knows the user and key. Only unmanaged hosts get them spelled out.
-        guard !managedByConfig else { return "ssh \(Shell.quoted(target))" }
-        var parts = ["ssh"]
+        guard !managedByConfig else { return [.literal("--"), .value(target)] }
+        var parts: [Argument] = []
         if let identityFile, !identityFile.isEmpty {
-            parts.append("-i \(Shell.quoted(identityFile))")
+            parts += [.literal("-i"), .value(identityFile)]
         }
+        parts.append(.literal("--"))
         if let user, !user.isEmpty {
-            parts.append(Shell.quoted("\(user)@\(target)"))
+            parts.append(.value("\(user)@\(target)"))
         } else {
-            parts.append(Shell.quoted(target))
+            parts.append(.value(target))
         }
-        return parts.joined(separator: " ")
+        return parts
+    }
+
+    /// The vector as `ssh` receives it, argv[0] included, for a caller that
+    /// starts the process rather than typing it.
+    public static func arguments(target: String, user: String?,
+                                 identityFile: String?,
+                                 managedByConfig: Bool) -> [String] {
+        ["ssh"] + vector(target: target, user: user, identityFile: identityFile,
+                         managedByConfig: managedByConfig).map(\.text)
+    }
+
+    /// The `ssh …` line to type into a live terminal session.
+    public static func line(target: String, user: String?, identityFile: String?,
+                            managedByConfig: Bool) -> String {
+        (["ssh"] + vector(target: target, user: user, identityFile: identityFile,
+                          managedByConfig: managedByConfig).map(\.shell))
+            .joined(separator: " ")
+    }
+}
+
+/// What a typed answer to "which of these?" means.
+///
+/// Here rather than beside the reader so the rules are testable: the process
+/// supplies a string and gets back an index or nothing, and nothing always means
+/// connect to no one.
+public enum Chooser {
+    /// The index the answer names, or nil for every other answer.
+    ///
+    /// One-based on the way in, because a person types what the list showed and
+    /// `FleetOutput.numbered` labels from one. Zero-based on the way out,
+    /// because the caller indexes an array. That conversion is the one place an
+    /// off-by-one opens a session on the wrong host, so it lives here with a
+    /// test against the labels rather than at the call site.
+    public static func choice(_ input: String?, count: Int) -> Int? {
+        guard count > 0 else { return nil }
+        // EOF, an empty line, or anything that is not one of the numbers offered.
+        // Cancelling has to be the easy answer: this is about to open a session
+        // on somebody's production host.
+        guard let text = input?.trimmingCharacters(in: .whitespaces), !text.isEmpty,
+              let number = Int(text), number >= 1, number <= count else { return nil }
+        return number - 1
+    }
+}
+
+/// What to do when a query matched some number of hosts.
+///
+/// Here rather than in `main.swift` for the reason `Chooser` is: the executable
+/// target is not reachable from the suite, and this is the rule that decides
+/// whether a command opens a session on a host nobody named.
+public enum ConnectDecision: Equatable, Sendable {
+    /// Exactly one candidate, or the caller said to take the best one.
+    case connect(index: Int)
+    /// Several, and there is somebody to ask.
+    case ask
+    /// Several, and nobody to ask. The caller has to be specific.
+    case tooMany(hosts: Int)
+    /// Nothing matched.
+    case none
+
+    /// `canAsk` is both halves of a conversation: something to read the question
+    /// and something to answer it. Asking on a stream nobody is reading leaves a
+    /// command blocked on a prompt that was never seen.
+    public static func decide(matches: Int, takeFirst: Bool,
+                              canAsk: Bool) -> ConnectDecision {
+        guard matches > 0 else { return .none }
+        if matches == 1 || takeFirst { return .connect(index: 0) }
+        return canAsk ? .ask : .tooMany(hosts: matches)
     }
 }
