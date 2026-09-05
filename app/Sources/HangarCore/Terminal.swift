@@ -13,6 +13,9 @@ public struct Terminal: Equatable, Sendable {
     /// is not interactive.
     public var isColoured: Bool
 
+    /// Colour is stored as asked *and* interactive, never as given: escape
+    /// sequences written to a pipe reach whatever is parsing it, so there is no
+    /// state where a caller gets colour without a terminal to spend it on.
     public init(isInteractive: Bool, isColoured: Bool) {
         self.isInteractive = isInteractive
         self.isColoured = isColoured && isInteractive
@@ -24,17 +27,19 @@ public struct Terminal: Equatable, Sendable {
 
     /// Reads the real file descriptor and the environment around it.
     ///
-    /// `NO_COLOR` is honoured at any value including empty, which is what the
-    /// convention asks for, and `TERM=dumb` is a terminal that has said it
-    /// cannot do this.
+    /// `NO_COLOR` is honoured when it is present *and not empty*, which is what
+    /// no-color.org actually specifies: "present and not an empty string
+    /// (regardless of its value)". So `NO_COLOR= hangar` leaves colour on, which
+    /// is the documented way to undo it for one command. `TERM=dumb` is a
+    /// terminal that has said it cannot do this.
     public static func standardOutput(
         isatty: (Int32) -> Bool = { Foundation.isatty($0) == 1 },
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Terminal {
         let interactive = isatty(1)
-        let suppressed = environment["NO_COLOR"] != nil
+        let set = { (name: String) in environment[name].map { !$0.isEmpty } ?? false }
+        let suppressed = set("NO_COLOR") || set("HANGAR_NO_COLOR")
             || environment["TERM"] == "dumb"
-            || environment["HANGAR_NO_COLOR"] != nil
         return Terminal(isInteractive: interactive, isColoured: !suppressed)
     }
 

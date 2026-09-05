@@ -395,12 +395,107 @@ final class FleetOutputTests: XCTestCase {
         XCTAssertTrue(text.contains("payments\u{00B7}prod"))
     }
 
-    /// Mistake 8 and 17 in a third place: a host that carries neither still has
-    /// to sit under something a reader can name.
-    func testAnUntaggedHostGetsANamedHeading() {
-        let entries = [entry("orphan", product: "", env: "")]
+    /// A fleet nothing groups gets no headings at all. `FleetGrouping` refuses to
+    /// draw one group holding everything, and the README promises that nothing
+    /// produces an "untagged" level containing the whole fleet. A flat
+    /// ssh_config fleet of single-component names reaches exactly this.
+    func testAFleetNothingGroupsGetsNoHeadings() {
+        let entries = [entry("box1", product: "", env: ""),
+                       entry("nas", product: "", env: "")]
+        let text = FleetOutput.listing(entries, terminal: monochrome, grouped: true)
+        XCTAssertFalse(text.contains("untagged"))
+        XCTAssertTrue(text.contains("box1"))
+        XCTAssertTrue(text.contains("nas"))
+    }
+
+    /// When other hosts do carry a level, one that carries none sits under a
+    /// name rather than under nothing. That is FleetGrouping's rule too.
+    func testAnUngroupedHostAmongGroupedOnesIsNamed() {
+        let entries = [entry("web-1"), entry("orphan", product: "", env: "")]
         XCTAssertTrue(FleetOutput.listing(entries, terminal: monochrome, grouped: true)
-            .hasPrefix("untagged"))
+            .contains("untagged"))
+    }
+
+    /// The headings follow the configured levels, because the menu does. Stock
+    /// config is three levels, and a fleet carrying env_name draws all three.
+    func testHeadingsUseTheConfiguredLevels() {
+        var instance = Fixture.instance(["product": "payments", "env": "prod",
+                                         "env_name": "blue", "Name": "web"])
+        instance.tags["hostname"] = "web-1.example.com"
+        let entries = [SearchEntry(instance: instance, alias: "web-1")]
+        XCTAssertTrue(FleetOutput.listing(entries, terminal: monochrome, grouped: true)
+            .hasPrefix("payments\u{00B7}prod\u{00B7}blue"))
+    }
+
+    /// The regression a single-entry test cannot see. Rows arrive in
+    /// FleetIndex.sortKey order (product, env), and with group_by ["Team"] the
+    /// headings interleave: platform, infra, platform. A run detector prints the
+    /// first heading twice and severs its two hosts.
+    func testAHeadingIsNeverPrintedTwice() {
+        func host(_ alias: String, _ product: String, _ team: String) -> SearchEntry {
+            var instance = Fixture.instance(["product": product, "env": "prod"])
+            instance.tags["Team"] = team
+            instance.tags["hostname"] = "\(alias).example.com"
+            return SearchEntry(instance: instance, alias: alias)
+        }
+        // Deliberately in sortKey order, which is what main.swift hands over.
+        let entries = [host("payments-web", "payments", "platform"),
+                       host("search-api", "search", "infra"),
+                       host("web-1", "web", "platform")]
+        let lines = FleetOutput.listing(entries, terminal: monochrome, grouped: true,
+                                        groupBy: ["Team"])
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let headings = lines.filter { !$0.hasPrefix("  ") && !$0.isEmpty }
+        XCTAssertEqual(headings, ["platform", "infra"])
+
+        // And the two platform hosts stay together under their one heading.
+        let platform = lines.drop { $0 != "platform" }.dropFirst()
+            .prefix { $0.hasPrefix("  ") }
+        XCTAssertEqual(platform.count, 2)
+        XCTAssertTrue(platform.contains { $0.contains("payments-web") })
+        XCTAssertTrue(platform.contains { $0.contains("web-1") })
+    }
+
+    /// Mistake 23 under a custom grouping. sortKey keys untagged-last on
+    /// product.isEmpty, which stops protecting anything once the heading leads
+    /// with something else: a host with no Team but an early product is the
+    /// first row handed over, and used to open the listing with "untagged".
+    func testUntaggedSortsLastUnderACustomGrouping() {
+        func host(_ alias: String, _ product: String, _ team: String?) -> SearchEntry {
+            var instance = Fixture.instance(["product": product, "env": "prod"])
+            if let team { instance.tags["Team"] = team }
+            instance.tags["hostname"] = "\(alias).example.com"
+            return SearchEntry(instance: instance, alias: alias)
+        }
+        // "aardvark" has no Team and sorts first by product, so it arrives first.
+        let entries = [host("a-1", "aardvark", nil), host("z-1", "zebra", "platform")]
+        let text = FleetOutput.listing(entries, terminal: monochrome, grouped: true,
+                                       groupBy: ["Team"])
+        XCTAssertTrue(text.hasPrefix("platform"), text)
+        XCTAssertTrue(text.contains("untagged"))
+        let headings = text.split(separator: "\n").map(String.init)
+            .filter { !$0.hasPrefix("  ") }
+        XCTAssertEqual(headings, ["platform", "untagged"])
+    }
+
+    /// A custom group_by is honoured, including a key Hangar does not map.
+    func testACustomGroupingIsHonoured() {
+        var instance = Fixture.instance(["product": "payments", "env": "prod"])
+        instance.tags["Team"] = "growth"
+        let entries = [SearchEntry(instance: instance, alias: "web-1")]
+        let text = FleetOutput.listing(entries, terminal: monochrome, grouped: true,
+                                       groupBy: ["Team", "env"])
+        XCTAssertTrue(text.hasPrefix("growth\u{00B7}prod"), text)
+        XCTAssertFalse(text.contains("payments"))
+    }
+
+    /// The piped shape is frozen at product and environment, because that is what
+    /// 0.6.1 printed and something is parsing it.
+    func testThePipedGroupColumnIsUnchangedByTheLevels() {
+        let entries = [entry("web-1")]
+        XCTAssertEqual(FleetOutput.listing(entries, terminal: .plain, grouped: true,
+                                           groupBy: ["Team"]),
+                       FleetOutput.columns(entries))
     }
 
     /// Colour never carries a fact on its own. A reader who cannot see the
@@ -449,5 +544,54 @@ final class FleetOutputTests: XCTestCase {
     /// A header over nothing is a header describing nothing.
     func testNoHeaderWhenThereAreNoKeys() {
         XCTAssertEqual(FleetOutput.tagKeys(.empty, as: .columns, terminal: monochrome), "")
+    }
+
+    /// `padding(toLength:)` counts UTF-16 units while `count` counts characters,
+    /// so a tag containing an emoji was measured as longer than it was asked to
+    /// be and got cut instead of padded. Tag values come from whoever tags the
+    /// account.
+    func testAValueOutsideTheBasicPlaneIsPaddedAndNotCut() {
+        XCTAssertEqual(FleetOutput.pad("\u{1F680}ab", to: 5), "\u{1F680}ab  ")
+        XCTAssertEqual(FleetOutput.pad("\u{1F680}ab", to: 3), "\u{1F680}ab")
+        XCTAssertEqual(FleetOutput.pad("caf\u{00E9}", to: 6), "caf\u{00E9}  ")
+    }
+
+    /// The case the first probe of this bug missed, and the one that matters:
+    /// when the cut falls between an emoji's two UTF-16 halves the character is
+    /// not truncated, it is replaced with U+FFFD. A single emoji at width 1 is
+    /// the smallest input that does it.
+    func testACutBetweenSurrogatesWouldReplaceTheCharacter() {
+        let rocket = "\u{1F680}"
+        // What the old implementation did, kept here as the reason for the new one.
+        let cut = rocket.padding(toLength: max(1, rocket.count), withPad: " ",
+                                 startingAt: 0)
+        XCTAssertEqual(cut.unicodeScalars.map(\.value), [0xFFFD])
+
+        // What pad does instead.
+        XCTAssertEqual(FleetOutput.pad(rocket, to: 1), rocket)
+        XCTAssertEqual(FleetOutput.pad(rocket, to: 3), rocket + "  ")
+    }
+
+    /// A grapheme built from several scalars is one character to `count` and five
+    /// UTF-16 units to `padding`, which is the same trap one step further out.
+    func testAMultiScalarGraphemeSurvives() {
+        let family = "\u{1F468}\u{200D}\u{1F469}"
+        XCTAssertEqual(FleetOutput.pad(family, to: 1), family)
+        XCTAssertEqual(FleetOutput.pad(family, to: 2), family + " ")
+    }
+
+    /// The whole row, not just the helper: the emoji product used to lose a
+    /// character and take the column alignment with it.
+    func testAnEmojiTagDoesNotShortenItsColumn() {
+        let entries = [entry("web-1", product: "\u{1F680}payments"),
+                       entry("web-2", product: "search")]
+        for line in FleetOutput.columns(entries).split(separator: "\n") {
+            XCTAssertTrue(line.contains("example.com"))
+        }
+        XCTAssertTrue(FleetOutput.columns(entries).contains("\u{1F680}payments"))
+    }
+
+    func testPadNeverShortens() {
+        XCTAssertEqual(FleetOutput.pad("abcdef", to: 3), "abcdef")
     }
 }

@@ -784,14 +784,16 @@ Piped into anything, it is byte for byte what it has always been: alias, group,
 hostname, in padded columns. Every pipeline that already exists keeps working,
 including the ones nobody mentioned.
 
-Read by a person, the fleet is grouped under headings in the same order the menu
-uses, hosts are indented under them, and a host that is not running is dimmed
-**and** says its state in words. A search is not grouped: it is ranked by
-relevance, and a heading over a ranked list would either lie about the order or
-throw the ranking away.
+Read by a person, the fleet is grouped under headings built from the same levels
+the menu uses, `group_by` included, hosts are indented under them, and a host
+that is not running is dimmed **and** says its state in words. A fleet that none
+of those levels group gets no headings at all rather than one "untagged" over
+everything. A search is not grouped: it is ranked by relevance, and a heading
+over a ranked list would either lie about the order or throw the ranking away.
 
-`NO_COLOR`, `HANGAR_NO_COLOR` and `TERM=dumb` each turn the sequences off while
-keeping the layout.
+`NO_COLOR` and `HANGAR_NO_COLOR` turn the sequences off when set to a non-empty
+value, per [no-color.org](https://no-color.org), so `NO_COLOR= hangar` undoes it
+for one command. `TERM=dumb` does the same. The layout stays either way.
 
 ### Finding out what to filter on
 

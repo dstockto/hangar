@@ -28,7 +28,23 @@ public enum FleetOutput {
         ]
     }
 
-    /// Product and environment joined the way the listing shows them.
+    /// The heading a host sits under, from the levels the menu is built from.
+    ///
+    /// `FleetGrouping` decides the same thing for the menubar cascade, and this
+    /// has to agree with it or the two disagree about the shape of one fleet.
+    /// Empty levels are dropped rather than drawn, for the reason that enum
+    /// gives: a level nobody uses is not a level.
+    static func heading(_ entry: SearchEntry, keys: [String]) -> String {
+        keys.map { entry.instance.tagValue(for: $0) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\u{00B7}")
+    }
+
+    /// Product and environment joined the way the *piped* listing shows them.
+    ///
+    /// Frozen at two levels because `columns` is the shape 0.6.1 printed and
+    /// something is parsing it. The heading a person reads is `heading`, which
+    /// follows the configured levels instead.
     static func group(_ entry: SearchEntry) -> String {
         [entry.instance.product, entry.instance.env]
             .filter { !$0.isEmpty }.joined(separator: "\u{00B7}")
@@ -40,12 +56,8 @@ public enum FleetOutput {
         let aliasWidth = min(entries.map(\.alias.count).max() ?? 0, 44)
         let groupWidth = min(entries.map { group($0).count }.max() ?? 0, 28)
         return joined(entries.map { entry in
-            let alias = entry.alias.padding(toLength: max(aliasWidth, entry.alias.count),
-                                            withPad: " ", startingAt: 0)
-            let where_ = group(entry)
-            let padded = where_.padding(toLength: max(groupWidth, where_.count),
-                                        withPad: " ", startingAt: 0)
-            return "\(alias)  \(padded)  \(entry.hostname)"
+            "\(pad(entry.alias, to: aliasWidth))  "
+                + "\(pad(group(entry), to: groupWidth))  \(entry.hostname)"
         })
     }
 
@@ -60,24 +72,54 @@ public enum FleetOutput {
     /// and headings over a ranked list would either lie about the order or throw
     /// away the ranking, so a search stays flat.
     public static func listing(_ entries: [SearchEntry], terminal: Terminal,
-                               grouped: Bool) -> String {
+                               grouped: Bool,
+                               groupBy keys: [String] = FleetGrouping.defaultLevels)
+        -> String {
         guard terminal.isInteractive else { return columns(entries) }
+        // A fleet nothing groups gets no headings at all, rather than one
+        // "untagged" over the whole thing. FleetGrouping refuses to draw exactly
+        // that shape, and a flat ssh_config fleet reaches it.
+        let grouped = grouped && entries.contains { !heading($0, keys: keys).isEmpty }
         let indent = grouped ? "  " : ""
         let aliasWidth = min(entries.map(\.alias.count).max() ?? 0, 44)
         let groupWidth = grouped ? 0 : min(entries.map { group($0).count }.max() ?? 0, 28)
 
-        var lines: [String] = []
-        var heading: String?
+        // Bucketed rather than run-detected. The rows arrive in FleetIndex.sortKey
+        // order, which is product and env, and the heading follows the configured
+        // levels, so the two need not agree: group_by ["Team"] over hosts sorted
+        // by product prints platform, infra, platform, severing a group a run
+        // detector cannot see it has already closed. FleetGrouping buckets for
+        // the same reason.
+        var order: [String] = []
+        var buckets: [String: [SearchEntry]] = [:]
         for entry in entries {
+            let key = grouped ? heading(entry, keys: keys) : ""
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(entry)
+        }
+
+        // Untagged last, which is mistake 23: an empty value sorts first, and a
+        // group that says nothing opening the listing is the panel bug again.
+        // FleetIndex.sortKey protects the default levels by keying on
+        // product.isEmpty, and stops covering it the moment the heading leads
+        // with something else, which group_by is free to do.
+        if order.count > 1, let untagged = order.firstIndex(of: "") {
+            order.append(order.remove(at: untagged))
+        }
+
+        var lines: [String] = []
+        var shown: String?
+        for entry in order.flatMap({ buckets[$0] ?? [] }) {
             if grouped {
-                let current = group(entry)
-                if current != heading {
-                    if heading != nil { lines.append("") }
-                    // A host carrying neither product nor environment still has to
-                    // sit under something a reader can name.
+                let current = heading(entry, keys: keys)
+                if current != shown {
+                    if shown != nil { lines.append("") }
+                    // A host carrying none of the levels still has to sit under
+                    // something a reader can name. Only reachable when other
+                    // hosts do carry them, which is FleetGrouping's rule too.
                     lines.append(terminal.styled(current.isEmpty ? "untagged" : current,
                                                  .heading))
-                    heading = current
+                    shown = current
                 }
             }
             var row = indent + pad(entry.alias, to: aliasWidth) + "  "
@@ -98,8 +140,19 @@ public enum FleetOutput {
         return joined(lines)
     }
 
+    /// Right-padded to a column width counted in characters.
+    ///
+    /// Not `padding(toLength:)`: it counts UTF-16 units while `count` counts
+    /// characters, so a value carrying anything outside the basic plane is
+    /// measured as longer than the width it is given and gets cut instead of
+    /// padded. A cut that lands between an emoji's two halves does not truncate
+    /// it, it replaces it with U+FFFD. Tag values come from whoever tags the
+    /// account, and turning one into a replacement character is not a column
+    /// width problem.
     static func pad(_ text: String, to width: Int) -> String {
-        text.padding(toLength: max(width, text.count), withPad: " ", startingAt: 0)
+        text.count >= width
+            ? text
+            : text + String(repeating: " ", count: width - text.count)
     }
 
     /// Aliases and nothing else, one per line, which is the shape a `while read`
@@ -233,10 +286,8 @@ public enum FleetOutput {
             return encode(counts.map { ["value": $0.value, "hosts": $0.hosts] })
         case .columns:
             let width = min(counts.map(\.value.count).max() ?? 0, 44)
-            return joined(counts.map { count in
-                let value = count.value.padding(
-                    toLength: max(width, count.value.count), withPad: " ", startingAt: 0)
-                return "\(value)  \(String(count.hosts).leftPadded(to: 6))"
+            return joined(counts.map {
+                "\(pad($0.value, to: width))  \(String($0.hosts).leftPadded(to: 6))"
             })
         }
     }
