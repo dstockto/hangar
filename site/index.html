@@ -529,14 +529,19 @@ Host payments-prod-web-1
         <article class="feature">
           <h3>The same fleet in your shell</h3>
           <p>A <code>hangar</code> command ships inside the app and installs
-             itself onto your PATH, so tmux, fzf and anything else that runs a
-             program reach the hosts the panel shows. It reads the cache Hangar
+             itself onto your PATH. It connects, rather than printing something
+             to paste: one match goes, several ask. It reads the cache Hangar
              already refreshed: no AWS call, no credential, no network, and no
              sudo.</p>
-          <div class="demo"><span class="c">$</span> hangar -s "web prod"
-payments-prod-web-1   payments·prod   web-1.prod.example.com
-payments-prod-web-2   payments·prod   web-2.prod.example.com
-<span class="c">$</span> ssh "$(hangar -a -s 'web prod' | head -1)"</div>
+          <div class="demo"><span class="c">$</span> hangar ssh web prod
+<span class="ok">Last login: Tue 09:14 from 10.0.0.9</span>
+[deploy@web-1 ~]$ exit
+<span class="c">$</span> hangar tags
+product   225   4  payments, shop, search
+env       225   3  prod, staging, qa</div>
+          <p>And it runs a command across everything that matched, one argument
+             vector per host, so no shell ever parses a tag.</p>
+          <div class="demo"><span class="c">$</span> hangar -f env=prod --exec ssh {alias} uptime</div>
         </article>
 
         <article class="feature">

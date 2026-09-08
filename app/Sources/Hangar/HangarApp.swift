@@ -81,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // could reach is one every upgrade misses. Mistake 25.
             if let at = CommandLineTool.installIfUnclaimed() {
                 Notifier.show(title: "hangar is on your PATH",
-                              body: "\(at)  ·  try hangar -s \"web prod\"", seconds: 5)
+                              body: "\(at)  ·  try hangar ssh web prod", seconds: 5)
             }
             // After the key, because the probe should use it.
             if let login = await store.learnLoginIfUnset() {

@@ -556,7 +556,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private func installCommandLineIfUnclaimed() {
         guard let at = CommandLineTool.installIfUnclaimed() else { return }
         Notifier.show(title: "hangar is on your PATH",
-                      body: "\(at)  ·  try hangar -s \"web prod\"", seconds: 5)
+                      body: "\(at)  ·  try hangar ssh web prod", seconds: 5)
     }
 
     /// Adopts the only key there is.

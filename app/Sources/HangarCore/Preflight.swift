@@ -282,8 +282,8 @@ public struct Preflight: Sendable {
         case .installed(let link):
             return Check(
                 id: "cli", title: "hangar is on your PATH",
-                detail: "\(link) runs the same search the panel does. "
-                    + "Try hangar -s \"web prod\".",
+                detail: "\(link) runs the same search the panel does, and "
+                    + "connects. Try hangar ssh web prod.",
                 level: .ok)
         case .broken(let link):
             return Check(
