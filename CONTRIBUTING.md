@@ -23,8 +23,11 @@ compile is a change that needs rethinking first.
 ```
 app/Sources/HangarCore/   AWS config, SigV4, SSO, EC2, ssh config writer, fuzzy search
 app/Sources/Hangar/       AppKit: menubar, panel, rows, editor, launcher, updater
+app/Sources/hangar-cli/   the `hangar` command, bundled at Contents/Helpers
 app/Tests/                the offline suite
 scripts/                  build, test, and release
+intent/                   one directory per change: intent, spec, plan
+evals/                    the product promises, checked on every pull request
 design/                   brand kit and its source assets
 site/                     the landing page, published by .github/workflows/pages.yml
 ```
