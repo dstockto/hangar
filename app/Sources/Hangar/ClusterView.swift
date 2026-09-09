@@ -173,7 +173,7 @@ final class ClusterView: NSView {
     /// account gives no sign that clicking it leaves.
     private func hubTitle() -> String {
         guard let destination = focus.backDestination else {
-            return region.isEmpty ? "EC2" : "EC2 · \(region)"
+            return HostSource.provenance(of: instances, region: region)
         }
         return ClusterView.backTitle(to: destination)
     }
@@ -454,7 +454,18 @@ final class ClusterView: NSView {
         // one per host. Each host sits inside its own group's slice of the ring,
         // measured from the hub, which is what makes overlap impossible rather
         // than merely unlikely.
-        for state in ["running", "stopped", "pending", "terminated"] {
+        // Batched by the states actually present, not by a list of the four EC2
+        // ones. That list did not contain nil, so a host whose source never
+        // reported a state matched no batch and was never drawn: the circle said
+        // seven and the halo showed nothing. A host that cannot be represented is
+        // reported, never silently dropped.
+        var batches: [String?] = []
+        for node in nodes {
+            for host in node.hostAngles where !batches.contains(where: { $0 == host.state }) {
+                batches.append(host.state)
+            }
+        }
+        for state in batches {
             let colour = Brand.Color.state(for: state)
             context.setFillColor(colour.withAlphaComponent(0.9).cgColor)
             let path = CGMutablePath()

@@ -30,6 +30,27 @@ public enum HostSource: String, Codable, Sendable, CaseIterable {
         }
     }
 
+    /// Where a given set of hosts came from, in the few words a heading has room
+    /// for.
+    ///
+    /// Derived from the hosts being described rather than from configuration, so
+    /// the label names the set it was computed from. The cluster hub used to be
+    /// the constant "EC2" and said so over a fleet with no EC2 in it.
+    public static func provenance(of instances: [Instance],
+                                  region: String = "") -> String {
+        var seen: [HostSource] = []
+        for instance in instances where !seen.contains(instance.origin) {
+            seen.append(instance.origin)
+        }
+        switch seen.count {
+        case 0:  return "No hosts"
+        case 1:  let only = seen[0]
+                 guard only == .ec2, !region.isEmpty else { return only.label }
+                 return "EC2 · \(region)"
+        default: return "\(seen.count) sources"
+        }
+    }
+
     /// What the source needs to work, for the setup screen.
     public var requirement: String {
         switch self {

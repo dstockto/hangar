@@ -135,6 +135,21 @@ final class HostSourceTests: XCTestCase {
         XCTAssertTrue(SourceSettings.standard.attempts(.ssm))
     }
 
+    /// The hub used to be the constant "EC2" over any fleet, including one with
+    /// no EC2 in it. A heading names the set it was computed from.
+    func testProvenanceNamesWhereTheseHostsActuallyCameFrom() {
+        var imported = Fixture.instance(["Name": "a"], state: nil)
+        imported.source = .sshConfig
+        XCTAssertEqual(HostSource.provenance(of: [imported], region: "us-west-2"),
+                       "~/.ssh/config")
+        let ec2 = Fixture.instance(["Name": "b"])
+        XCTAssertEqual(HostSource.provenance(of: [ec2], region: "us-west-2"),
+                       "EC2 · us-west-2")
+        XCTAssertEqual(HostSource.provenance(of: [ec2, imported], region: "us-west-2"),
+                       "2 sources")
+        XCTAssertEqual(HostSource.provenance(of: [], region: "us-west-2"), "No hosts")
+    }
+
     func testAPreEXistingCacheStillDecodesAsEC2() throws {
         let json = """
         {"id":"i-0aaa","state":"running","type":"t3.small","launchTime":"","tags":{}}

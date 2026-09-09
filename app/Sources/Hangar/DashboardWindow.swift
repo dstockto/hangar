@@ -274,13 +274,20 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         let tiles: [(String, String, String, String, NSColor)] = [
             ("shippingbox", "Total hosts", "\(insights.total)",
              store.region.isEmpty ? "" : store.region, Brand.Color.accent),
+            // Counted over the hosts that have a state, and says so when that is
+            // not the whole fleet. "0, 0% of the fleet" was the answer a fleet
+            // imported from an ssh config got, and it is a claim nobody made.
             ("play.circle", "Running", "\(insights.running)",
-             insights.total > 0
-                ? "\(Int((Double(insights.running) / Double(insights.total)) * 100))% of "
-                    + (scope.isEmpty ? "the fleet" : scope)
-                : "", Brand.Color.stateRunning),
+             insights.stated == 0
+                ? "no host here reports a state"
+                : "\(Int((Double(insights.running) / Double(insights.stated)) * 100))% of "
+                    + (insights.stated == insights.total
+                        ? (scope.isEmpty ? "the fleet" : scope)
+                        : "\(insights.stated) with a known state"),
+             Brand.Color.stateRunning),
             ("stop.circle", "Stopped", "\(insights.stopped)",
-             insights.stopped == 0 ? "nothing parked" : "still billing for storage",
+             insights.stated == 0 ? "no state reported"
+                : insights.stopped == 0 ? "nothing parked" : "still billing for storage",
              Brand.Color.stateStopped),
             ("square.grid.2x2", "Groups", "\(insights.placement.count)",
              "\(insights.hygiene.isClean ? "tags clean" : "tags need a look")",
@@ -295,7 +302,7 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
 
         let rail = StateRail()
         rail.set(running: insights.running, stopped: insights.stopped,
-                 other: max(0, insights.total - insights.running - insights.stopped))
+                 other: max(0, insights.stated - insights.running - insights.stopped))
         rail.translatesAutoresizingMaskIntoConstraints = false
         rail.heightAnchor.constraint(equalToConstant: 8).isActive = true
         sidebar.addArrangedSubview(rail)

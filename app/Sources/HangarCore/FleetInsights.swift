@@ -90,6 +90,12 @@ public struct FleetInsights: Sendable, Equatable {
     public var described: Int = 0
     public var undescribed: Int { max(0, total - described) }
 
+    /// Hosts something actually reported a state for. Running and stopped are
+    /// counted over these, never over the fleet: on a fleet imported from an ssh
+    /// config the honest answer to "how many are running" is that nobody knows,
+    /// and "0, 0% of the fleet" is a different claim entirely.
+    public var stated: Int = 0
+
     /// What the placement, age, family and exposure panels are counting, in the
     /// words those panels should print.
     public var coverage: String? {
@@ -133,6 +139,7 @@ public struct FleetInsights: Sendable, Equatable {
         insights.total = instances.count
         insights.running = instances.count { $0.state == "running" }
         insights.stopped = instances.count { $0.state == "stopped" }
+        insights.stated = instances.count { $0.state != nil }
 
         var aliasCounts: [String: Int] = [:]
         var groups: [String: GroupPlacement] = [:]
