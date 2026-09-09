@@ -5,17 +5,25 @@
 Searching a fleet of seven imported ssh_config hosts for one of them. Host names
 throughout this document are the placeholders the tests use, standing in for the
 real fleet. They are chosen so the derivation below actually reproduces, which the
-first draft's names did not:
+first draft's names did not. The transcript below was printed by
+`FleetOutput.numbered` from the fixture fleet with the old join still in place,
+rather than typed out here, which is why it shows two rows: against the fix the
+same query returns one:
 
 ```
 $ hangar ssh wers
 hangar: 2 hosts match "wers". Which one?
-  1  workers.example   workers   workers.example
+  1  workers.example             workers.example
   2  webstore.example  webstore  webstore.example
 ```
 
 `wers` is not a subsequence of `webstore.example`, nor of `webstore`. The
 question was where the second row could possibly have come from.
+
+Row 1's middle column is blank because it is meant to be. That column is product
+and env, and `workers` is a lead no sibling shares, so it never becomes a product
+tag at all. The blank is the tell: row 1 is the host `wers` genuinely names, and
+row 2 is the one that should not be there.
 
 ## What was actually true
 
@@ -52,8 +60,13 @@ only an **apex** name has a lead that is also its own first label, which is what
 `role` returns. And `derive` promotes a lead to a `product` tag only when more
 than one host shares it, so the collision needs a **sibling**: `webstore.example`
 alone gets no product at all, while `webstore.example` next to
-`www.webstore.example` gets `product` and `role` both equal to `webstore`. Every
-host on the reporting fleet was an apex name with a sibling.
+`www.webstore.example` gets `product` and `role` both equal to `webstore`.
+
+Both rows quoted in the report carried a populated group column, and that column
+is only populated when a sibling shares the lead, so both of those hosts had one.
+The fixture fleet deliberately mixes the two cases rather than making every host
+collide: `workers` and `tower` have no sibling and so no product, which is what
+shows that the fix moves only the host whose fields actually repeat.
 
 That pairing is why the first draft of this document did not reproduce.
 `webstore.example.com` has three labels, so its lead is `example` and its role is
