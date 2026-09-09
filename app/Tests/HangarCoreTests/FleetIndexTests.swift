@@ -38,8 +38,8 @@ final class FleetIndexTests: XCTestCase {
 
     /// The shape of the reported fleet. A host imported from `~/.ssh/config` takes
     /// product and role from the same name, so the metadata haystack used to hold
-    /// that name twice and a token could span the two copies. On the real fleet
-    /// `ra` gave three hosts, `ras` gave two, and `rasp` still gave two.
+    /// that name twice and a token could span the two copies. Three hosts, then two,
+    /// then still two, which is what the report quoted on the real fleet.
     func testTypingMoreNarrowsTheFleet() {
         func imported(_ name: String, _ lead: String, id: String) -> Instance {
             Instance(id: id, state: nil, type: "ssh_config", privateIP: nil,
@@ -61,6 +61,7 @@ final class FleetIndexTests: XCTestCase {
         }
         XCTAssertEqual(count("wer"), 3, "an honest subsequence of all three names")
         XCTAssertEqual(count("wers"), 1, "one more character has to drop two of them")
+        XCTAssertEqual(count("werse"), 1, "and another has to keep them dropped")
         XCTAssertEqual(FleetIndex.ranked(entries, matching: Fuzzy.Query("wers"))
             .first?.alias, "workers.example.com")
     }

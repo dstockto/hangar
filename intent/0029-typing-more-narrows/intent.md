@@ -2,16 +2,18 @@
 
 ## How this came about
 
-Searching a fleet of seven imported ssh_config hosts for the Raspberry Pi:
+Searching a fleet of seven imported ssh_config hosts for one of them. Host names
+throughout this document are the placeholders the tests use, standing in for the
+real fleet:
 
 ```
-$ hangar ssh rasp
-hangar: 2 hosts match "rasp". Which one?
-  1  raspberrypi4.local  raspberrypi4   raspberrypi4.local
-  2  brotherspaint.com   brotherspaint  brotherspaint.com
+$ hangar ssh wers
+hangar: 2 hosts match "wers". Which one?
+  1  workers.example.com   workers   workers.example.com
+  2  webstore.example.com  webstore  webstore.example.com
 ```
 
-`rasp` is not a subsequence of `brotherspaint.com`, nor of `brotherspaint`. The
+`wers` is not a subsequence of `webstore.example.com`, nor of `webstore`. The
 question was where the second row could possibly have come from.
 
 ## What was actually true
@@ -21,21 +23,27 @@ takes both `product` and `role` from the host name, so two of the four held the
 same string and the value appeared twice:
 
 ```
-metadata "brotherspaint brotherspaint"
+metadata "webstore webstore"
 ```
 
-A subsequence match could start in one copy and finish in the next, taking `r`
-and `a` from the first and `s` and `p` from the second:
+A subsequence match could start in one copy and finish in the next, taking `w`,
+`e` and `r` from the first and `s` from the second:
 
 ```
-b[r]othersp[a]int brother[s][p]aint
+[w][e]bsto[r]e web[s]tore
 ```
 
 That is worse than a stray result. Duplication does not change what short queries
-match, so `ra` matched before and matches now. It only lets *longer* queries
+match, so `wer` matched before and matches now. It only lets *longer* queries
 match what they otherwise could not, which defeats the one thing a person is
-doing when they keep typing. On this fleet `ra` gave three hosts, `ras` gave two,
-and `rasp` still gave two.
+doing when they keep typing. On this fleet `wer` gave three hosts, `wers` gave
+two, and `werse` still gave two.
+
+| query | matches alias | matches `webstore` | matches `webstore webstore` |
+|---|---|---|---|
+| `wer`   | yes | yes | yes |
+| `wers`  | no  | no  | **yes** |
+| `werse` | no  | no  | **yes** |
 
 Not an ssh_config problem. Import guarantees the collision, but an EC2 host
 tagged `product=web` with `Name=web` had the same haystack, so `web prod web`
@@ -51,8 +59,8 @@ same value, at either level: not one `SearchEntry`, and not a fleet through
 
 Deduplicate the components before joining, preserving order. Cross-field search
 is the point of the field and is untouched: `["payments", "prod", "web"]` stays
-exactly as it is, and only the repeated value collapses. `ra` still gives three,
-`ras` and `rasp` now give one.
+exactly as it is, and only the repeated value collapses. `wer` still gives three,
+`wers` and `werse` now give one.
 
 Deduplicated on the lowered bytes the search actually compares, not on the exact
 string and not on a Unicode case fold. Both of the other two are wrong, in
@@ -90,9 +98,9 @@ search is for, not a bug, so it does not ride along with a bug fix.
 ## What proves it
 
 `FleetIndexTests.testTypingMoreNarrowsTheFleet` rebuilds the reported fleet of
-three imported hosts and asserts the counts. Against the old join it reports `ra`
-three, `ras` two, `rasp` two, which is the report; against the fix it reports
-three, one, one. The `DuplicateMetadataSearchTests` cases pin the haystack itself,
+three imported hosts and asserts the counts. Against the old join it reports `wer`
+three, `wers` two, `werse` two, which is the shape of the report; against the fix
+it reports three, one, one. The `DuplicateMetadataSearchTests` cases pin the haystack itself,
 including the EC2 collision the issue used to show this is not an import problem.
 
 ## Reach
