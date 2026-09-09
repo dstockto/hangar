@@ -190,7 +190,7 @@ final class FleetStore: ObservableObject {
         let attempted = try? awsFiles.profile(named: config.profile)
         var awsFailure: Error?
         var queryRegion = region
-        if settings.wantsEC2 || settings.wantsSSMAlways {
+        if settings.usesAWS {
             do {
                 let resolved = try await CredentialResolver.resolve(profile: config.profile)
                 queryRegion = config.region ?? resolved.region
@@ -251,6 +251,12 @@ final class FleetStore: ObservableObject {
                 reports.append(.off(.ssm))
             }
         } else {
+            // Nothing asked AWS anything, so nothing it said last time is still
+            // true. Without this, a token that expired before the user turned EC2
+            // off stayed on the setup screen forever: the branch that would have
+            // cleared it is the one that no longer runs.
+            credentialAdvice = nil
+            credentialSource = nil
             reports.append(.off(.ec2))
             reports.append(.off(.ssm))
         }

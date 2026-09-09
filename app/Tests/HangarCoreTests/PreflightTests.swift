@@ -11,6 +11,34 @@ final class PreflightTests: TemporaryDirectoryTestCase {
     /// Counting the profiles without naming the pick is how a machine with three
     /// of them failed on the one Hangar chose for itself, with nothing on screen
     /// admitting which that was.
+    /// Issue #1. With no AWS wanted, an empty ~/.aws is not a fault, and the
+    /// screen must not sit on a permanent red for a setup the user chose. A red
+    /// that is always there is a red nobody reads.
+    func testAFleetWithNoAWSIsNotAProblem() {
+        let report = Preflight(checks: [Preflight.awsOffCheck()])
+        XCTAssertEqual(report.worst, .ok)
+        XCTAssertTrue(report.isUsable)
+    }
+
+    /// The row still has to be there. One that vanishes when a toggle flips is
+    /// one nobody can find when they wonder where their EC2 fleet went.
+    func testTheAWSOffRowSaysItIsOffAndWhereTheSwitchIs() {
+        let check = Preflight.awsOffCheck()
+        XCTAssertTrue(check.title.lowercased().contains("off"))
+        XCTAssertTrue(check.detail.contains("Turn either on"))
+        XCTAssertNil(check.remedy, "there is nothing to fix")
+    }
+
+    /// Unchanged, and the point of keeping the two paths apart: someone who wants
+    /// EC2 and cannot authenticate still gets a loud one.
+    func testBrokenCredentialsAreStillAProblemWhenNothingElseWorked() {
+        let advice = CredentialAdvice.Advice(message: "Token expired.",
+                                             command: "aws sso login")
+        let check = Preflight.credentialsCheck(sourceLabel: nil, advice: advice,
+                                               hasHostsAnyway: false)
+        XCTAssertEqual(check.level, .problem)
+    }
+
     func testProfilesFoundNamesTheOneInUseAndHowItAuthenticates() throws {
         let check = Preflight.profilesCheck(try awsFiles(), using: "legacy", env: [:])
         XCTAssertEqual(check.level, .ok)

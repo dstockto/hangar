@@ -95,8 +95,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         headline.textColor = Brand.Color.textPrimary
 
         body = NSTextField(wrappingLabelWithString:
-            "Hangar reads AWS profiles and cached credentials from your home directory. "
-            + "Nothing is uploaded, and no Hangar account is required.")
+            "Hangar reads your hosts from your home directory: ~/.ssh/config, a CSV "
+            + "you point it at, and AWS profiles if you use them. Nothing is "
+            + "uploaded, and no Hangar account is required.")
         body.font = Brand.Font.metadata
         body.textColor = Brand.Color.textSecondary
 
@@ -450,7 +451,6 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     /// credentials talks to AWS, and until this existed the window sat on
     /// "Checking your setup" over an empty sheet for as long as that took.
     private static let plan: [(title: String, detail: String)] = [
-        ("AWS profiles", "Reading ~/.aws/config and ~/.aws/credentials."),
         ("Credentials", "Resolving your profile, then asking EC2 for the fleet."),
         ("Where the hosts came from", "EC2, Systems Manager, ~/.ssh/config, your CSV."),
         ("Hosts and tags", "Indexing what came back."),
@@ -470,19 +470,25 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         var checks: [Preflight.Check] = []
         renderProgress(checks)
 
-        let files = AWSConfigFiles.load()
-        checks.append(Preflight.profilesCheck(files, using: store.config.profile))
-        renderProgress(checks)
+        // Asked once, here, rather than assumed by each check below. Hangar was an
+        // EC2 tool first, and the parts that predate the other three sources used
+        // to call a missing ~/.aws a fault on a fleet that never wanted one.
+        let usesAWS = store.config.sourceSettings.usesAWS
+        if usesAWS {
+            let files = AWSConfigFiles.load()
+            checks.append(Preflight.profilesCheck(files, using: store.config.profile))
+            renderProgress(checks)
+        }
 
         // Refreshing is the honest credential and connectivity test: it does exactly
         // what Hangar does in normal use.
         await store.refresh()
-        checks.append(Preflight.credentialsCheck(
+        checks.append(usesAWS ? Preflight.credentialsCheck(
             sourceLabel: store.credentialDescription.map { description in
                 [description.label, description.literal].compactMap { $0 }.joined(separator: " ")
             },
             advice: store.credentialAdvice,
-            hasHostsAnyway: !store.instances.isEmpty))
+            hasHostsAnyway: !store.instances.isEmpty) : Preflight.awsOffCheck())
         renderProgress(checks)
 
         checks.append(Preflight.sourcesCheck(store.sourceReports,
@@ -602,7 +608,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             let report = reports[source]
             let toggle = NSButton(checkboxWithTitle: source.label,
                                   target: self, action: #selector(sourceToggled(_:)))
-            toggle.state = isEnabled(source) ? .on : .off
+            toggle.state = store.config.sourceSettings.wants(source) ? .on : .off
             toggle.font = Brand.Font.metadata
             sourceToggles[source] = toggle
 
@@ -775,16 +781,6 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         return field
     }
 
-    private func isEnabled(_ source: HostSource) -> Bool {
-        let settings = store.config.sourceSettings
-        switch source {
-        case .ec2:       return settings.wantsEC2
-        case .ssm:       return settings.wantsSSMAfterFailure
-        case .sshConfig: return settings.wantsSSHConfig
-        case .hostsFile: return settings.wantsHostsFile
-        }
-    }
-
     private func countLabel(_ report: SourceReport?) -> String {
         guard let report, report.attempted else { return "off" }
         if report.hosts > 0 { return "\(report.hosts) hosts" }
@@ -804,7 +800,13 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         }
         switch source {
         case .ec2:       return source.requirement
-        case .ssm:       return "tried when EC2 is denied; needs \(source.requirement)"
+        case .ssm:
+            // The checkbox is on by default, but SSM on its default is only tried
+            // after EC2 was tried and denied. With EC2 off it would never run, and
+            // a row that says on about something that cannot happen is a lie.
+            return store.config.sourceSettings.attempts(.ssm)
+                ? "tried when EC2 is denied; needs \(source.requirement)"
+                : "never tried while EC2 is off; needs \(source.requirement)"
         case .sshConfig: return "launch only; Hangar never rewrites this file"
         case .hostsFile: return report?.skipped.first ?? "any CSV with a header row"
         }

@@ -6,7 +6,7 @@ import Foundation
 /// checkable before the user hits a failure. UI-free on purpose: the same checks
 /// back the first-run screen and the menubar's setup item, and they are testable.
 public struct Preflight: Sendable {
-    public enum Level: Sendable { case ok, warning, problem }
+    public enum Level: Sendable, Equatable { case ok, warning, problem }
 
     public struct Check: Sendable, Identifiable {
         public var id: String
@@ -386,5 +386,22 @@ public struct Preflight: Sendable {
         }
         return Check(id: "credentials", title: "Credentials resolved",
                      detail: sourceLabel ?? "Ready.", level: .ok)
+    }
+
+    /// The one row that stands in for the profile and credential checks when AWS
+    /// is not part of this setup.
+    ///
+    /// Informational, never a fault: a configuration the user chose is not a
+    /// problem, and a permanent red teaches them to ignore the colour, which is
+    /// how a real one gets missed. Present rather than absent, because a row that
+    /// disappears when a toggle flips is a row nobody can find again, and someone
+    /// wondering where their EC2 fleet went needs one line saying it is off and
+    /// where the switch is.
+    public static func awsOffCheck() -> Check {
+        Check(id: "aws-off", title: "AWS sources are off",
+              detail: "EC2 and Systems Manager are switched off, so no profile or "
+                + "credential was read. Turn either on in Where the hosts come "
+                + "from, below, to add an AWS fleet.",
+              level: .ok)
     }
 }
