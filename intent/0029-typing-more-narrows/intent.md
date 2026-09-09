@@ -4,23 +4,24 @@
 
 Searching a fleet of seven imported ssh_config hosts for one of them. Host names
 throughout this document are the placeholders the tests use, standing in for the
-real fleet:
+real fleet. They are chosen so the derivation below actually reproduces, which the
+first draft's names did not:
 
 ```
 $ hangar ssh wers
 hangar: 2 hosts match "wers". Which one?
-  1  workers.example.com   workers   workers.example.com
-  2  webstore.example.com  webstore  webstore.example.com
+  1  workers.example   workers   workers.example
+  2  webstore.example  webstore  webstore.example
 ```
 
-`wers` is not a subsequence of `webstore.example.com`, nor of `webstore`. The
+`wers` is not a subsequence of `webstore.example`, nor of `webstore`. The
 question was where the second row could possibly have come from.
 
 ## What was actually true
 
-`SearchEntry.metadata` joined four fields into one haystack. `SSHConfigImport`
-takes both `product` and `role` from the host name, so two of the four held the
-same string and the value appeared twice:
+`SearchEntry.metadata` joined four fields into one haystack. For an apex name
+`SSHConfigImport` takes both `product` and `role` from the same first label, so
+two of the four held the same string and the value appeared twice:
 
 ```
 metadata "webstore webstore"
@@ -44,6 +45,22 @@ two, and `werse` still gave two.
 | `wer`   | yes | yes | yes |
 | `wers`  | no  | no  | **yes** |
 | `werse` | no  | no  | **yes** |
+
+Two conditions, and both are ordinary. `leadComponent` returns the registrable
+label for a name of three labels or more and the first component otherwise, so
+only an **apex** name has a lead that is also its own first label, which is what
+`role` returns. And `derive` promotes a lead to a `product` tag only when more
+than one host shares it, so the collision needs a **sibling**: `webstore.example`
+alone gets no product at all, while `webstore.example` next to
+`www.webstore.example` gets `product` and `role` both equal to `webstore`. Every
+host on the reporting fleet was an apex name with a sibling.
+
+That pairing is why the first draft of this document did not reproduce.
+`webstore.example.com` has three labels, so its lead is `example` and its role is
+`webstore`, and the haystack is `"example webstore"`, which never doubled.
+`SSHConfigImportTests.testAnImportedCollisionDoesNotDoubleTheSearchHaystack` now
+loads a config through the real importer and asserts the collision, so the
+premise is pinned rather than narrated.
 
 Not an ssh_config problem. Import guarantees the collision, but an EC2 host
 tagged `product=web` with `Name=web` had the same haystack, so `web prod web`
@@ -98,9 +115,10 @@ search is for, not a bug, so it does not ride along with a bug fix.
 ## What proves it
 
 `FleetIndexTests.testTypingMoreNarrowsTheFleet` rebuilds the reported fleet of
-three imported hosts and asserts the counts. Against the old join it reports `wer`
-three, `wers` two, `werse` two, which is the shape of the report; against the fix
-it reports three, one, one. The `DuplicateMetadataSearchTests` cases pin the haystack itself,
+the imported fleet and asserts the counts. Against the old join it reports `wer`
+four, `wers` two, `werse` two, the shape the report quoted; against the fix it
+reports four, one, one. Its tags are the ones the importer really derives for
+those names, sibling included, rather than a set hand-written to suit. The `DuplicateMetadataSearchTests` cases pin the haystack itself,
 including the EC2 collision the issue used to show this is not an import problem.
 
 ## Reach

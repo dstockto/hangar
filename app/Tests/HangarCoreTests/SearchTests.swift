@@ -88,11 +88,12 @@ final class MultiTokenSearchTests: XCTestCase {
 /// narrowing the list.
 final class DuplicateMetadataSearchTests: XCTestCase {
 
-    /// What `SSHConfigImport` produces: product and role both come from the host
-    /// name, so the two fields hold the same string.
+    /// What `SSHConfigImport` produces for an apex name: product and role both
+    /// come from its first label, so the two fields hold the same string.
+    /// `SSHConfigImportTests` pins that derivation against the real importer.
     private let imported = SearchEntry(instance: Fixture.instance([
         "product": "webstore", "Name": "webstore",
-        "hostname": "webstore.example.com"]), alias: "webstore.example.com")
+        "hostname": "webstore.example"]), alias: "webstore.example")
 
     private func matches(_ query: String, _ entry: SearchEntry) -> Bool {
         entry.score(for: Fuzzy.Query(query)) != nil

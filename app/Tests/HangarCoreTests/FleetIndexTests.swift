@@ -36,34 +36,45 @@ final class FleetIndexTests: XCTestCase {
         XCTAssertEqual(entries.last?.instance.role, "orphan")
     }
 
-    /// The shape of the reported fleet. A host imported from `~/.ssh/config` takes
-    /// product and role from the same name, so the metadata haystack used to hold
-    /// that name twice and a token could span the two copies. Three hosts, then two,
-    /// then still two, which is what the report quoted on the real fleet.
+    /// Typing more has to keep narrowing, at the level the report counted: hosts,
+    /// not haystacks. A host imported from `~/.ssh/config` under an apex name took
+    /// product and role from its first label, so the haystack held that label
+    /// twice and a token could span the two copies.
+    ///
+    /// The tags here are the ones `SSHConfigImport` really derives for these
+    /// names, which `SSHConfigImportTests` pins: only `webstore.example` collides,
+    /// its `www` sibling is what promotes `webstore` to a product at all, and a
+    /// lead no sibling shares stays out of the tags entirely.
     func testTypingMoreNarrowsTheFleet() {
-        func imported(_ name: String, _ lead: String, id: String) -> Instance {
-            Instance(id: id, state: nil, type: "ssh_config", privateIP: nil,
-                     publicIP: nil, availabilityZone: nil,
-                     launchTime: "2026-08-20T15:46:42.000Z",
-                     tags: ["product": lead, "Name": lead, "hostname": name],
-                     source: .sshConfig, preferredAlias: name)
+        func imported(_ name: String, product: String, role: String,
+                      id: String) -> Instance {
+            var tags = ["Name": role, "hostname": name]
+            if !product.isEmpty { tags["product"] = product }
+            return Instance(id: id, state: nil, type: "ssh_config", privateIP: nil,
+                            publicIP: nil, availabilityZone: nil,
+                            launchTime: "2026-08-20T15:46:42.000Z",
+                            tags: tags, source: .sshConfig, preferredAlias: name)
         }
-        // `wers` is an honest subsequence of `workers` only. `webstore` is the
-        // host whose product and role collide, so it used to match it as well.
         let entries = FleetIndex.entries(for: [
-            imported("workers.example.com", "workers", id: "i-0000000000000000a"),
-            imported("tower.example.com", "tower", id: "i-0000000000000000b"),
-            imported("webstore.example.com", "webstore", id: "i-0000000000000000c"),
+            imported("workers.example", product: "", role: "workers",
+                     id: "i-0000000000000000a"),
+            imported("tower.example", product: "", role: "tower",
+                     id: "i-0000000000000000b"),
+            imported("webstore.example", product: "webstore", role: "webstore",
+                     id: "i-0000000000000000c"),
+            imported("www.webstore.example", product: "webstore", role: "www",
+                     id: "i-0000000000000000d"),
         ], config: config)
 
         func count(_ query: String) -> Int {
             FleetIndex.ranked(entries, matching: Fuzzy.Query(query)).count
         }
-        XCTAssertEqual(count("wer"), 3, "an honest subsequence of all three names")
-        XCTAssertEqual(count("wers"), 1, "one more character has to drop two of them")
+        XCTAssertEqual(count("wer"), 4, "an honest subsequence of every name here")
+        XCTAssertEqual(count("wers"), 1, "one more character has to drop three")
         XCTAssertEqual(count("werse"), 1, "and another has to keep them dropped")
         XCTAssertEqual(FleetIndex.ranked(entries, matching: Fuzzy.Query("wers"))
-            .first?.alias, "workers.example.com")
+            .first?.alias, "workers.example",
+            "the host the query is an honest subsequence of")
     }
 
     func testRankingPutsTheBestMatchFirst() {
