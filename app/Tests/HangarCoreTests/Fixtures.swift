@@ -7,7 +7,7 @@ import XCTest
 enum Fixture {
     static func instance(_ tags: [String: String],
                          id: String = "i-0123456789abcdef0",
-                         state: String = "running",
+                         state: String? = "running",
                          launchTime: String = "2026-08-20T15:46:42.000Z") -> Instance {
         Instance(id: id, state: state, type: "t3.small", privateIP: "10.0.0.1",
                  publicIP: nil, availabilityZone: "us-west-2a",

@@ -19,7 +19,9 @@ public enum FleetOutput {
             "env_name": instance.envName,
             "role": instance.role,
             "id": instance.id,
-            "state": instance.state,
+            // Empty, never omitted, when the source had no state to give. The
+            // key is part of the --json and --tsv contract; the vocabulary is not.
+            "state": instance.stateNote ?? instance.state ?? "",
             "private_ip": instance.privateIP ?? "",
             "public_ip": instance.publicIP ?? "",
             "zone": instance.availabilityZone ?? "",
@@ -147,16 +149,16 @@ public enum FleetOutput {
             var row = indent + pad(display(entry.alias), to: aliasWidth) + "  "
             if !grouped { row += pad(display(group(entry)), to: groupWidth) + "  " }
 
-            // A stopped host says so in words and is dimmed. Never only dimmed:
-            // colour that carries the only copy of a fact is a fact some readers
-            // do not get.
-            let running = entry.instance.state == "running"
-            if running {
+            // A host known not to be running says so in words and is dimmed.
+            // Never only dimmed: colour that carries the only copy of a fact is a
+            // fact some readers do not get. A host whose source has no notion of
+            // state gets neither, because there is nothing to report.
+            if let note = entry.instance.stateNote {
+                row += display(entry.hostname) + "  " + display(note)
+                lines.append(terminal.styled(row, .dimmed))
+            } else {
                 row += terminal.styled(display(entry.hostname), .secondary)
                 lines.append(row)
-            } else {
-                row += display(entry.hostname) + "  " + display(entry.instance.state)
-                lines.append(terminal.styled(row, .dimmed))
             }
         }
         return joined(lines)
@@ -254,8 +256,7 @@ public enum FleetOutput {
         return joined(entries.enumerated().map { index, entry in
             let number = terminal.styled(String(index + 1).leftPadded(to: width + 2),
                                          .heading)
-            let state = entry.instance.state == "running"
-                ? "" : "  " + display(entry.instance.state)
+            let state = entry.instance.stateNote.map { "  " + display($0) } ?? ""
             return "\(number)  \(pad(display(entry.alias), to: aliasWidth))  "
                 + "\(pad(display(group(entry)), to: groupWidth))  "
                 + display(entry.hostname) + state

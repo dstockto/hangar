@@ -86,6 +86,34 @@ public struct SourceSettings: Codable, Sendable, Equatable {
     /// `wantsSSMAfterFailure`, which is the case that needs to know what EC2 did.
     public var wantsSSMAlways: Bool { ssm == true }
     public var wantsSSMAfterFailure: Bool { ssm ?? true }
+
+    /// Whether AWS is part of this setup at all.
+    ///
+    /// The one answer to that question. Asking it anywhere else produced a setup
+    /// screen that called a missing `~/.aws` a fault on a fleet that never wanted
+    /// one, ten lines below a picker that treats the same condition as a non-event.
+    public var usesAWS: Bool { wantsEC2 || wantsSSMAlways }
+
+    /// Whether the user asked for this source. What a checkbox should show.
+    public func wants(_ source: HostSource) -> Bool {
+        switch source {
+        case .ec2:       return wantsEC2
+        case .ssm:       return wantsSSMAfterFailure
+        case .sshConfig: return wantsSSHConfig
+        case .hostsFile: return wantsHostsFile
+        }
+    }
+
+    /// Whether a refresh will actually run this source, which is not the same
+    /// question. SSM on its default is attempted only after EC2 was attempted and
+    /// denied, so with EC2 off the checkbox said yes to something that could never
+    /// run. A wish and a plan need different words.
+    public func attempts(_ source: HostSource) -> Bool {
+        switch source {
+        case .ssm: return wantsSSMAlways || (wantsSSMAfterFailure && wantsEC2)
+        default:   return wants(source)
+        }
+    }
 }
 
 /// What one source produced, kept per source so the setup screen can say which

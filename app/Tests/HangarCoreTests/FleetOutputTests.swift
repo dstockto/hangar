@@ -6,7 +6,7 @@ import XCTest
 final class FleetOutputTests: XCTestCase {
 
     private func entry(_ alias: String, product: String = "payments",
-                       env: String = "prod", state: String = "running",
+                       env: String = "prod", state: String? = "running",
                        id: String = "i-0123456789abcdef0") -> SearchEntry {
         var instance = Fixture.instance(
             ["product": product, "env": env, "Name": "web"], id: id, state: state)
@@ -510,6 +510,34 @@ final class FleetOutputTests: XCTestCase {
         let entries = [entry("web-1", state: "running")]
         XCTAssertFalse(FleetOutput.listing(entries, terminal: monochrome, grouped: true)
             .contains("running"))
+    }
+
+    /// Issue #1: a host from a source with no notion of state is not a host in a
+    /// bad state. It used to be dimmed and labelled "unknown", so on a fleet with
+    /// no EC2 in it the styling meant to mark the odd one out marked all of them.
+    func testAHostWithNoStateSaysNothingAndIsNotDimmed() {
+        let entries = [entry("web-1", state: nil)]
+        let plain = FleetOutput.listing(entries, terminal: monochrome, grouped: true)
+        XCTAssertFalse(plain.contains("unknown"))
+        // Rendered exactly as a host with nothing to report, dimming included,
+        // rather than as one whose state is a problem.
+        let stateless = FleetOutput.listing(entries, terminal: tty, grouped: true)
+        let running = FleetOutput.listing([entry("web-1", state: "running")],
+                                          terminal: tty, grouped: true)
+        XCTAssertEqual(stateless, running, "an absent state is not a warning state")
+    }
+
+    /// The numbered chooser is the other reader of the same fact, and a second
+    /// answer here is how the list and the listing come to disagree.
+    func testTheChooserAlsoSaysNothingForAnAbsentState() {
+        let text = FleetOutput.numbered([entry("web-1", state: nil)], terminal: monochrome)
+        XCTAssertFalse(text.contains("unknown"))
+    }
+
+    /// The key stays in the document even when there is nothing to put in it, so
+    /// `.[] | .state` never errors on a fleet that has no states.
+    func testJSONKeepsTheStateKeyAndLeavesItEmpty() {
+        XCTAssertEqual(FleetOutput.fields(entry("web-1", state: nil))["state"], "")
     }
 
     /// With colour off there is not one escape sequence anywhere, which is what

@@ -100,7 +100,7 @@ public struct SSHConfigWriter {
             var meta: [String] = []
             for (key, value) in [("product", instance.product), ("env", instance.env),
                                  ("env_name", instance.envName), ("name", instance.role),
-                                 ("asg", instance.asg), ("state", instance.state)]
+                                 ("asg", instance.asg), ("state", instance.state ?? "")]
             where !value.isEmpty {
                 meta.append("\(key)=\(SSHConfigValue.comment(value))")
             }

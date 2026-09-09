@@ -329,9 +329,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // glyph: a menu image cannot be tinted without losing the inversion
         // macOS applies to a highlighted row.
         item.image = Mark.instance(size: 12)
-        if instance.state != "running" {
+        if let note = instance.stateNote {
             item.attributedTitle = NSAttributedString(
-                string: "\(label)  (\(instance.state))",
+                string: "\(label)  (\(note))",
                 attributes: [.foregroundColor: Brand.Color.textSecondary,
                              .font: NSFont.menuFont(ofSize: 0)])
         }

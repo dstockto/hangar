@@ -47,7 +47,7 @@ final class ClusterView: NSView {
         var detail: String?
         /// Hosts drawn around this node, at angles fixed by their instance id so
         /// the same host lands in the same place on every refresh.
-        var hostAngles: [(angle: CGFloat, state: String)] = []
+        var hostAngles: [(angle: CGFloat, state: String?)] = []
     }
 
     /// Clicking a circle goes in, clicking the hub goes back out, which is the

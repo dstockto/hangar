@@ -249,7 +249,7 @@ public enum SSHConfigImport {
                 tags["aliases"] = usable.dropFirst().joined(separator: " ")
             }
             hosts.append(Instance(
-                id: "ssh:\(alias)", state: "unknown", type: "", privateIP: nil,
+                id: "ssh:\(alias)", state: nil, type: "", privateIP: nil,
                 publicIP: nil, availabilityZone: nil, launchTime: "",
                 tags: tags, source: .sshConfig, preferredAlias: alias))
         }

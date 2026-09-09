@@ -67,7 +67,7 @@ final class HostRowView: NSTableCellView {
     private var fullAlias = ""
     private var aliasMatches: [Range<String.Index>] = []
     private var hostMatches: [Range<String.Index>] = []
-    private var stateName = ""
+    private var stateName: String?
     private var metadataEnvironment: String?
     /// Shown only when the host did not come from EC2. Where a host came from is
     /// the first question anyone asks about one they did not expect to see, and
@@ -206,7 +206,8 @@ final class HostRowView: NSTableCellView {
 
         toolTip = fullHostname
         setAccessibilityRole(.row)
-        var described = "\(fullAlias), \(instance.state)"
+        var described = fullAlias
+        if let state = instance.state { described += ", \(state)" }
         if !instance.env.isEmpty { described += ", environment \(instance.env)" }
         if !instance.product.isEmpty { described += ", product \(instance.product)" }
         if isProduction { described += ", production" }
@@ -246,12 +247,12 @@ final class HostRowView: NSTableCellView {
 
         stateGlyph.contentTintColor = isSelectedRow
             ? Brand.Color.selectionForeground : Brand.Color.state(for: stateName)
-        stateGlyph.setAccessibilityLabel("State \(stateName)")
+        stateGlyph.setAccessibilityLabel(stateName.map { "State \($0)" })
         asgGlyph.contentTintColor = secondaryForeground
 
         var parts: [String] = []
         if let env = metadataEnvironment, !env.isEmpty { parts.append(env) }
-        parts.append(stateName)
+        if let stateName { parts.append(stateName) }
         if let source = metadataSource { parts.append(source) }
         // Give the hostname whatever width is left after the fixed facts, measured
         // rather than estimated, so a long name uses the space it actually has.

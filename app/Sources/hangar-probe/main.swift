@@ -239,7 +239,7 @@ do {
         print(String(format: "%-34s %-12s %-9s %-8s %@",
                      (instance.aliasStem as NSString).utf8String!,
                      (instance.id as NSString).utf8String!,
-                     (instance.state as NSString).utf8String!,
+                     ((instance.state ?? "-") as NSString).utf8String!,
                      (instance.isASG ? "ASG" : "-" as NSString).utf8String!,
                      instance.host ?? "-"))
     }

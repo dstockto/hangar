@@ -63,8 +63,11 @@ public enum SSHLogin {
     public static func probeCandidates(from instances: [Instance],
                                        preferring known: Set<String> = [],
                                        limit: Int = probeHostLimit) -> [Instance] {
+        // Not "running": a host whose source never reported a state is not a
+        // host known to be down, and excluding it meant the login was never
+        // learned on a fleet with no EC2 in it.
         let usable = instances.filter {
-            $0.state == "running"
+            $0.stateNote == nil
                 && !($0.platform ?? "").lowercased().contains("windows")
                 && $0.host != nil
                 && $0.isWrittenToSSHConfig

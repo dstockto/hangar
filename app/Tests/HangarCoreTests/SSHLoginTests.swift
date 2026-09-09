@@ -47,7 +47,7 @@ final class SSHLoginTests: XCTestCase {
 
     // MARK: - Which host gets asked
 
-    private func host(state: String, platform: String?, source: HostSource = .ec2) -> Instance {
+    private func host(state: String?, platform: String?, source: HostSource = .ec2) -> Instance {
         Instance(id: "i-\(UUID().uuidString.prefix(8))", state: state, type: "t3.small",
                  privateIP: "10.0.0.1", publicIP: nil, availabilityZone: "us-west-2a",
                  launchTime: "", tags: ["hostname": "h.example.com"],
@@ -60,6 +60,17 @@ final class SSHLoginTests: XCTestCase {
             host(state: "running", platform: "Linux/UNIX"),
         ])
         XCTAssertEqual(picked.map(\.state), ["running"], "a stopped host cannot answer")
+    }
+
+    /// Issue #1: the filter used to be `state == "running"`, so a fleet whose
+    /// hosts all came from ssh_config had no candidate at all and the login was
+    /// never learned. A host nobody reported a state for is not a host known to
+    /// be down.
+    func testAHostWithNoStateIsStillAsked() {
+        let picked = SSHLogin.probeCandidates(from: [
+            host(state: nil, platform: nil, source: .hostsFile),
+        ])
+        XCTAssertEqual(picked.count, 1, "an absent state is not a reason to skip a host")
     }
 
     func testWindowsHostsAreNotAsked() {

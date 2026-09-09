@@ -47,11 +47,17 @@ enum Brand {
                            brightness: brightness, alpha: 1)
         }
 
-        static func state(for state: String) -> NSColor {
+        /// Nil means the source never reported a state, and gets the neutral
+        /// text colour. It used to fall through to the terminated red, and since
+        /// the EC2 query never fetches terminated instances, the only hosts ever
+        /// painted red were the ones that came from a source with no state at
+        /// all. Red is reserved for a state something actually said.
+        static func state(for state: String?) -> NSColor {
             switch state {
             case "running":             return stateRunning
             case "stopped":             return stateStopped
             case "pending", "stopping": return statePending
+            case .none:                 return textSecondary
             default:                    return stateTerminated
             }
         }
@@ -154,10 +160,11 @@ enum Brand {
         /// Pending and stopping reuse the stopped geometry; terminated reuses it
         /// too. Colour alone never carries state, so each is paired with its
         /// state colour and an accessibility description naming the state.
-        static func forState(_ state: String) -> NSImage? {
+        static func forState(_ state: String?) -> NSImage? {
             switch state {
-            case "running": return running
-            default:        return stopped
+            case "running":  return running
+            case .none:      return nil    // No state was reported; do not invent one.
+            default:         return stopped
             }
         }
 

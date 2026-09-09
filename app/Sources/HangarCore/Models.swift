@@ -3,7 +3,10 @@ import Foundation
 /// One EC2 instance, reduced to what Hangar needs to show it and ssh to it.
 public struct Instance: Sendable, Hashable, Codable {
     public var id: String
-    public var state: String
+    /// Nil when the source has no notion of state. A host imported from
+    /// `~/.ssh/config` is not stopped, and it is not "unknown" either; nobody
+    /// asked anything about it. Only EC2 and SSM ever fill this in.
+    public var state: String?
     public var type: String
     public var privateIP: String?
     public var publicIP: String?
@@ -38,7 +41,7 @@ public struct Instance: Sendable, Hashable, Codable {
     /// produce an alias that does not work.
     public var preferredAlias: String?
 
-    public init(id: String, state: String, type: String, privateIP: String?,
+    public init(id: String, state: String?, type: String, privateIP: String?,
                 publicIP: String?, availabilityZone: String?, launchTime: String,
                 tags: [String: String], imageID: String? = nil, vpcID: String? = nil,
                 subnetID: String? = nil, keyName: String? = nil,
@@ -95,6 +98,18 @@ public struct Instance: Sendable, Hashable, Codable {
     public var role: String { tags["Name"] ?? "" }
     public var asg: String { tags["aws:autoscaling:groupName"] ?? "" }
     public var isASG: Bool { !asg.isEmpty }
+
+    /// The state, when saying it tells the reader something they did not assume.
+    ///
+    /// Nil for a running host, because that is the assumption, and nil when the
+    /// source never had a state to give. Every renderer asks this rather than
+    /// comparing against "running": dim when it is non-nil, print it, and do
+    /// neither when it is nil. Comparing the string in each renderer is what
+    /// dimmed and labelled every host on a fleet that has no EC2 in it.
+    public var stateNote: String? {
+        guard let state, !state.isEmpty, state != "running" else { return nil }
+        return state
+    }
 
     /// The hostname tag when the instance has been through the assign step,
     /// otherwise the private IP. ASG instances carry an instance-id prefix here.

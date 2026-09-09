@@ -505,15 +505,22 @@ final class DashboardWindow: NSObject, NSWindowDelegate {
         let alias = store.alias(for: host) ?? host.aliasStem
         // The rows someone opens a host to read are led: what it is, how big,
         // where it is, and what to type to reach it. The rest is reference.
-        var rows: [PanelRow] = [
-            PanelRow(host.state == "running" ? .ok : .note, "State",
-                     host.stateReason.map { "\(host.state) · \($0)" } ?? host.state,
-                     lead: true),
-            PanelRow(.clock, "Launched", launchDescription(host)),
-            PanelRow(.family, "Instance type", typeDescription(host), lead: true),
-            PanelRow(.note, "Instance id", host.id),
-            PanelRow(.zone, "Availability zone", host.availabilityZone ?? "unknown"),
-        ]
+        var rows: [PanelRow] = []
+        // Only when something reported one. A host from ssh_config has no state
+        // and no zone, and inventing "unknown" for both is the same guess this
+        // screen already refuses to make about placement.
+        if let state = host.state {
+            rows.append(PanelRow(state == "running" ? .ok : .note, "State",
+                                 host.stateReason.map { "\(state) · \($0)" } ?? state,
+                                 lead: true))
+        }
+        rows.append(PanelRow(.clock, "Launched", launchDescription(host)))
+        rows.append(PanelRow(.family, "Instance type", typeDescription(host),
+                             lead: true))
+        rows.append(PanelRow(.note, "Instance id", host.id))
+        if let zone = host.availabilityZone, !zone.isEmpty {
+            rows.append(PanelRow(.zone, "Availability zone", zone))
+        }
         if let vpc = host.vpcID { rows.append(PanelRow(.zone, "VPC", vpc)) }
         if let subnet = host.subnetID { rows.append(PanelRow(.zone, "Subnet", subnet)) }
         rows.append(PanelRow(.note, "Private address", host.privateIP ?? "none", lead: true))

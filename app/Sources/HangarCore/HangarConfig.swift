@@ -403,7 +403,7 @@ public extension Instance {
         case "env_name":      return envName
         case "product":       return product
         case "asg":           return asg
-        case "state":         return state
+        case "state":         return state ?? ""
         case "id", "instance_id": return id
         default:              return tags[key] ?? ""
         }

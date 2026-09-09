@@ -116,7 +116,11 @@ public enum HostsFile {
             }
 
             hosts.append(Instance(
-                id: "csv:\(alias)", state: values["state"] ?? "unknown", type: "",
+                // A CSV may carry a real state. An absent column is no state at all,
+                // not a state called "unknown".
+                id: "csv:\(alias)", state: values["state"].flatMap {
+                    $0.isEmpty ? nil : $0
+                }, type: "",
                 privateIP: nil, publicIP: nil, availabilityZone: nil,
                 launchTime: "", tags: tags,
                 source: .hostsFile, preferredAlias: alias))

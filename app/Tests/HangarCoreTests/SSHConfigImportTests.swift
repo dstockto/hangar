@@ -30,6 +30,18 @@ final class SSHConfigImportTests: TemporaryDirectoryTestCase {
     /// A pattern is not a host. `Host *` is a defaults block, and importing it
     /// would put a host in the menu that matches everything and connects to
     /// nothing.
+    /// Issue #1: it used to say "unknown", which every renderer then treated as a
+    /// state worth dimming. ssh does not know whether the machine is up, and
+    /// saying so is not the same as saying it is down.
+    func testAnImportedHostHasNoStateAtAll() {
+        let host = load("""
+        Host bastion
+          HostName bastion.example.com
+        """).hosts[0]
+        XCTAssertNil(host.state)
+        XCTAssertNil(host.stateNote)
+    }
+
     func testSkipsPatternsRatherThanImportingThem() {
         let result = load("""
         Host *

@@ -114,6 +114,27 @@ final class HostSourceTests: XCTestCase {
         XCTAssertTrue(settings.wantsSSMAfterFailure)
     }
 
+    /// Issue #1. The setup screen used to answer this by not asking it, and
+    /// called a missing ~/.aws a fault on a fleet that never wanted one.
+    func testAWSIsNotUsedWhenNeitherEC2NorSSMIsWanted() {
+        XCTAssertTrue(SourceSettings.standard.usesAWS)
+        XCTAssertFalse(SourceSettings(ec2: false).usesAWS,
+                       "SSM on its default waits for EC2, so EC2 off means no AWS")
+        XCTAssertTrue(SourceSettings(ec2: false, ssm: true).usesAWS,
+                      "SSM asked for outright is still AWS")
+    }
+
+    /// A wish and a plan are different questions. SSM on its default is attempted
+    /// only after EC2 was attempted and denied, so with EC2 off the checkbox said
+    /// yes to something that could never run.
+    func testSSMIsWantedByDefaultButNotAttemptedWithoutEC2() {
+        let settings = SourceSettings(ec2: false)
+        XCTAssertTrue(settings.wants(.ssm))
+        XCTAssertFalse(settings.attempts(.ssm))
+        XCTAssertTrue(SourceSettings(ec2: false, ssm: true).attempts(.ssm))
+        XCTAssertTrue(SourceSettings.standard.attempts(.ssm))
+    }
+
     func testAPreEXistingCacheStillDecodesAsEC2() throws {
         let json = """
         {"id":"i-0aaa","state":"running","type":"t3.small","launchTime":"","tags":{}}
