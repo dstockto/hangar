@@ -83,8 +83,9 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
 - **Native terminal launch.** <kbd>Return</kbd> opens a real session in iTerm2,
   Terminal or Ghostty, whichever you pick. <kbd>⌘</kbd><kbd>Return</kbd> copies
   the command instead.
-- **A command for the rest of your tools.** `hangar -s "web prod"` prints the
-  same ranked hosts the panel shows, for tmux, fzf, herder or a shell function.
+- **A command for the rest of your tools.** `hangar ssh web prod` connects to
+  the one host that matches, and `hangar -s "web prod"` prints the same ranked
+  hosts the panel shows, for tmux, fzf, herder or a shell function.
   No AWS call: it reads the cache the app already refreshed.
 - **Works with your tags, not ours.** `product`/`env`, `Service`/`Environment`,
   `app`/`stage`, or a single `Name` tag all work with no configuration. The setup
@@ -970,7 +971,8 @@ so `-f env=prod,` would quietly match every host and the `prod` would count for
 nothing. Bare `-f env=` still means "any value", which is what it always meant.
 
 The key is any tag the host carries, plus the names Hangar resolves for you:
-`name`, `product`, `env`, `env_name`, `role`, `asg`, `state` and `id`. `state` is
+`name`, `product`, `env`, `env_name`, `role`, `asg`, `state`, `id` and
+`instance_id`. `state` is
 how you leave out the ones that are not running. Those names take precedence: a
 fleet with its own tag called `Role` or `State` filters on Hangar's resolved
 value under that key, not on the tag. See [JSON](#json).
@@ -1020,9 +1022,9 @@ which host best matches `web prod`.
 
 Exit codes are meant for pipelines: `0` when hosts were printed or the work
 finished, `1` when nothing matched, `2` when there is no cache yet, `3` when
-finished, `1` when nothing matched, `2` when there is no cache yet, `3` when
-more than one host matched and none was chosen, and `4` when something run with
-`--exec` failed on at least one host. Under `--json`, a run that matched nothing
+more than one host matched and none was chosen, `4` when something run with
+`--exec` failed on at least one host, and `64` when the command line was wrong or
+a fan-out was refused for want of `-y`. Under `--json`, a run that matched nothing
 and a run with no cache both still print `[]`, so stdout stays parseable and the
 code carries the difference. A cache older than `healthy_within_hours`, and a
 missing `Include` line that would stop `ssh <alias>` resolving, are both said
@@ -1034,8 +1036,10 @@ once on stderr so a pipe is unaffected.
 app/
   Resources/      asset catalog, layered app-icon sources, Info.plist
   Sources/
-    HangarCore/   AWS config, SigV4, SSO, EC2, ssh config writer, fuzzy, truncation
+    HangarCore/   AWS config, SigV4, SSO, EC2, ssh config writer, fuzzy, truncation,
+                  and the command line's parsing, filters and output
     Hangar/       brand tokens, hotkeys, panel, rows, menubar, editor, launcher
+    hangar-cli/   the `hangar` command, bundled at Contents/Helpers
   Tests/          the offline test suite
 design/           brand kit and its source assets
 site/             the landing page published to GitHub Pages

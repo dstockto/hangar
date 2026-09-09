@@ -227,7 +227,8 @@ RUNNING SOMETHING PER HOST
   -f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
                              key=a,b any of them   key!=a none of them
                              * is a wildcard, so quote it in zsh; \\, is a comma
-                             keys: any tag, plus name, state, id, asg, env_name
+                             keys: any tag, plus name, role, product, env,
+                             env_name, asg, state, id, instance_id
       --cache <path>         read this cache instead of ~/.hangar/cache
       --config <path>        read this config instead of ~/.hangar/config.json,
                              and write none
@@ -256,6 +257,7 @@ EXIT
   2  no fleet cached yet
   3  more than one host matched and none was chosen
   4  a command run with --exec failed on at least one host
+ 64  the command line was wrong, or a fan-out was refused for want of -y
 """
 
 // MARK: - Run

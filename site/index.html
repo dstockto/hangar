@@ -45,7 +45,7 @@
       "operatingSystem": "macOS 14 or newer",
       "url": "https://goriparthi.github.io/hangar/",
       "downloadUrl": "https://github.com/goriparthi/hangar/releases/latest",
-      "softwareVersion": "0.6.1",
+      "softwareVersion": "0.8.0",
       "license": "https://github.com/goriparthi/hangar/blob/main/LICENSE",
       "image": "https://goriparthi.github.io/hangar/assets/og.png",
       "description": "A native macOS launcher for every host you can ssh to. Reads the hosts already in your ssh config, imports a CSV, and turns changing EC2 instances into stable, searchable SSH aliases. Press Command-Shift-H, type a few characters, and connect.",
@@ -57,7 +57,9 @@
         "Falls back to AWS Systems Manager when EC2 access is denied",
         "Uses the ssh key held by 1Password, Secretive or any ssh agent",
         "Global keyboard shortcut from any application",
-        "Fleet dashboard from a single read-only AWS call"
+        "Fleet dashboard from a single read-only AWS call",
+        "A hangar command that searches and connects from any shell",
+        "Runs a command across every matching host, one argument vector per host"
       ],
       "offers": {
         "@type": "Offer",
@@ -320,9 +322,10 @@
   </section>
 
   <!-- ---------------- The ladder ---------------- -->
-  <!-- Three rungs, each honest on its own. The first is what a reader with no AWS
-       account gets on first launch, which is the thing the old copy hid behind a
-       permission. -->
+  <!-- Three rungs, each honest on its own. The AWS fleet leads because it is the
+       one a reader is deciding about; the two after it are what they get with no
+       AWS account at all, which is the thing the old copy hid behind a
+       permission and which the section heading still promises. -->
   <section class="band" id="sources">
     <div class="wrap">
       <div class="section-head">
@@ -334,6 +337,19 @@
       </div>
 
       <div class="ladder">
+        <div class="card card-fleet">
+          <h3>An AWS fleet</h3>
+          <p class="card-sub">Where it gets interesting.</p>
+          <ol class="steps">
+            <li><span>One read-only <code>ec2:DescribeInstances</code></span></li>
+            <li><span>Aliases built from your tags
+              <span class="cost">so they survive the instance being replaced</span></span></li>
+            <li><span>Denied? Systems Manager is tried on its own
+              <span class="cost">and finds on-prem hosts EC2 never could</span></span></li>
+            <li><span>A dashboard over the same response
+              <span class="cost">no second call, no second permission</span></span></li>
+          </ol>
+        </div>
         <div class="card">
           <h3>Hosts you already have</h3>
           <p class="card-sub">Nothing to set up.</p>
@@ -363,19 +379,6 @@
           </ol>
         </div>
 
-        <div class="card card-fleet">
-          <h3>An AWS fleet</h3>
-          <p class="card-sub">Where it gets interesting.</p>
-          <ol class="steps">
-            <li><span>One read-only <code>ec2:DescribeInstances</code></span></li>
-            <li><span>Aliases built from your tags
-              <span class="cost">so they survive the instance being replaced</span></span></li>
-            <li><span>Denied? Systems Manager is tried on its own
-              <span class="cost">and finds on-prem hosts EC2 never could</span></span></li>
-            <li><span>A dashboard over the same response
-              <span class="cost">no second call, no second permission</span></span></li>
-          </ol>
-        </div>
       </div>
     </div>
   </section>
@@ -537,8 +540,9 @@ Host payments-prod-web-1
 <span class="ok">Last login: Tue 09:14 from 10.0.0.9</span>
 [deploy@web-1 ~]$ exit
 <span class="c">$</span> hangar tags
-product   225   4  payments, shop, search
-env       225   3  prod, staging, qa</div>
+<span class="c">KEY        HOSTS  VALUES  EXAMPLES</span>
+product      225       4  payments, shop, search
+env          225       3  prod, staging, qa</div>
           <p>And it runs a command across everything that matched, one argument
              vector per host, so no shell ever parses a tag.</p>
           <div class="demo"><span class="c">$</span> hangar -f env=prod --exec ssh {alias} uptime</div>
@@ -663,7 +667,9 @@ env        20 groups, every host tagged
           Hangar lists your instances once and keeps the answer. The dashboard is
           everything that one response can tell you, so it costs no second API
           call and no second permission: <code>ec2:DescribeInstances</code>,
-          read only, is all Hangar ever asks for.
+          read only, is all Hangar asks for to build the fleet. Only if EC2
+          refuses does it try one more read-only call,
+          <code>ssm:DescribeInstanceInformation</code>.
         </p>
       </div>
 
@@ -780,8 +786,10 @@ rsync -av ./dist/ payments-prod-web-1:/srv/app/">
                   over the agent socket rather than read from the vault.</span></li>
         <li><strong>Read-only against AWS</strong>
             <span>One <code>ec2:DescribeInstances</code> call, signed with SigV4.
-                  That is the only IAM permission Hangar asks for, and it works
-                  without one.</span></li>
+                  That is the only IAM permission Hangar asks for to build the
+                  fleet, and it works without one. If EC2 refuses, one more
+                  read-only call is tried:
+                  <code>ssm:DescribeInstanceInformation</code>.</span></li>
         <li><strong>One generated file</strong>
             <span><code>~/.ssh/config.d/hangar</code>, written at 0600 after ssh
                   itself validates the syntax.</span></li>

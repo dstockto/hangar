@@ -1,0 +1,7 @@
+{
+  "id": "site-version-matches-the-app",
+  "promise": "The version the landing page advertises in its structured data is the version the app actually ships.",
+  "why": "site/index.html carries softwareVersion in a JSON-LD block, which is what search engines and link unfurls read, and nothing in the release script touches it. It sat at 0.6.1 through two feature releases and was found by reading the page, not by any check. A number a machine reads is still a number that has to name the thing it counted.",
+  "command": "plist=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' app/Resources/Info.plist) || exit 1; site=$(grep -o '\"softwareVersion\": *\"[^\"]*\"' site/index.html | head -1 | sed 's/.*: *\"//; s/\"$//') || exit 1; [ -n \"$plist\" ] && [ -n \"$site\" ] && [ \"$plist\" = \"$site\" ]",
+  "expect": "exit 0"
+}
