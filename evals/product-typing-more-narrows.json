@@ -1,0 +1,7 @@
+{
+  "id": "product-typing-more-narrows",
+  "promise": "A query only matches a host on what one of its fields actually holds, never on a value that two fields repeat.",
+  "why": "A repeated tag appeared twice in the haystack, so a token could take some characters from one copy and the rest from the next. 'ras' and 'rasp' matched a host that neither its alias nor that tag matched alone, so typing more stopped narrowing.",
+  "command": "scripts/test.sh --filter DuplicateMetadataSearchTests 2>&1 | grep -qE 'Executed [1-9][0-9]* tests, with 0 failures'",
+  "expect": "exit 0"
+}

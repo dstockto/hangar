@@ -36,6 +36,35 @@ final class FleetIndexTests: XCTestCase {
         XCTAssertEqual(entries.last?.instance.role, "orphan")
     }
 
+    /// The shape of the reported fleet. A host imported from `~/.ssh/config` takes
+    /// product and role from the same name, so the metadata haystack used to hold
+    /// that name twice and a token could span the two copies. On the real fleet
+    /// `ra` gave three hosts, `ras` gave two, and `rasp` still gave two.
+    func testTypingMoreNarrowsTheFleet() {
+        func imported(_ name: String, _ lead: String, id: String) -> Instance {
+            Instance(id: id, state: nil, type: "ssh_config", privateIP: nil,
+                     publicIP: nil, availabilityZone: nil,
+                     launchTime: "2026-08-20T15:46:42.000Z",
+                     tags: ["product": lead, "Name": lead, "hostname": name],
+                     source: .sshConfig, preferredAlias: name)
+        }
+        // `wers` is an honest subsequence of `workers` only. `webstore` is the
+        // host whose product and role collide, so it used to match it as well.
+        let entries = FleetIndex.entries(for: [
+            imported("workers.example.com", "workers", id: "i-0000000000000000a"),
+            imported("tower.example.com", "tower", id: "i-0000000000000000b"),
+            imported("webstore.example.com", "webstore", id: "i-0000000000000000c"),
+        ], config: config)
+
+        func count(_ query: String) -> Int {
+            FleetIndex.ranked(entries, matching: Fuzzy.Query(query)).count
+        }
+        XCTAssertEqual(count("wer"), 3, "an honest subsequence of all three names")
+        XCTAssertEqual(count("wers"), 1, "one more character has to drop two of them")
+        XCTAssertEqual(FleetIndex.ranked(entries, matching: Fuzzy.Query("wers"))
+            .first?.alias, "workers.example.com")
+    }
+
     func testRankingPutsTheBestMatchFirst() {
         let entries = FleetIndex.entries(for: [
             host("payments", "prod", "database", id: "i-0000000000000000a"),

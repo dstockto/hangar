@@ -213,6 +213,17 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     which is the one moment a cache's age is not worth reporting. A cache going
     stale is a thing that happens while nothing is being published at all.
     Anything derived from elapsed time needs something that ticks.
+29. **A haystack that repeated itself.** `SearchEntry.metadata` joined product,
+    env, env_name and Name, and `SSHConfigImport` takes product and role from the
+    same host name, so the value appeared twice. A subsequence could start in one
+    copy and finish in the next, which matched what no single field held: on a
+    `webstore` host, `wers` matched though neither the alias nor the tag contains
+    it. Typing more stopped narrowing, which is the one thing a person is doing
+    when they keep typing. Deduplicate before joining, and
+    deduplicate on **the lowered bytes the search compares**, not on a Unicode
+    case fold. `Fuzzy.lowered` folds ASCII only, so folding wider collapses `Über`
+    and `über` into one copy and then the lowercase spelling is in no field at all.
+    A dedupe wider than the haystack turns a phantom match into a missing host.
 
 ## Testing against a fake fleet
 

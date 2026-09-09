@@ -131,8 +131,21 @@ public struct SearchEntry: Sendable {
         self.instance = instance
         self.alias = alias
         self.hostname = instance.host ?? instance.privateIP ?? instance.id
-        self.metadata = [instance.product, instance.env, instance.envName, instance.role]
-            .filter { !$0.isEmpty }.joined(separator: " ")
+        // A repeated value would let one token take characters from two copies,
+        // matching what no single field holds, so typing more stopped narrowing.
+        // Deduplicated on the lowered bytes search actually compares, so this is
+        // never wider than the haystack: folding more would hide a findable name.
+        var seen: [Fuzzy.Bytes] = []
+        var fields: [String] = []
+        for field in [instance.product, instance.env, instance.envName, instance.role]
+        where !field.isEmpty {
+            let lowered = Fuzzy.lowered(field)
+            if !seen.contains(lowered) {
+                seen.append(lowered)
+                fields.append(field)
+            }
+        }
+        self.metadata = fields.joined(separator: " ")
         self.aliasBytes = Fuzzy.lowered(alias)
         self.hostnameBytes = Fuzzy.lowered(hostname)
         self.metadataBytes = Fuzzy.lowered(metadata)
