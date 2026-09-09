@@ -38,6 +38,13 @@ final class ClusterView: NSView {
         /// and opened for its metadata.
         var state: String?
         var instanceID: String?
+        /// Whether this circle is one machine rather than a group of them.
+        ///
+        /// Not `state != nil`. That worked only while every host carried a state,
+        /// and 0.8.0 let a host from a source with no notion of one carry nil, at
+        /// which point a real machine started drawing its count and reading out as
+        /// a group. Only a host is ever given an id.
+        var isHost: Bool { instanceID != nil }
         /// The instance type, for the tooltip: the circle says how big, this
         /// says exactly which.
         var type: String?
@@ -432,8 +439,8 @@ final class ClusterView: NSView {
         // straight out from the hub along each group's own angle, so a spoke
         // cannot cross another circle.
         for node in nodes {
-            let tint = node.state.map { Brand.Color.state(for: $0) }
-                ?? Brand.Color.category(for: node.product)
+            let tint = node.isHost ? Brand.Color.state(for: node.state)
+                                   : Brand.Color.category(for: node.product)
             context.setStrokeColor(tint.withAlphaComponent(0.35).cgColor)
             let unit = CGVector(dx: cos(node.angle), dy: sin(node.angle))
             let reach = node.band * entrance
@@ -508,8 +515,8 @@ final class ClusterView: NSView {
             // colour is load bearing: the count sits inside every group circle,
             // the name is on it or one hover away, and the panels below say the
             // same things in words.
-            let tint = node.state.map { Brand.Color.state(for: $0) }
-                ?? Brand.Color.category(for: node.product)
+            let tint = node.isHost ? Brand.Color.state(for: node.state)
+                                   : Brand.Color.category(for: node.product)
             context.setFillColor(tint.withAlphaComponent(index == highlighted ? 0.38 : 0.24).cgColor)
             context.fillEllipse(in: rect)
             context.setStrokeColor(tint.withAlphaComponent(index == highlighted ? 1 : 0.8).cgColor)
@@ -525,12 +532,12 @@ final class ClusterView: NSView {
 
             // A host circle shows how big the machine is; a group shows how
             // many. An empty circle after drilling in was a wasted one.
-            let label = node.state == nil
+            let label = !node.isHost
                 ? "\(node.count)"
                 : (node.drawRadius >= 13 ? (node.shortSize ?? "") : "")
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(
-                    ofSize: node.state == nil ? 13 : min(12, max(9, node.drawRadius * 0.5)),
+                    ofSize: !node.isHost ? 13 : min(12, max(9, node.drawRadius * 0.5)),
                     weight: .semibold),
                 .foregroundColor: Brand.Color.textPrimary,
             ]
@@ -855,9 +862,10 @@ final class ClusterView: NSView {
             let element = ClusterNodeElement { [weak self] in self?.open(index) }
             element.setAccessibilityParent(self)
             element.setAccessibilityRole(.button)
-            let described = node.state == nil
+            let described = !node.isHost
                 ? "\(node.label), \(node.count) hosts"
-                : "\(node.label), \(node.type ?? ""), \(node.state ?? "")"
+                : [node.label, node.type, node.state]
+                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
             element.setAccessibilityLabel(described)
             element.setAccessibilityTitle(node.label)
             let drawn = drawPosition(node)
