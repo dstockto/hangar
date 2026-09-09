@@ -203,6 +203,42 @@ else
     status=1
 fi
 
+# Issue #1: a fleet with no AWS in it. The cache holds only hosts a source with
+# no notion of state produced, which is what every developer machine here is not.
+echo
+echo "a fleet with no AWS"
+NOAWS="$ROOT/.hangar/no-aws.json"
+cat > "$NOAWS" <<'EOF'
+{"region":"","fetchedAt":779000000,
+ "instances":[
+   {"id":"ssh:bastion","type":"","launchTime":"","source":"ssh_config",
+    "preferredAlias":"bastion","tags":{"hostname":"bastion.example.com"}},
+   {"id":"ssh:build","type":"","launchTime":"","source":"ssh_config",
+    "preferredAlias":"build","tags":{"hostname":"build.example.com"}}]}
+EOF
+chmod 600 "$NOAWS"
+noaws_listing="$("$CLI" --config "$CLI_CONFIG" --cache "$NOAWS" 2>/dev/null)"
+if [[ "$noaws_listing" != *unknown* ]]; then
+    echo "  ok   no host is labelled unknown when its source has no states"
+else
+    echo "  FAIL the listing invented a state: $noaws_listing"
+    status=1
+fi
+if [[ "$("$CLI" --config "$CLI_CONFIG" --cache "$NOAWS" -a 2>/dev/null)" == $'bastion
+build' ]]; then
+    echo "  ok   both hosts are listed, in menu order"
+else
+    echo "  FAIL a stateless host went missing from the listing"
+    status=1
+fi
+noaws_state="$("$CLI" --config "$CLI_CONFIG" --cache "$NOAWS" --tsv 2>/dev/null | cut -f5 | tr -d '\n')"
+if [[ -z "$noaws_state" ]]; then
+    echo "  ok   the tsv state column is empty rather than a guess"
+else
+    echo "  FAIL the tsv state column said: $noaws_state"
+    status=1
+fi
+
 after="$(fingerprint)"
 if [[ "$before" != "$after" ]]; then
     echo

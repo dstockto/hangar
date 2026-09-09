@@ -881,9 +881,18 @@ prints `[]` rather than nothing when no host matched and when there is no cache
 yet. Those are the point of that change, but a script reading the old shape
 should know it moved.
 
+The `state` column moved once more at 0.8.0. A host whose source has no notion
+of state, which is every host from `~/.ssh/config` and any CSV row without a
+`state` column, now reports an empty string where 0.7.0 printed `unknown`. The
+column and the JSON key are always there; only the vocabulary changed, and it
+changed because `unknown` was never true. `-f state=running` and
+`-f state!=running` are unaffected. `-f state=unknown` no longer matches those
+hosts, and `hangar values state` will no longer offer it.
+
 Read by a person, the fleet is grouped under headings built from the same levels
 the menu uses, `group_by` included, hosts are indented under them, and a host
-that is not running is dimmed **and** says its state in words. A fleet that none
+known not to be running is dimmed **and** says its state in words. A host whose
+source never reported one is neither, because there is nothing to report. A fleet that none
 of those levels group gets no headings at all rather than one "untagged" over
 everything. A search is not grouped: it is ranked by relevance, and a heading
 over a ranked list would either lie about the order or throw the ranking away.
