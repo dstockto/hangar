@@ -116,6 +116,9 @@ public struct HangarConfig: Codable, Sendable {
     public var manageSSHInclude: Bool?
     /// How recent the cache must be for Hangar to consider the fleet healthy.
     public var healthyWithinHours: Int?
+    /// When the menubar glyph stops reading fresh and turns amber. Separate from
+    /// `refresh_minutes`, which says when a refresh is due, not when to worry.
+    public var staleAfterMinutes: Int?
     /// Which releases Check for Updates offers: "stable" sees only full releases,
     /// "beta" also sees prerelease builds.
     public var updateChannel: String?
@@ -141,7 +144,7 @@ public struct HangarConfig: Codable, Sendable {
                 ssh: SSHSettings? = nil, overrides: [Override]? = nil,
                 hotkeys: [Hotkey]? = nil, refreshMinutes: Int? = nil,
                 syncSSHConfigOnRefresh: Bool? = nil, manageSSHInclude: Bool? = nil,
-                healthyWithinHours: Int? = nil,
+                healthyWithinHours: Int? = nil, staleAfterMinutes: Int? = nil,
                 updateChannel: String? = nil, checkUpdatesOnLaunch: Bool? = nil,
                 launchAtLogin: Bool? = nil, tags: TagMapping? = nil,
                 updateCheckHours: Int? = nil, groupBy: [String]? = nil,
@@ -156,6 +159,7 @@ public struct HangarConfig: Codable, Sendable {
         self.syncSSHConfigOnRefresh = syncSSHConfigOnRefresh
         self.manageSSHInclude = manageSSHInclude
         self.healthyWithinHours = healthyWithinHours
+        self.staleAfterMinutes = staleAfterMinutes
         self.updateChannel = updateChannel
         self.checkUpdatesOnLaunch = checkUpdatesOnLaunch
         self.launchAtLogin = launchAtLogin
@@ -171,6 +175,7 @@ public struct HangarConfig: Codable, Sendable {
         case syncSSHConfigOnRefresh = "sync_ssh_config_on_refresh"
         case manageSSHInclude = "manage_ssh_include"
         case healthyWithinHours = "healthy_within_hours"
+        case staleAfterMinutes = "stale_after_minutes"
         case updateChannel = "update_channel"
         case checkUpdatesOnLaunch = "check_updates_on_launch"
         case launchAtLogin = "launch_at_login"
@@ -258,6 +263,7 @@ public struct HangarConfig: Codable, Sendable {
             syncSSHConfigOnRefresh: true,
             manageSSHInclude: true,
             healthyWithinHours: 24,
+            staleAfterMinutes: 60,
             updateChannel: "stable",
             checkUpdatesOnLaunch: true,
             launchAtLogin: false,

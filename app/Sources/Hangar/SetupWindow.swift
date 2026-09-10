@@ -22,8 +22,6 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     private var footer: NSStackView!
     private var syncToggle: NSButton!
     private var loginToggle: NSButton!
-    private var updateToggle: NSButton!
-    private var channelPopup: NSPopUpButton!
     private var terminalPopup: NSPopUpButton!
     private var tagsStack: NSStackView!
     private var tagsCard: NSView!
@@ -205,23 +203,6 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         loginToggle.state = LoginItem.isEnabled ? .on : .off
         loginToggle.font = Brand.Font.metadata
 
-        // Automatic updates and the channel sit next to each other: turning the
-        // check on is the moment someone cares which releases it sees.
-        updateToggle = NSButton(checkboxWithTitle: "Check for updates daily",
-                                target: self, action: #selector(toggleUpdates))
-        updateToggle.state = (store.config.checkUpdatesOnLaunch ?? true) ? .on : .off
-        updateToggle.font = Brand.Font.metadata
-
-        channelPopup = NSPopUpButton()
-        channelPopup.addItems(withTitles: ["Stable releases", "Beta releases"])
-        channelPopup.selectItem(at:
-            (store.config.updateChannel ?? "stable").lowercased() == "beta" ? 1 : 0)
-        channelPopup.target = self
-        channelPopup.action = #selector(channelChanged)
-        channelPopup.setAccessibilityLabel("Update channel")
-        channelPopup.controlSize = .small
-        channelPopup.font = Brand.Font.metadata
-
         // Beside the other settings rather than in a card: the terminal is one
         // choice, it never grows with the fleet, and it belongs where the user
         // is already deciding how Hangar behaves.
@@ -266,14 +247,11 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         let buttonRow = NSStackView(views: [NSView(), rightButtons])
         buttonRow.orientation = .horizontal
 
-        let updateRow = NSStackView(views: [updateToggle, channelPopup])
-        updateRow.orientation = .horizontal
-        updateRow.alignment = .centerY
-        updateRow.spacing = Brand.Metric.space8
-
         // Spread across the width rather than stacked in the left third. At 860
-        // points a column of four controls left two thirds of the footer empty.
-        let toggles = NSStackView(views: [syncToggle, loginToggle, updateRow])
+        // points a column of controls left two thirds of the footer empty. The
+        // update controls are on the panel: a release is something to act on, and
+        // this window is not where anyone is looking when one lands.
+        let toggles = NSStackView(views: [syncToggle, loginToggle])
         toggles.orientation = .horizontal
         toggles.alignment = .centerY
         toggles.distribution = .equalSpacing
@@ -1459,21 +1437,6 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         }
         closeHint.stringValue = LoginItem.statusDescription
             + " Closing this window leaves Hangar running in your menu bar."
-    }
-
-    @objc private func toggleUpdates() {
-        var config = store.config
-        config.checkUpdatesOnLaunch = updateToggle.state == .on
-        try? HangarConfig.write(config)
-        store.reloadConfig()
-        channelPopup.isEnabled = updateToggle.state == .on
-    }
-
-    @objc private func channelChanged() {
-        var config = store.config
-        config.updateChannel = channelPopup.indexOfSelectedItem == 1 ? "beta" : "stable"
-        try? HangarConfig.write(config)
-        store.reloadConfig()
     }
 
     @objc private func toggleSync() {

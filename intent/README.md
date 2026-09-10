@@ -61,3 +61,4 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0026 | Three things the first real install found | Shipped |
 | 0027 | A command line you can drive | Shipped |
 | 0028 | A fleet with no AWS | Open |
+| 0029 | A glyph that was amber for half an hour | Shipped |

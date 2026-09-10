@@ -22,6 +22,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Runs only while a refresh is in flight.
     private var pulse: Timer?
     private var pulsePhase: CGFloat = 0
+    /// Health is a function of elapsed time, so nothing publishes when a fresh
+    /// cache becomes an aging one. Without this the glyph only ever changes at a
+    /// refresh, which is the one moment the age is not worth reporting.
+    private var healthTicker: Timer?
     private var editor: HostEditor?
     private var about: AboutWindow?
 
@@ -61,6 +65,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         store.$fetchedAt.sink { [weak self] _ in
             Task { @MainActor in self?.updateStatusImage() }
         }.store(in: &observers)
+        // An empty fleet cannot be called healthy, so the count is part of health.
+        store.$instances.sink { [weak self] _ in
+            Task { @MainActor in self?.updateStatusImage() }
+        }.store(in: &observers)
         store.$status.sink { [weak self] status in
             Task { @MainActor in
                 // A refresh can take seconds against a slow endpoint, and until
@@ -69,6 +77,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 self?.updateStatusImage()
             }
         }.store(in: &observers)
+
+        healthTicker = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.updateStatusImage() }
+        }
 
         // A light/dark switch changes the colour the shell has to be painted in.
         DistributedNotificationCenter.default.addObserver(
@@ -81,14 +93,59 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// The aircraft turns green while the cache is fresh. When the menu is open
-    /// or the fleet is not healthy, the unmodified template is used so macOS
-    /// keeps inverting it against the highlight and the menubar appearance.
+    /// Green while the cache is fresh, amber once it is aging, red once it is
+    /// stale or the last fetch failed. When the menu is open, or nothing has ever
+    /// been cached, the unmodified template is used so macOS keeps inverting it
+    /// against the highlight and the menubar appearance.
     private var menuIsOpen = false
 
-    /// Amber, breathing, while the fleet is being fetched. Amber because it is
-    /// the brand's pending colour, and breathing because a menubar item has no
-    /// room for a spinner. The word is in the tooltip, so the colour is not
+    var health: CacheHealth {
+        CacheHealth.classify(
+            fetchedAt: store.fetchedAt,
+            isRefreshing: store.status == .refreshing,
+            lastFetchFailed: { if case .failed = store.status { return true } else { return false } }(),
+            hasHosts: !store.instances.isEmpty,
+            staleAfterMinutes: store.config.staleAfterMinutes ?? 60,
+            healthyWithinHours: store.config.healthyWithinHours ?? 24)
+    }
+
+    /// The colour the aircraft carries at rest for each health. Amber and red are
+    /// the brand's own pending and terminated colours, so the menubar reads on the
+    /// same scale as every state badge in the panel.
+    private static func tint(for health: CacheHealth) -> NSColor? {
+        switch health {
+        case .fresh, .refreshing: return Brand.Color.stateRunning
+        case .aging: return Brand.Color.statePending
+        case .stale: return Brand.Color.stateTerminated
+        case .unknown: return nil
+        }
+    }
+
+    private func toolTip(for health: CacheHealth) -> (tip: String, label: String) {
+        let age = store.staleDescription
+        switch health {
+        case .refreshing:
+            return ("Hangar: refreshing the fleet\u{2026}", "Hangar, refreshing the fleet")
+        case .fresh:
+            return ("Hangar: \(store.fleetSummary)", "Hangar, fleet healthy, \(store.fleetSummary)")
+        case .aging:
+            let when = age.map { "cache \($0)" } ?? "cache is aging"
+            return ("Hangar: \(when)", "Hangar, \(when)")
+        case .stale:
+            if case .failed(let message) = store.status {
+                return ("Hangar: last refresh failed. \(message)",
+                        "Hangar, last refresh failed")
+            }
+            let when = age.map { "cache is stale, \($0)" } ?? "cache is stale"
+            return ("Hangar: \(when)", "Hangar, \(when)")
+        case .unknown:
+            return ("Hangar", "Hangar")
+        }
+    }
+
+    /// Breathing green while the fleet is being fetched. Green because the cache
+    /// underneath is still the one on screen; breathing because a menubar item has
+    /// no room for a spinner. The word is in the tooltip, so the colour is not
     /// carrying this on its own.
     private func startPulse() {
         guard pulse == nil else { return }
@@ -99,7 +156,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         pulse = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.pulse != nil else { return }
                 self.pulsePhase += 0.1
                 // Quantised, because every distinct colour becomes a cached
                 // image and a smooth sweep would fill that cache with junk.
@@ -115,53 +172,43 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func drawPulse(intensity: CGFloat) {
-        guard let button = statusItem.button else { return }
+        // The store is the authority, not the timer: a frame queued before
+        // stopPulse ran would otherwise repaint over the settled glyph.
+        guard store.status == .refreshing, let button = statusItem.button else { return }
         var shell = Brand.Color.textPrimary
+        var target = Brand.Color.stateRunning
         button.effectiveAppearance.performAsCurrentDrawingAppearance {
             shell = NSColor.labelColor.usingColorSpace(.sRGB) ?? shell
+            target = Brand.Color.stateRunning.usingColorSpace(.sRGB) ?? target
         }
         // Mixed towards the shell rather than faded with alpha: the glyph cache
         // keys on the colour's RGB, so an alpha-only change returned the first
         // frame every time and the pulse held still.
-        let amber = Brand.Color.statePending.usingColorSpace(.sRGB)
-            ?? Brand.Color.statePending
         let dim = shell.usingColorSpace(.sRGB) ?? shell
         let mix = 0.35 + 0.65 * intensity
         let aircraft = NSColor(
-            srgbRed: dim.redComponent + (amber.redComponent - dim.redComponent) * mix,
-            green: dim.greenComponent + (amber.greenComponent - dim.greenComponent) * mix,
-            blue: dim.blueComponent + (amber.blueComponent - dim.blueComponent) * mix,
+            srgbRed: dim.redComponent + (target.redComponent - dim.redComponent) * mix,
+            green: dim.greenComponent + (target.greenComponent - dim.greenComponent) * mix,
+            blue: dim.blueComponent + (target.blueComponent - dim.blueComponent) * mix,
             alpha: 1)
-        button.image = StatusGlyph.twoTone(shell: shell, aircraft: aircraft)
-            ?? StatusGlyph.plain()
-        button.title = ""
-        button.imagePosition = .imageOnly
-        button.toolTip = "Hangar: refreshing the fleet\u{2026}"
-        button.setAccessibilityLabel("Hangar, refreshing the fleet")
+        paint(shell: shell, aircraft: aircraft, health: .refreshing)
     }
 
     func updateStatusImage() {
         // The pulse owns the button while it runs.
         guard pulse == nil else { return }
         guard let button = statusItem.button else { return }
-        let healthy = store.isHealthy && !menuIsOpen
-        if healthy {
-            // The menubar paints glyphs in its own foreground colour, which is
-            // what labelColor resolves to under the status bar's appearance.
+        let health = self.health
+        // The menu draws its own highlight behind the item, and only a template
+        // image inverts against it.
+        if !menuIsOpen, let colour = MenuBarController.tint(for: health) {
             var shell = Brand.Color.textPrimary
-            var aircraft = Brand.Color.stateRunning
+            var aircraft = colour
             button.effectiveAppearance.performAsCurrentDrawingAppearance {
                 shell = NSColor.labelColor.usingColorSpace(.sRGB) ?? shell
-                aircraft = Brand.Color.stateRunning.usingColorSpace(.sRGB) ?? aircraft
+                aircraft = colour.usingColorSpace(.sRGB) ?? aircraft
             }
-            if let image = StatusGlyph.twoTone(shell: shell, aircraft: aircraft) {
-                button.image = image
-                button.title = ""
-                button.imagePosition = .imageOnly
-                button.toolTip = "Hangar: \(store.fleetSummary)"
-                button.setAccessibilityLabel("Hangar, fleet healthy, \(store.fleetSummary)")
-                return
-            }
+            if paint(shell: shell, aircraft: aircraft, health: health) { return }
         }
         if let plain = StatusGlyph.plain() {
             button.image = plain
@@ -174,9 +221,25 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             button.title = "Hangar"
             button.imagePosition = .noImage
         }
-        button.toolTip = store.instances.isEmpty ? "Hangar" : "Hangar: \(store.fleetSummary)"
-        button.setAccessibilityLabel(
-            store.isHealthy ? "Hangar" : "Hangar, fleet cache is stale")
+        let copy = toolTip(for: health)
+        button.toolTip = copy.tip
+        button.setAccessibilityLabel(copy.label)
+    }
+
+    /// Returns false when the artwork would not split into its two shapes, so the
+    /// caller falls back to the untouched template.
+    @discardableResult
+    private func paint(shell: NSColor, aircraft: NSColor, health: CacheHealth) -> Bool {
+        guard let button = statusItem.button,
+              let image = StatusGlyph.twoTone(shell: shell, aircraft: aircraft)
+        else { return false }
+        button.image = image
+        button.title = ""
+        button.imagePosition = .imageOnly
+        let copy = toolTip(for: health)
+        button.toolTip = copy.tip
+        button.setAccessibilityLabel(copy.label)
+        return true
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -251,6 +314,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         dashboard.image = Brand.Glyph.symbol("chart.bar.doc.horizontal", size: 13)
         menu.addItem(dashboard)
         menu.addItem(sshConfigItem())
+        menu.addItem(updatesItem())
         menu.addItem(settingsItem())
         menu.addItem(.separator())
         menu.addItem(helpItem())
@@ -357,6 +421,37 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return item
     }
 
+    /// Its own item rather than a section inside Settings. An update is something
+    /// to act on, and two levels down a settings submenu is where a release goes
+    /// to be missed.
+    private func updatesItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Check for Updates\u{2026}", action: nil, keyEquivalent: "")
+        item.image = Brand.Glyph.symbol("arrow.down.circle", size: 13)
+        let submenu = NSMenu()
+        submenu.addItem(action("Check Now\u{2026}", #selector(checkUpdates), key: ""))
+        if let update = availableUpdate() {
+            submenu.addItem(action("Install Hangar \(update.version)\u{2026}",
+                                   #selector(installUpdate), key: ""))
+        }
+        submenu.addItem(.separator())
+        let daily = action("Check Daily", #selector(toggleDailyUpdates), key: "")
+        daily.state = (store.config.checkUpdatesOnLaunch ?? true) ? .on : .off
+        submenu.addItem(daily)
+        submenu.addItem(updateChannelItem())
+        submenu.addItem(.separator())
+        // The version belongs next to the thing that changes it, so "is there
+        // anything newer" can be answered without opening About.
+        var versionRuns: [StatusRun] = [.text("Version "), .mono(Updates.bundleVersion)]
+        if let update = availableUpdate() {
+            versionRuns += [.text("  \u{2192}  "), .mono(update.version), .text(" available")]
+        } else if let checked = Updates.lastCheck {
+            versionRuns.append(.text("  ·  checked \(MenuBarController.ago(checked))"))
+        }
+        submenu.addItem(statusRow(versionRuns, tier: .faint))
+        item.submenu = submenu
+        return item
+    }
+
     private func settingsItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Settings\u{2026}", action: nil, keyEquivalent: ",")
         item.image = Brand.Glyph.symbol("gearshape", size: 13)
@@ -373,23 +468,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         login.state = LoginItem.isEnabled ? .on : .off
         submenu.addItem(login)
         submenu.addItem(statusRow([.text(LoginItem.statusDescription)], tier: .faint))
-
-        submenu.addItem(.separator())
-        submenu.addItem(sectionHeader("Updates", symbol: "arrow.down.circle"))
-        let daily = action("Check Daily", #selector(toggleDailyUpdates), key: "")
-        daily.state = (store.config.checkUpdatesOnLaunch ?? true) ? .on : .off
-        submenu.addItem(daily)
-        submenu.addItem(updateChannelItem())
-        submenu.addItem(action("Check Now\u{2026}", #selector(checkUpdates), key: ""))
-        // The version belongs next to the thing that changes it, so "is there
-        // anything newer" can be answered without opening About.
-        var versionRuns: [StatusRun] = [.text("Version "), .mono(Updates.bundleVersion)]
-        if let update = availableUpdate() {
-            versionRuns += [.text("  \u{2192}  "), .mono(update.version), .text(" available")]
-        } else if let checked = Updates.lastCheck {
-            versionRuns.append(.text("  ·  checked \(MenuBarController.ago(checked))"))
-        }
-        submenu.addItem(statusRow(versionRuns, tier: .faint))
 
         submenu.addItem(.separator())
         submenu.addItem(sectionHeader("Sessions", symbol: "terminal"))

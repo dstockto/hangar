@@ -319,8 +319,14 @@ let instances = config.tagMapping.normalize(cache.instances)
 
 // Said once, on stderr, so a pipeline is unaffected but nobody is left wondering
 // why the list is short.
-let hours = Double(config.healthyWithinHours ?? 24)
-if cache.age > hours * 3600 {
+// Same classifier the menubar colours from, so the warning and the glyph cannot
+// disagree about when a cache stopped being trustworthy.
+let health = CacheHealth.classify(
+    fetchedAt: cache.fetchedAt, isRefreshing: false, lastFetchFailed: false,
+    hasHosts: !instances.isEmpty,
+    staleAfterMinutes: config.staleAfterMinutes ?? 60,
+    healthyWithinHours: config.healthyWithinHours ?? 24)
+if health == .stale {
     let days = Int(cache.age / 86_400)
     let age = days >= 1 ? "\(days) day\(days == 1 ? "" : "s")"
                         : "\(Int(cache.age / 3600)) hours"

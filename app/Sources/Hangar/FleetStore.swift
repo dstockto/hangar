@@ -72,15 +72,6 @@ final class FleetStore: ObservableObject {
         return Date().timeIntervalSince(fetchedAt) > minutes * 60
     }
 
-    /// Healthy means the cache was refreshed inside the configured window, so the
-    /// fleet on screen can be trusted. Drives the menubar health tint.
-    var isHealthy: Bool {
-        guard let fetchedAt, !instances.isEmpty else { return false }
-        if case .failed = status { return false }
-        let hours = Double(config.healthyWithinHours ?? 24)
-        return Date().timeIntervalSince(fetchedAt) < hours * 3600
-    }
-
     var staleDescription: String? {
         guard let fetchedAt else { return "never refreshed" }
         let elapsed = Date().timeIntervalSince(fetchedAt)

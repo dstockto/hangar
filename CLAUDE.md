@@ -199,6 +199,21 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     a file that does not hold every host. 225, 225 and 223 for the same question.
     A number on screen has to name the set it counted.
 
+27. **An invalidated timer whose last frame had not landed yet.** The menubar
+    pulse ticked at 20 Hz and each tick queued its draw into a detached
+    `Task { @MainActor }`. `stopPulse` invalidated the timer and the settled glyph
+    was repainted, then a frame already in the queue repainted the pulse colour
+    over it, and nothing repainted again until the next refresh. The icon was
+    amber for 30 minutes at a time while every refresh in the log had finished in
+    under two seconds. Invalidating a timer does not recall the work its ticks
+    already handed off; a frame drawn one hop from the tick has to re-read the
+    state that justified it.
+28. **State that only changed when something published.** The same glyph was
+    repainted from `$fetchedAt` and `$status`, and both only change at a refresh,
+    which is the one moment a cache's age is not worth reporting. A cache going
+    stale is a thing that happens while nothing is being published at all.
+    Anything derived from elapsed time needs something that ticks.
+
 ## Testing against a fake fleet
 
 `make testbed` builds a fabricated home directory, runs every host source, the

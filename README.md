@@ -110,8 +110,11 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
 - **The whole fleet in the menu bar.** A `HOSTS` section groups the fleet by your
   own tags, as many levels deep as you configure, down to the instances
   themselves. A host that is not running says so rather than relying on its icon.
-- **Fleet health at a glance.** The menubar aircraft turns green while the cache
-  is fresh, and says so when it is not.
+- **Fleet health at a glance.** The menubar aircraft is green while the cache is
+  fresh and breathes green while a refresh is in flight. It turns amber once the
+  cache passes `stale_after_minutes`, and red once it passes
+  `healthy_within_hours` or a refresh fails. The tooltip says the age in words,
+  so the colour is not carrying it alone.
 - **A dashboard over the same one call.** Drill the fleet product by
   environment by host, open any host for everything `DescribeInstances` returned
   about it, and read the tag, placement, age and exposure findings behind it.
@@ -321,11 +324,13 @@ where Console.app can filter them.
 
 ### Updates
 
-**Settings… → Check for Updates**. Hangar reads the GitHub releases API only when
-you ask, or once at launch if you set `check_updates_on_launch`.
+**Check for Updates…** is its own item in the menubar menu: Check Now, the
+installed version and what is available, a **Check Daily** toggle and the
+channel. When a release is waiting, **Install Hangar <version>** appears there
+and in the menu itself. Hangar reads the GitHub releases API only when you ask,
+or once at launch if you set `check_updates_on_launch`.
 
-Two channels, switchable in **Settings… → Update Channel**: `stable` sees full
-releases, `beta` also sees prereleases. An update is installed only if Apple
+Two channels: `stable` sees full releases, `beta` also sees prereleases. An update is installed only if Apple
 notarized it *and* it is signed by this project's Developer ID team, verified as a
 cryptographic codesign requirement rather than by parsing text.
 
@@ -623,6 +628,7 @@ Full detail, and how to report a hole, in [SECURITY.md](SECURITY.md).
     { "keys": "cmd+shift+p", "title": "Prod", "filter": { "env": "prod" } }
   ],
   "refresh_minutes": 30,
+  "stale_after_minutes": 60,
   "healthy_within_hours": 24,
   "sync_ssh_config_on_refresh": true,
   "update_channel": "stable",
