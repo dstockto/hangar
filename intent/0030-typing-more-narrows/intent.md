@@ -45,8 +45,8 @@ A subsequence match could start in one copy and finish in the next, taking `w`,
 That is worse than a stray result. Duplication does not change what short queries
 match, so `wer` matched before and matches now. It only lets *longer* queries
 match what they otherwise could not, which defeats the one thing a person is
-doing when they keep typing. On this fleet `wer` gave three hosts, `wers` gave
-two, and `werse` still gave two.
+doing when they keep typing. On the four-host fixture fleet `wer` gave all four,
+`wers` gave two, and `werse` still gave two.
 
 | query | matches alias | matches `webstore` | matches `webstore webstore` |
 |---|---|---|---|
@@ -89,7 +89,7 @@ same value, at either level: not one `SearchEntry`, and not a fleet through
 
 Deduplicate the components before joining, preserving order. Cross-field search
 is the point of the field and is untouched: `["payments", "prod", "web"]` stays
-exactly as it is, and only the repeated value collapses. `wer` still gives three,
+exactly as it is, and only the repeated value collapses. `wer` still gives four,
 `wers` and `werse` now give one.
 
 Deduplicated on the lowered bytes the search actually compares, not on the exact
@@ -127,12 +127,13 @@ search is for, not a bug, so it does not ride along with a bug fix.
 
 ## What proves it
 
-`FleetIndexTests.testTypingMoreNarrowsTheFleet` rebuilds the reported fleet of
-the imported fleet and asserts the counts. Against the old join it reports `wer`
+`FleetIndexTests.testTypingMoreNarrowsTheFleet` rebuilds the fixture fleet
+through `FleetIndex` and asserts the counts. Against the old join it reports `wer`
 four, `wers` two, `werse` two, the shape the report quoted; against the fix it
 reports four, one, one. Its tags are the ones the importer really derives for
-those names, sibling included, rather than a set hand-written to suit. The `DuplicateMetadataSearchTests` cases pin the haystack itself,
-including the EC2 collision the issue used to show this is not an import problem.
+those names, sibling included, rather than a set hand-written to suit. The
+`DuplicateMetadataSearchTests` cases pin the haystack itself, including the EC2
+collision the issue used to show this is not an import problem.
 
 ## Reach
 
