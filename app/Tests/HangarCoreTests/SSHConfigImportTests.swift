@@ -210,6 +210,34 @@ final class SSHConfigImportTests: TemporaryDirectoryTestCase {
         XCTAssertEqual(byAlias["lonely-prod-thing"]?.product, "")
     }
 
+    /// The premise of mistake 29, pinned end to end rather than assumed. An apex
+    /// name takes product from its own first label and role from that same label,
+    /// so the two collide and the search haystack used to hold the value twice.
+    ///
+    /// Derivation and search are joined nowhere else: these tests check the tags
+    /// and never build a `SearchEntry`, and the search tests hand-write tags no
+    /// import produced. A doc that narrates the mechanism needs one of each.
+    func testAnImportedCollisionDoesNotDoubleTheSearchHaystack() {
+        // Product is only a grouping when a sibling shares the lead, so the www
+        // record is what promotes `webstore` from a name to a tag.
+        let result = load("""
+        Host webstore.example
+          HostName 10.0.0.1
+        Host www.webstore.example
+          HostName 10.0.0.2
+        """)
+        let apex = result.hosts.first { $0.aliasStem == "webstore.example" }
+        XCTAssertEqual(apex?.product, "webstore")
+        XCTAssertEqual(apex?.role, "webstore", "the collision the fix exists for")
+
+        let entry = SearchEntry(instance: apex!, alias: apex!.aliasStem)
+        XCTAssertEqual(entry.metadata, "webstore", "one copy, not two")
+        XCTAssertNotNil(entry.score(for: Fuzzy.Query("wer")),
+                        "an honest subsequence of the name still finds it")
+        XCTAssertNil(entry.score(for: Fuzzy.Query("wers")),
+                     "and a query only the doubled haystack could match does not")
+    }
+
     func testDottedNamesUseTheRegistrableLabel() {
         let result = load("""
         Host web1.prod.example.com

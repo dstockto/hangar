@@ -82,6 +82,89 @@ final class MultiTokenSearchTests: XCTestCase {
     }
 }
 
+/// A repeated field used to appear twice in the metadata haystack, so a query
+/// could take some of its characters from one copy and the rest from the next.
+/// That produced matches no single field could produce, and typing more stopped
+/// narrowing the list.
+final class DuplicateMetadataSearchTests: XCTestCase {
+
+    /// What `SSHConfigImport` produces for an apex name: product and role both
+    /// come from its first label, so the two fields hold the same string.
+    /// `SSHConfigImportTests` pins that derivation against the real importer.
+    private let imported = SearchEntry(instance: Fixture.instance([
+        "product": "webstore", "Name": "webstore",
+        "hostname": "webstore.example"]), alias: "webstore.example")
+
+    private func matches(_ query: String, _ entry: SearchEntry) -> Bool {
+        entry.score(for: Fuzzy.Query(query)) != nil
+    }
+
+    func testTheHaystackHoldsARepeatedValueOnce() {
+        XCTAssertEqual(imported.metadata, "webstore")
+    }
+
+    /// `wer` is an honest subsequence of `webstore`. `wers` is not, and could only
+    /// ever have matched by taking its `s` from a second copy of the same value.
+    func testTypingMoreNarrows() {
+        XCTAssertTrue(matches("wer", imported),
+                      "an honest subsequence of the name, and no longer surprising")
+        XCTAssertFalse(matches("wers", imported),
+                       "only the doubled haystack could match this")
+        XCTAssertFalse(matches("wersw", imported),
+                       "and adding a character has to keep dropping it")
+    }
+
+    func testRealMatchesSurvive() {
+        XCTAssertTrue(matches("web", imported))
+        XCTAssertTrue(matches("store", imported))
+        XCTAssertTrue(matches("wstore", imported))
+    }
+
+    /// The haystack is lowercased before it is searched, so `Web` and `web` double
+    /// it just as surely as two identical spellings do.
+    func testDuplicatesCollapseRegardlessOfCase() {
+        let entry = SearchEntry(instance: Fixture.instance([
+            "product": "Web", "Name": "web", "hostname": "web.example.com"]),
+            alias: "web-1")
+        XCTAssertEqual(entry.metadata, "Web", "the first spelling is the one kept")
+        XCTAssertFalse(matches("webw", entry))
+    }
+
+    /// Cross-field search is the point of this field, and only the repeated value
+    /// collapses. Four distinct tags stay four.
+    func testDistinctFieldsAreUntouched() {
+        let entry = SearchEntry(instance: Fixture.instance([
+            "product": "payments", "env": "prod", "env_name": "prod-1",
+            "Name": "web", "hostname": "web.prod.payments.example.com"]),
+            alias: "payments-prod-web-1")
+        XCTAssertEqual(entry.metadata, "payments prod prod-1 web")
+        XCTAssertTrue(matches("payments web", entry))
+        XCTAssertTrue(matches("pdw", entry), "one token may still span two fields")
+    }
+
+    /// `Fuzzy.lowered` folds ASCII only, so these two are different bytes to the
+    /// search and both have to stay: collapsing them would leave the lowercase
+    /// spelling in no field at all, and a host you can name is a host you can find.
+    func testDedupeIsNeverWiderThanTheSearch() {
+        let entry = SearchEntry(instance: Fixture.instance([
+            "product": "\u{00DC}ber", "Name": "\u{00FC}ber",
+            "hostname": "uber.example.com"]), alias: "uber-1")
+        XCTAssertEqual(entry.metadata, "\u{00DC}ber \u{00FC}ber")
+        XCTAssertTrue(matches("\u{00FC}ber", entry),
+                      "the lowercase spelling still finds the host")
+    }
+
+    /// An EC2 host tagged `product=web` with `Name=web` had the same haystack as
+    /// an imported one, so the fix cannot key on where the host came from.
+    func testTheFixIsNotAboutTheSource() {
+        let entry = SearchEntry(instance: Fixture.instance([
+            "product": "web", "env": "prod", "Name": "web",
+            "hostname": "i-0123456789abcdef0.example.com"]), alias: "web-prod-1")
+        XCTAssertEqual(entry.metadata, "web prod")
+        XCTAssertFalse(matches("wpb", entry))
+    }
+}
+
 /// The shape of the real problem: 249 hosts and a query typed one character at a
 /// time. This is the path that used to rebuild and sort the whole alias table
 /// once per instance per keystroke.
