@@ -213,6 +213,15 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     which is the one moment a cache's age is not worth reporting. A cache going
     stale is a thing that happens while nothing is being published at all.
     Anything derived from elapsed time needs something that ticks.
+30. **A GUI app's PATH is not the user's.** Setup Check walked
+    `ProcessInfo`'s PATH for the `hangar` link. Opened from Finder or as a login
+    item, the app inherits launchd's `/usr/bin:/bin:/usr/sbin:/sbin`, which holds
+    none of the four directories the tool goes in. So it said "not installed"
+    beside a link the user had just made with the `sudo ln` line it handed them,
+    and could never offer a directory to install into. Launching from a terminal
+    hides it. Whether a file exists is a filesystem question; only choosing where
+    to put one needs the shell's PATH, and the part of that readable without
+    running the shell is `/etc/paths` and `/etc/paths.d`.
 
 ## Testing against a fake fleet
 
