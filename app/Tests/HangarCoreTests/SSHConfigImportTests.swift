@@ -210,7 +210,7 @@ final class SSHConfigImportTests: TemporaryDirectoryTestCase {
         XCTAssertEqual(byAlias["lonely-prod-thing"]?.product, "")
     }
 
-    /// The premise of mistake 27, pinned end to end rather than assumed. An apex
+    /// The premise of mistake 29, pinned end to end rather than assumed. An apex
     /// name takes product from its own first label and role from that same label,
     /// so the two collide and the search haystack used to hold the value twice.
     ///
