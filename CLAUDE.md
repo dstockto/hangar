@@ -220,6 +220,20 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     hides it. Whether a file exists is a filesystem question; only choosing where
     to put one needs the shell's PATH, and the part of that readable without
     running the shell is `/etc/paths` and `/etc/paths.d`.
+31. **A read-modify-write against a file the user edits by hand.**
+    `~/.hangar/config.json` exists to be hand-edited, and fifteen places did
+    `var c = store.config`, changed one field, and wrote the whole struct back.
+    `write` serializes every field, so flipping Open at Login put a snapshot
+    taken at launch over the file and deleted a login added by hand since. The
+    trailing `reloadConfig()` looked like a guard and was not: it read the file
+    back *after* the clobber, so the edit was gone from disk and from memory.
+    Write Aliases Now had the quieter half of the same bug, rendering from the
+    copy in memory and never seeing the edit at all, while the header it writes
+    tells the user to edit that file and sync again. A config a person edits is
+    not a value to hold: the change goes to the file through
+    `HangarConfig.update`, which re-reads first, so no caller holds the thing it
+    is changing. A file that will not parse refuses the write rather than
+    replacing it, which is the promise `load()` already made on the reading side.
 
 ## Testing against a fake fleet
 

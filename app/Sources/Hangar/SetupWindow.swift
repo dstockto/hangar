@@ -792,18 +792,22 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     @objc private func sourceToggled(_ sender: NSButton) {
         guard let source = sourceToggles.first(where: { $0.value === sender })?.key else { return }
-        var config = store.config
-        var settings = config.sources ?? .standard
         let on = sender.state == .on
-        switch source {
-        case .ec2:       settings.ec2 = on
-        case .ssm:       settings.ssm = on ? nil : false
-        case .sshConfig: settings.sshConfig = on
-        case .hostsFile: settings.hostsFile = on
+        if let problem = store.updateConfig({
+            var settings = $0.sources ?? .standard
+            switch source {
+            case .ec2:       settings.ec2 = on
+            case .ssm:       settings.ssm = on ? nil : false
+            case .sshConfig: settings.sshConfig = on
+            case .hostsFile: settings.hostsFile = on
+            }
+            $0.sources = settings
+        }) {
+            Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
+            // The file refused, so put the checkbox back to what Hangar has
+            // rather than leaving it showing a source that was never enabled.
+            sender.state = store.config.sourceSettings.wants(source) ? .on : .off
         }
-        config.sources = settings
-        try? HangarConfig.write(config)
-        store.reloadConfig()
         Task { await runChecks() }
     }
 
@@ -1426,10 +1430,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     @objc private func toggleLogin() {
         let turningOn = loginToggle.state == .on
         let problem = LoginItem.set(turningOn)
-        var config = store.config
-        config.launchAtLogin = turningOn
-        try? HangarConfig.write(config)
-        store.reloadConfig()
+        if let failed = store.updateConfig({ $0.launchAtLogin = turningOn }) {
+            Notifier.show(title: "Could not save the setting", body: failed, seconds: 4)
+        }
         // The system is the source of truth: if it refused, reflect that.
         loginToggle.state = LoginItem.isEnabled ? .on : .off
         if let problem {
@@ -1440,10 +1443,11 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     }
 
     @objc private func toggleSync() {
-        var config = store.config
-        config.syncSSHConfigOnRefresh = syncToggle.state == .on
-        try? HangarConfig.write(config)
-        store.reloadConfig()
+        let on = syncToggle.state == .on
+        if let problem = store.updateConfig({ $0.syncSSHConfigOnRefresh = on }) {
+            Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
+            syncToggle.state = (store.config.syncSSHConfigOnRefresh ?? true) ? .on : .off
+        }
     }
 
     @objc private func openPanel() {

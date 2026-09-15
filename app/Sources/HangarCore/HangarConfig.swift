@@ -276,12 +276,12 @@ public struct HangarConfig: Codable, Sendable {
     /// Loads the config, writing a documented starter file on first run. A config
     /// that fails to parse is reported rather than silently replaced, so a typo
     /// never costs the user their settings.
-    public static func load() throws -> HangarConfig {
+    public static func load(from path: String = HangarConfig.path) throws -> HangarConfig {
         let fm = FileManager.default
         if !fm.fileExists(atPath: path) {
-            PrivateFile.ensureDirectory(home)
-            try write(standard())
-            return standard()
+            let starter = standard()
+            try write(starter, to: path)
+            return starter
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let decoder = JSONDecoder()
@@ -310,14 +310,31 @@ public struct HangarConfig: Codable, Sendable {
         }
     }
 
-    public static func write(_ config: HangarConfig) throws {
+    public static func write(_ config: HangarConfig,
+                             to path: String = HangarConfig.path) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(config)
-        PrivateFile.ensureDirectory(home)
+        PrivateFile.ensureDirectory((path as NSString).deletingLastPathComponent)
         guard PrivateFile.write(data, to: path) else {
             throw HangarError.malformedResponse("could not write \(path)")
         }
+    }
+
+    /// Applies a change to the config on disk rather than to a copy of it.
+    ///
+    /// This file is hand-edited by design, so a copy taken at launch goes stale,
+    /// and `write` serializes every field: changing one setting in a stale copy
+    /// puts stale values over the whole file and discards the edit.
+    @discardableResult
+    public static func update(at path: String = HangarConfig.path,
+                              _ change: (inout HangarConfig) -> Void) throws -> HangarConfig {
+        // A file that will not parse is someone mid-edit. Replacing it with the
+        // last copy we read would cost them that edit, so refuse and say so.
+        var config = try load(from: path)
+        change(&config)
+        try write(config, to: path)
+        return config
     }
 
     /// Effective ssh settings for one instance, defaults merged with any matching
@@ -340,6 +357,40 @@ public struct HangarConfig: Codable, Sendable {
             }
         }
         return result
+    }
+
+    /// True when something has already chosen how ssh finds a key, which is the
+    /// one state in which Hangar must not choose on the user's behalf.
+    public var pinsAKey: Bool {
+        ssh?.identityAgent?.isEmpty == false || ssh?.identityFile?.isEmpty == false
+    }
+
+    /// Records a login only when nothing has chosen one, and reports whether it
+    /// did. The probe that learns a login takes long enough that the user can set
+    /// one by hand while it runs, and theirs is the answer, not ours.
+    public mutating func setLoginIfUnset(_ user: String) -> Bool {
+        guard (ssh?.user ?? "").isEmpty else { return false }
+        var settings = ssh ?? SSHSettings()
+        settings.user = user
+        ssh = settings
+        return true
+    }
+
+    /// Pins a key only when nothing has chosen one, and reports whether it did.
+    /// The unprompted adoption at launch lists an agent's keys before it writes,
+    /// which is long enough for the user to pin one by hand while it runs.
+    ///
+    /// `defaultLogin` fills the login only when there is no ssh block at all. It
+    /// is a parameter so the core never reads the machine's own account name.
+    public mutating func pinKeyIfUnset(agentSocket: String?, identityFile: String,
+                                       defaultLogin: String? = nil) -> Bool {
+        guard !pinsAKey else { return false }
+        var settings = ssh ?? SSHSettings(user: defaultLogin)
+        settings.identityAgent = agentSocket
+        settings.identityFile = identityFile
+        settings.identitiesOnly = true
+        ssh = settings
+        return true
     }
 
     /// Inserts or replaces an override for exactly this `match`, then reorders so

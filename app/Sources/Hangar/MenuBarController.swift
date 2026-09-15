@@ -774,13 +774,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleLoginItem() {
         let turningOn = !LoginItem.isEnabled
         let problem = LoginItem.set(turningOn)
-        var config = store.config
-        config.launchAtLogin = turningOn
-        try? HangarConfig.write(config)
-        store.reloadConfig()
+        // The system has already registered or unregistered, so report that
+        // outcome rather than returning: launch_at_login only records the intent,
+        // and nothing reads it back.
+        let unsaved = store.updateConfig { $0.launchAtLogin = turningOn }
         Notifier.show(title: turningOn ? "Opens at login" : "No longer opens at login",
-                      body: problem ?? LoginItem.statusDescription,
-                      seconds: problem == nil ? 2 : 4)
+                      body: problem ?? unsaved ?? LoginItem.statusDescription,
+                      seconds: (problem == nil && unsaved == nil) ? 2 : 4)
     }
 
     @objc private func showSetup() { onShowSetup() }
@@ -789,11 +789,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func openSource() { NSWorkspace.shared.open(Updates.repoURL) }
 
     @objc private func toggleDailyUpdates() {
-        var config = store.config
-        let turningOn = !(config.checkUpdatesOnLaunch ?? true)
-        config.checkUpdatesOnLaunch = turningOn
-        try? HangarConfig.write(config)
-        store.reloadConfig()
+        // Flipped against what is on disk, not against the copy in memory, so a
+        // hand edit decides what this toggle is toggling.
+        var turningOn = false
+        if let problem = store.updateConfig({
+            turningOn = !($0.checkUpdatesOnLaunch ?? true)
+            $0.checkUpdatesOnLaunch = turningOn
+        }) {
+            // Nothing was written, so turningOn is not what the file says.
+            Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
+            return
+        }
         Notifier.show(
             title: turningOn ? "Checking for updates daily" : "Automatic checks off",
             body: turningOn
@@ -803,10 +809,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func pickChannel(_ sender: NSMenuItem) {
-        var config = store.config
-        config.updateChannel = sender.representedObject as? String
-        try? HangarConfig.write(config)
-        store.reloadConfig()
+        let channel = sender.representedObject as? String
+        if let problem = store.updateConfig({ $0.updateChannel = channel }) {
+            Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
+        }
     }
 
     private func errorRow(_ message: String) -> NSMenuItem {
@@ -850,8 +856,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func sync() {
-        store.syncSSHConfig()
-        Notifier.show(title: "SSH config updated",
+        // The title has to follow what happened. A config that will not parse
+        // writes nothing, and "SSH config updated" over that body is a lie.
+        let wrote = store.syncSSHConfig()
+        Notifier.show(title: wrote ? "SSH config updated" : "SSH config not updated",
                       body: store.lastSyncMessage, seconds: 3)
     }
 
