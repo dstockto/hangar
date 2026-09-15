@@ -99,6 +99,27 @@ final class FleetStore: ObservableObject {
             && (a.overrides?.count ?? 0) == (b.overrides?.count ?? 0)
     }
 
+    /// Changes the config on disk and keeps the copy in memory in step. Returns
+    /// nil, or what to tell the user when it could not be written.
+    ///
+    /// Every setting the app writes goes through here. Writing a copy taken
+    /// earlier puts stale values over a file the user edits by hand, and
+    /// reloading afterwards only reads the damage back in.
+    @discardableResult
+    func updateConfig(_ change: (inout HangarConfig) -> Void) -> String? {
+        let previous = config
+        let updated: HangarConfig
+        do {
+            updated = try HangarConfig.update(change)
+        } catch {
+            Log.error(.app, "config not written", ["error": error.localizedDescription])
+            return FleetStore.presentable(error)
+        }
+        config = updated
+        if !instances.isEmpty, !sameSSHShape(previous, config) { rebuildIndex() }
+        return nil
+    }
+
     func isManaged(_ host: String) -> Bool { managedHosts.contains(host) }
 
     private func refreshManagedHosts() {
@@ -305,6 +326,9 @@ final class FleetStore: ObservableObject {
     }
 
     func syncSSHConfig(announce: Bool = true) {
+        // This renders from the config, and the header it writes tells the user
+        // to edit that file and sync again. Reading it is what honours the line.
+        reloadConfig()
         guard !instances.isEmpty else {
             lastSyncMessage = "No hosts to write. Refresh the fleet first."
             return
@@ -440,14 +464,9 @@ final class FleetStore: ObservableObject {
     /// Saves the edit as a config override, regenerates the ssh include, and
     /// returns what to tell the user.
     func saveOverride(scope: OverrideScope, user: String?, identityFile: String?) -> String {
-        var updated = config
-        updated.setOverride(match: scope.match, user: user, identityFile: identityFile)
-        do {
-            try HangarConfig.write(updated)
-        } catch {
-            return "Could not write \(HangarConfig.path)"
-        }
-        config = updated
+        if let problem = updateConfig({
+            $0.setOverride(match: scope.match, user: user, identityFile: identityFile)
+        }) { return problem }
         rebuildIndex()
         syncSSHConfig(announce: false)
         if user == nil && identityFile == nil {
@@ -475,14 +494,7 @@ final class FleetStore: ObservableObject {
     /// Nil hands the choice back to AWS_PROFILE and default.
     @discardableResult
     func useProfile(_ name: String?) -> String {
-        var updated = config
-        updated.profile = name
-        do {
-            try HangarConfig.write(updated)
-        } catch {
-            return "Could not write \(HangarConfig.path)"
-        }
-        config = updated
+        if let problem = updateConfig({ $0.profile = name }) { return problem }
         guard let name else {
             let automatic = activeProfileName
             return automatic == nil
@@ -501,14 +513,7 @@ final class FleetStore: ObservableObject {
     /// Picks the terminal Hangar hands sessions to.
     @discardableResult
     func useTerminal(_ choice: TerminalChoice) -> String {
-        var updated = config
-        updated.terminal = choice.rawValue
-        do {
-            try HangarConfig.write(updated)
-        } catch {
-            return "Could not write \(HangarConfig.path)"
-        }
-        config = updated
+        if let problem = updateConfig({ $0.terminal = choice.rawValue }) { return problem }
         return "Sessions now open in \(choice.displayName)"
     }
 
@@ -518,17 +523,12 @@ final class FleetStore: ObservableObject {
     /// everything downstream of it: the grouping, the aliases, and the ssh
     /// include. No refresh needed, because the tags are already in hand.
     func useTagKey(_ key: String?, for concept: TagCatalog.Concept) -> String {
-        var updated = config
-        var mapping = updated.tagMapping
-        mapping.use(key, for: concept)
-        updated.tags = mapping
-        do {
-            try HangarConfig.write(updated)
-        } catch {
-            return "Could not write \(HangarConfig.path)"
-        }
-        config = updated
-        instances = mapping.normalize(instances)
+        if let problem = updateConfig({
+            var mapping = $0.tagMapping
+            mapping.use(key, for: concept)
+            $0.tags = mapping
+        }) { return problem }
+        instances = config.tagMapping.normalize(instances)
         rebuildIndex()
         if config.syncSSHConfigOnRefresh ?? true { syncSSHConfig(announce: false) }
         guard let key, !key.isEmpty else {
@@ -572,14 +572,7 @@ final class FleetStore: ObservableObject {
     /// through here, so there is one place that writes and rebuilds.
     @discardableResult
     func setGroupingKeys(_ keys: [String]) -> String {
-        var updated = config
-        updated.groupBy = keys
-        do {
-            try HangarConfig.write(updated)
-        } catch {
-            return "Could not write \(HangarConfig.path)"
-        }
-        config = updated
+        if let problem = updateConfig({ $0.groupBy = keys }) { return problem }
         rebuildIndex()
         if keys.isEmpty { return "The menu now lists every host flat" }
         let produced = FleetGrouping.depth(instances, groupBy: keys)
@@ -776,12 +769,11 @@ final class FleetStore: ObservableObject {
             if outcome.reached { Log.info(.ssh, "no login authenticated; leaving it to ssh") }
             return nil
         }
-        var updated = config
-        var ssh = updated.ssh ?? HangarConfig.SSHSettings()
-        ssh.user = found
-        updated.ssh = ssh
-        guard (try? HangarConfig.write(updated)) != nil else { return nil }
-        config = updated
+        guard updateConfig({
+            var ssh = $0.ssh ?? HangarConfig.SSHSettings()
+            ssh.user = found
+            $0.ssh = ssh
+        }) == nil else { return nil }
         rebuildIndex()
         syncSSHConfig(announce: false)
         Log.info(.ssh, "ssh login learned", ["user": found])
@@ -797,54 +789,49 @@ final class FleetStore: ObservableObject {
             lastSyncMessage = "Could not write the public key under ~/.hangar/keys."
             return nil
         }
-        var updated = config
-        var ssh = updated.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
-        ssh.identityAgent = agent.socket
-        ssh.identityFile = path
-        ssh.identitiesOnly = true
-        updated.ssh = ssh
-        do {
-            try HangarConfig.write(updated)
-            config = updated
-            rebuildIndex()
-            syncSSHConfig(announce: false)
-            Log.info(.ssh, "agent key adopted",
-                     ["agent": agent.kind.rawValue, "key": Redact.host(key.title)])
-            // A key that is no longer in the vault leaves an IdentityFile pointing
-            // at a key nobody has, which fails at connect time rather than here.
-            for stale in KeySource.staleKeyFiles(keeping: agent.keys) {
-                try? FileManager.default.removeItem(atPath: stale)
-            }
-            return path
-        } catch {
-            lastSyncMessage = FleetStore.presentable(error)
+        if let problem = updateConfig({
+            var ssh = $0.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
+            ssh.identityAgent = agent.socket
+            ssh.identityFile = path
+            ssh.identitiesOnly = true
+            $0.ssh = ssh
+        }) {
+            lastSyncMessage = problem
             return nil
         }
+        rebuildIndex()
+        syncSSHConfig(announce: false)
+        Log.info(.ssh, "agent key adopted",
+                 ["agent": agent.kind.rawValue, "key": Redact.host(key.title)])
+        // A key that is no longer in the vault leaves an IdentityFile pointing
+        // at a key nobody has, which fails at connect time rather than here.
+        for stale in KeySource.staleKeyFiles(keeping: agent.keys) {
+            try? FileManager.default.removeItem(atPath: stale)
+        }
+        return path
     }
 
     /// Stops pinning a key, which puts ssh back to deciding for itself.
     func clearKeyPreference() {
-        var updated = config
-        var ssh = updated.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
-        ssh.identityAgent = nil
-        ssh.identityFile = nil
-        ssh.identitiesOnly = nil
-        updated.ssh = ssh
-        guard (try? HangarConfig.write(updated)) != nil else { return }
-        config = updated
+        guard updateConfig({
+            var ssh = $0.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
+            ssh.identityAgent = nil
+            ssh.identityFile = nil
+            ssh.identitiesOnly = nil
+            $0.ssh = ssh
+        }) == nil else { return }
         syncSSHConfig(announce: false)
     }
 
     /// Pins a key file rather than an agent key.
     func adopt(keyFile path: String) {
-        var updated = config
-        var ssh = updated.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
-        ssh.identityAgent = nil
-        ssh.identityFile = path
-        ssh.identitiesOnly = true
-        updated.ssh = ssh
-        guard (try? HangarConfig.write(updated)) != nil else { return }
-        config = updated
+        guard updateConfig({
+            var ssh = $0.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
+            ssh.identityAgent = nil
+            ssh.identityFile = path
+            ssh.identitiesOnly = true
+            $0.ssh = ssh
+        }) == nil else { return }
         syncSSHConfig(announce: false)
     }
 

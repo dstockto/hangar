@@ -792,18 +792,17 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     @objc private func sourceToggled(_ sender: NSButton) {
         guard let source = sourceToggles.first(where: { $0.value === sender })?.key else { return }
-        var config = store.config
-        var settings = config.sources ?? .standard
         let on = sender.state == .on
-        switch source {
-        case .ec2:       settings.ec2 = on
-        case .ssm:       settings.ssm = on ? nil : false
-        case .sshConfig: settings.sshConfig = on
-        case .hostsFile: settings.hostsFile = on
+        store.updateConfig {
+            var settings = $0.sources ?? .standard
+            switch source {
+            case .ec2:       settings.ec2 = on
+            case .ssm:       settings.ssm = on ? nil : false
+            case .sshConfig: settings.sshConfig = on
+            case .hostsFile: settings.hostsFile = on
+            }
+            $0.sources = settings
         }
-        config.sources = settings
-        try? HangarConfig.write(config)
-        store.reloadConfig()
         Task { await runChecks() }
     }
 
@@ -1426,10 +1425,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     @objc private func toggleLogin() {
         let turningOn = loginToggle.state == .on
         let problem = LoginItem.set(turningOn)
-        var config = store.config
-        config.launchAtLogin = turningOn
-        try? HangarConfig.write(config)
-        store.reloadConfig()
+        store.updateConfig { $0.launchAtLogin = turningOn }
         // The system is the source of truth: if it refused, reflect that.
         loginToggle.state = LoginItem.isEnabled ? .on : .off
         if let problem {
@@ -1440,10 +1436,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     }
 
     @objc private func toggleSync() {
-        var config = store.config
-        config.syncSSHConfigOnRefresh = syncToggle.state == .on
-        try? HangarConfig.write(config)
-        store.reloadConfig()
+        let on = syncToggle.state == .on
+        store.updateConfig { $0.syncSSHConfigOnRefresh = on }
     }
 
     @objc private func openPanel() {
