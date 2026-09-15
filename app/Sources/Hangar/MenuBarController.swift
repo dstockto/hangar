@@ -132,8 +132,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let when = age.map { "cache \($0)" } ?? "cache is aging"
             return ("Hangar: \(when)", "Hangar, \(when)")
         case .stale:
-            if case .failed(let message) = store.status {
-                return ("Hangar: last refresh failed. \(message)",
+            if case .failed(let failure) = store.status {
+                return ("Hangar: last refresh failed. \(failure.detail)",
                         "Hangar, last refresh failed")
             }
             let when = age.map { "cache is stale, \($0)" } ?? "cache is stale"
@@ -278,8 +278,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
             menu.addItem(item)
         }
-        if case .failed(let message) = store.status {
-            menu.addItem(errorRow(message))
+        if case .failed(let failure) = store.status {
+            menu.addItem(errorRow(failure.detail))
             // Only offered when the advice actually names a command: telling a
             // static-keys user to run aws sso login would be wrong.
             if store.credentialAdvice?.command != nil {
@@ -847,8 +847,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func refresh() {
         Task { @MainActor in
             await store.refresh()
-            if case .failed(let message) = store.status {
-                Notifier.show(title: "Refresh failed", body: message, seconds: 3)
+            if case .failed(let failure) = store.status {
+                Notifier.show(title: "Refresh failed", body: failure.detail, seconds: 3)
             } else {
                 Notifier.show(title: store.fleetSummary, body: nil)
             }

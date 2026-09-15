@@ -235,6 +235,18 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     is changing. A file that will not parse refuses the write rather than
     replacing it, which is the promise `load()` already made on the reading side.
 
+32. **Two labels pinned to opposite edges of the same line.** The panel footer put
+    hints on the left and a right-aligned status on the right, with no constraint
+    between them and no truncation on either. Normal statuses are short and start
+    well clear, so it survived. A credential failure put a whole sentence there:
+    625 points of it in a 640 point panel, which right-aligns to x = -1.6, straight
+    through the hints and off the left edge, and the user saw two strings drawn on
+    top of each other. The sentence was right for the menu, which is what
+    `Advice.message` is documented for; the footer adopted it without asking
+    whether it fit. A value carries the cause in both lengths now, so the short
+    form cannot drift from the long one, and the room is computed from the numbers
+    rather than from a fitting size. See mistake 15: that is twice.
+
 ## Testing against a fake fleet
 
 `make testbed` builds a fabricated home directory, runs every host source, the

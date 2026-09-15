@@ -65,3 +65,4 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0030 | Typing more narrows | Shipped |
 | 0031 | A command the app could not see | Shipped |
 | 0032 | A hand edit the app wrote over | Shipped |
+| 0033 | A sentence in a strip that had no room | Shipped |

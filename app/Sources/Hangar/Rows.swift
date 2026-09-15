@@ -343,6 +343,14 @@ final class FooterView: NSView {
     private let copyGlyph = NSImageView()
     private let status = NSTextField(labelWithString: "")
     private var revertWork: DispatchWorkItem?
+    /// The status text at full length, kept so a resize can re-fit it. What is
+    /// drawn is whatever of this the strip has room for.
+    private var statusText = ""
+    private var statusDetail: String?
+    /// The width `drawStatus` last fitted to, so a redraw that changes nothing
+    /// cannot start a layout loop.
+    private var laidOutWidth: CGFloat = -1
+    private static let glyphWidth: CGFloat = 14
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -358,18 +366,31 @@ final class FooterView: NSView {
             copyGlyph.leadingAnchor.constraint(equalTo: leadingAnchor,
                                                constant: Brand.Metric.space16),
             copyGlyph.centerYAnchor.constraint(equalTo: centerYAnchor),
-            copyGlyph.widthAnchor.constraint(equalToConstant: 14),
-            copyGlyph.heightAnchor.constraint(equalToConstant: 14),
+            copyGlyph.widthAnchor.constraint(equalToConstant: FooterView.glyphWidth),
+            copyGlyph.heightAnchor.constraint(equalToConstant: FooterView.glyphWidth),
             hints.leadingAnchor.constraint(equalTo: copyGlyph.trailingAnchor,
                                            constant: Brand.Metric.space8),
             hints.centerYAnchor.constraint(equalTo: centerYAnchor),
             status.trailingAnchor.constraint(equalTo: trailingAnchor,
                                              constant: -Brand.Metric.space16),
             status.centerYAnchor.constraint(equalTo: centerYAnchor),
+            // Both labels are pinned to opposite edges on one line, so without
+            // this a long status is simply drawn through the hints.
+            status.leadingAnchor.constraint(greaterThanOrEqualTo: hints.trailingAnchor,
+                                            constant: Brand.Metric.space16),
         ])
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The panel resizes, so the room left beside the hints is not a constant.
+    override func layout() {
+        super.layout()
+        // Setting the label invalidates layout, so re-fit only when the width
+        // that decides the fit has actually moved.
+        guard bounds.width != laidOutWidth else { return }
+        drawStatus()
+    }
 
     @MainActor
     func update(store: FleetStore, resultCount: Int, totalCount: Int) {
@@ -378,22 +399,52 @@ final class FooterView: NSView {
             attributes: [.font: Brand.Font.shortcut,
                          .foregroundColor: Brand.Color.textSecondary])
         var right = "\(resultCount) of \(totalCount)"
+        var detail: String?
         if case .refreshing = store.status {
             right = "Refreshing\u{2026}"
-        } else if case .failed(let message) = store.status {
-            right = message
+        } else if case .failed(let failure) = store.status {
+            // The sentence does not fit this strip, and drawing it anyway ran it
+            // straight through the hints. It goes to the tooltip, the menu and
+            // the notification, which have room; the strip names the cause.
+            right += "    " + failure.summary
+            detail = failure.detail
         } else if let age = store.cacheAgeDescription {
             right += "    " + age
         }
-        status.attributedStringValue = NSAttributedString(
-            string: right,
-            attributes: [.font: Brand.Font.shortcut,
-                         .foregroundColor: Brand.Color.textSecondary])
+        statusText = right
+        statusDetail = detail
+        drawStatus()
         let stale = store.isStale
         copyGlyph.image = stale ? Brand.Glyph.staleCache : nil
         copyGlyph.contentTintColor = Brand.Color.statePending
         copyGlyph.setAccessibilityLabel(stale ? "Cache is stale" : nil)
         copyGlyph.isHidden = !stale && revertWork == nil
+    }
+
+    /// Fits the status into whatever is left beside the hints.
+    ///
+    /// Measured from the numbers rather than from a fitting size, because the two
+    /// labels are pinned to opposite edges and only arithmetic says where one
+    /// ends and the other may start.
+    private func drawStatus() {
+        laidOutWidth = bounds.width
+        let leading = Brand.Metric.space16 + FooterView.glyphWidth + Brand.Metric.space8
+        let width = bounds.width > 0 ? bounds.width : Brand.Metric.panelWidth
+        let room = width - leading - hints.intrinsicContentSize.width
+            - Brand.Metric.space16 * 2
+        let shown = Truncation.fitting(statusText, into: max(room, 1),
+                                       font: Brand.Font.shortcut)
+        status.attributedStringValue = NSAttributedString(
+            string: shown,
+            attributes: [.font: Brand.Font.shortcut,
+                         .foregroundColor: statusDetail == nil
+                             ? Brand.Color.textSecondary
+                             : Brand.Color.statePending])
+        // The tooltip is where the sentence went, so it has to be reachable from
+        // the whole strip and not only from the few words that are left.
+        status.toolTip = statusDetail
+        toolTip = statusDetail
+        status.setAccessibilityValue(statusDetail ?? statusText)
     }
 
     /// After a successful copy the copied glyph appears for 1.2 s, then the

@@ -13,11 +13,29 @@ public enum CredentialAdvice {
         public var message: String
         /// A command worth offering to copy, when one would actually help.
         public var command: String?
+        /// A few words naming the cause, for a strip with no room for the
+        /// sentence. Never punctuated, because it is a label rather than prose.
+        public var summary: String
 
-        public init(message: String, command: String? = nil) {
+        public init(message: String, command: String? = nil, summary: String? = nil) {
             self.message = message
             self.command = command
+            self.summary = summary ?? CredentialAdvice.firstSentence(message)
         }
+    }
+
+    /// The first sentence of `text`, unpunctuated, for a surface with no room for
+    /// the rest. A raw error from AWS has no summary worth writing by hand, and
+    /// its first sentence is the part that names the problem.
+    public static func firstSentence(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let stop = trimmed.firstIndex(where: { $0 == "." || $0 == "\n" }) else {
+            return trimmed
+        }
+        let head = String(trimmed[trimmed.startIndex..<stop])
+        // A lone "e.g" or a version number is not the end of a sentence, so a
+        // first "sentence" too short to say anything means there was only one.
+        return head.count < 12 ? trimmed : head
     }
 
     /// True when the failure looks like a credential lifetime problem rather than
@@ -78,12 +96,14 @@ public enum CredentialAdvice {
             if looksExpired(text) {
                 return Advice(
                     message: "Credentials for source profile \(source) have expired, so "
-                        + "Hangar could not assume \(role). Refresh \(source), then retry.")
+                        + "Hangar could not assume \(role). Refresh \(source), then retry.",
+                    summary: "Source profile expired")
             }
             if looksRejected(text) {
                 return Advice(
                     message: "AWS refused to assume \(role) with source profile "
-                        + "\(source). Check the role's trust policy and your permissions.")
+                        + "\(source). Check the role's trust policy and your permissions.",
+                    summary: "Role not assumable")
             }
             return Advice(message: text)
         }
@@ -91,7 +111,8 @@ public enum CredentialAdvice {
         if profile.credentialProcess != nil {
             return Advice(
                 message: "credential_process in profile \(profile.name) did not return "
-                    + "credentials AWS accepted. Run it by hand to see what it returns.")
+                    + "credentials AWS accepted. Run it by hand to see what it returns.",
+                summary: "credential_process failed")
         }
 
         if profile.hasStaticKeys {
@@ -99,15 +120,18 @@ public enum CredentialAdvice {
             if looksExpired(text) {
                 return profile.sessionToken != nil
                     ? Advice(message: "The session token in profile \(profile.name) has "
-                             + "expired. Refresh it in ~/.aws/credentials, then retry.")
+                             + "expired. Refresh it in ~/.aws/credentials, then retry.",
+                             summary: "Session token expired")
                     : Advice(message: "AWS reported an expired credential for profile "
                              + "\(profile.name). Check aws_session_token in "
-                             + "~/.aws/credentials.")
+                             + "~/.aws/credentials.",
+                             summary: "Credential expired")
             }
             if looksRejected(text) {
                 return Advice(
                     message: "AWS rejected the access key in profile \(profile.name). "
-                        + "Check the key pair in ~/.aws/credentials.")
+                        + "Check the key pair in ~/.aws/credentials.",
+                    summary: "Access key rejected")
             }
             return Advice(message: text)
         }
@@ -124,13 +148,15 @@ public enum CredentialAdvice {
             return Advice(
                 message: "Profile \(name) has no credentials Hangar can use. It needs a "
                     + "key pair, SSO settings, role_arn with source_profile, or "
-                    + "credential_process.")
+                    + "credential_process.",
+                summary: "No usable credentials")
         }
         let listed = others.prefix(3).joined(separator: ", ")
         let more = others.count > 3 ? ", and \(others.count - 3) more" : ""
         return Advice(
             message: "Profile \(name) has no credentials Hangar can use. Pick one that "
-                + "does: \(listed)\(more).")
+                + "does: \(listed)\(more).",
+            summary: "No usable credentials")
     }
 
     /// The environment-variable case, which has no profile behind it.
@@ -139,13 +165,15 @@ public enum CredentialAdvice {
         guard looksExpired(text) || looksRejected(text) else { return Advice(message: text) }
         return Advice(
             message: "The AWS credentials in your environment were rejected. Re-export "
-                + "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN.")
+                + "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN.",
+            summary: "Environment keys rejected")
     }
 
     private static func ssoAdvice(profile: AWSProfile?, text: String) -> Advice {
         let command = profile.map { "aws sso login --profile \($0.name)" } ?? "aws sso login"
         return Advice(
             message: "Your SSO session has expired. Run \(command), then retry.",
-            command: command)
+            command: command,
+            summary: "SSO session expired")
     }
 }

@@ -15,7 +15,25 @@ final class FleetStore: ObservableObject {
     enum Status: Equatable {
         case idle
         case refreshing
-        case failed(String)
+        case failed(Failure)
+
+        /// A failure in the two lengths the app has room for. The footer strip
+        /// fits `summary` only; the menu, the notification and the tooltip that
+        /// sends people there carry `detail`.
+        struct Failure: Equatable {
+            var summary: String
+            var detail: String
+
+            init(_ detail: String, summary: String? = nil) {
+                self.detail = detail
+                self.summary = summary ?? CredentialAdvice.firstSentence(detail)
+            }
+
+            init(_ advice: CredentialAdvice.Advice) {
+                detail = advice.message
+                summary = advice.summary
+            }
+        }
     }
 
     @Published private(set) var instances: [Instance] = []
@@ -52,7 +70,7 @@ final class FleetStore: ObservableObject {
     @Published private(set) var sshAliasesActive = false
 
     init() {
-        if let problem = reloadConfig() { status = .failed(problem) }
+        if let problem = reloadConfig() { status = .failed(.init(problem)) }
         loadCache()
         refreshManagedHosts()
         rebuildIndex()
@@ -179,7 +197,7 @@ final class FleetStore: ObservableObject {
         status = .refreshing
         let started = Date()
         Log.info(.fleet, "refresh started")
-        if let problem = reloadConfig() { status = .failed(problem) }
+        if let problem = reloadConfig() { status = .failed(.init(problem)) }
 
         let settings = config.sourceSettings
         var groups: [HostSource: [Instance]] = [:]
@@ -290,13 +308,14 @@ final class FleetStore: ObservableObject {
         // Nothing from anywhere is the only real failure. Anything else is a
         // fleet with a note attached, and a fleet beats an error page.
         guard !merged.instances.isEmpty else {
-            let message = awsFailure.map {
-                CredentialAdvice.forFailure(
+            let failure = awsFailure.map {
+                Status.Failure(CredentialAdvice.forFailure(
                     $0, profile: attempted,
                     alternatives: awsFiles.profileSummaries
-                        .filter(\.isUsable).map(\.name)).message
-            } ?? "No hosts from any source."
-            status = .failed(message)
+                        .filter(\.isUsable).map(\.name)))
+            } ?? Status.Failure("No hosts from any source.",
+                                summary: "No hosts from any source")
+            status = .failed(failure)
             Log.error(.fleet, "refresh found nothing",
                       ["ms": "\(Int(Date().timeIntervalSince(started) * 1000))"])
             return
@@ -577,7 +596,7 @@ final class FleetStore: ObservableObject {
         lastSyncMessage = nil
         status = .idle
         config = .standard()
-        if let problem = reloadConfig() { status = .failed(problem) }
+        if let problem = reloadConfig() { status = .failed(.init(problem)) }
         loadCache()
         refreshManagedHosts()
         rebuildIndex()

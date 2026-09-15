@@ -69,8 +69,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task { @MainActor in
             await store.refresh()
-            if case .failed(let message) = store.status {
-                Notifier.show(title: "Hangar could not reach AWS", body: message, seconds: 5)
+            if case .failed(let failure) = store.status {
+                Notifier.show(title: "Hangar could not reach AWS",
+                              body: failure.detail, seconds: 5)
             }
             // After the fleet, so the ssh config it may rewrite is written once.
             if let adopted = store.adoptAgentKeyIfUnset() {

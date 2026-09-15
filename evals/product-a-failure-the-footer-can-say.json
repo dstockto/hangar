@@ -1,0 +1,7 @@
+{
+  "id": "product-a-failure-the-footer-can-say",
+  "promise": "Every credential failure has a short cause, and none of them embeds a profile name.",
+  "why": "The footer strip drew the whole sentence through the hints and off the left edge. A summary holding a profile name has no length limit, so it is not a summary.",
+  "command": "test \"$(grep -cE 'summary: \"' app/Sources/HangarCore/CredentialAdvice.swift)\" -ge 10 && test -z \"$(grep -oE 'summary: \"[^\"]{26,}\"|summary: \"[^\"]*[\\\\][(]' app/Sources/HangarCore/CredentialAdvice.swift)\"",
+  "expect": "exit 0"
+}
