@@ -102,9 +102,13 @@ against what `update` actually read, and say nothing when the user has answered
 in the meantime. The rule each applies is in `HangarConfig` where it has a test:
 `setLoginIfUnset` records a login only when nothing has chosen one and reports
 whether it did, and `pinsAKey` is the single answer to whether a key is already
-chosen. The check belongs in those two paths and not in `adopt` itself, which the
-setup window calls when somebody picks a key on purpose, where replacing what is
-there is the whole point.
+chosen. Neither check sits in `adopt`, which the setup window calls when somebody
+picks a key on purpose, where replacing what is there is the whole point.
+`adoptAgentKeyIfUnset` does its own guarded write instead of asking `adopt` to
+behave differently: it writes the public key before the config, so `IdentityFile`
+never names a file that is not there, and removes that file again when the write
+is refused, but only when this call created it. One that was already there
+belongs to the pin that refused it.
 
 **A title is a claim.** Write Aliases Now always announced "SSH config updated",
 so a config that will not parse produced that title above a body explaining the
