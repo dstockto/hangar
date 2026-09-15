@@ -774,13 +774,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleLoginItem() {
         let turningOn = !LoginItem.isEnabled
         let problem = LoginItem.set(turningOn)
-        if let failed = store.updateConfig({ $0.launchAtLogin = turningOn }) {
-            Notifier.show(title: "Could not save the setting", body: failed, seconds: 4)
-            return
-        }
+        // The system has already registered or unregistered, so report that
+        // outcome rather than returning: launch_at_login only records the intent,
+        // and nothing reads it back.
+        let unsaved = store.updateConfig { $0.launchAtLogin = turningOn }
         Notifier.show(title: turningOn ? "Opens at login" : "No longer opens at login",
-                      body: problem ?? LoginItem.statusDescription,
-                      seconds: problem == nil ? 2 : 4)
+                      body: problem ?? unsaved ?? LoginItem.statusDescription,
+                      seconds: (problem == nil && unsaved == nil) ? 2 : 4)
     }
 
     @objc private func showSetup() { onShowSetup() }
@@ -796,7 +796,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             turningOn = !($0.checkUpdatesOnLaunch ?? true)
             $0.checkUpdatesOnLaunch = turningOn
         }) {
-            // The closure never ran, so turningOn says nothing about the file.
+            // Nothing was written, so turningOn is not what the file says.
             Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
             return
         }
@@ -856,8 +856,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func sync() {
-        store.syncSSHConfig()
-        Notifier.show(title: "SSH config updated",
+        // The title has to follow what happened. A config that will not parse
+        // writes nothing, and "SSH config updated" over that body is a lie.
+        let wrote = store.syncSSHConfig()
+        Notifier.show(title: wrote ? "SSH config updated" : "SSH config not updated",
                       body: store.lastSyncMessage, seconds: 3)
     }
 
