@@ -310,14 +310,33 @@ public struct HangarConfig: Codable, Sendable {
         }
     }
 
-    public static func write(_ config: HangarConfig) throws {
+    public static func write(_ config: HangarConfig,
+                             to path: String = HangarConfig.path) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(config)
-        PrivateFile.ensureDirectory(home)
+        PrivateFile.ensureDirectory((path as NSString).deletingLastPathComponent)
         guard PrivateFile.write(data, to: path) else {
             throw HangarError.malformedResponse("could not write \(path)")
         }
+    }
+
+    /// Applies a change to the config on disk rather than to a copy of it.
+    ///
+    /// This file is hand-edited by design, so a copy taken at launch goes stale,
+    /// and `write` serializes every field: changing one setting in a stale copy
+    /// puts stale values over the whole file and discards the edit.
+    @discardableResult
+    public static func update(at path: String = HangarConfig.path,
+                              _ change: (inout HangarConfig) -> Void) throws -> HangarConfig {
+        // A file that will not parse is someone mid-edit. Replacing it with the
+        // last copy we read would cost them that edit, so refuse and say so.
+        var config = FileManager.default.fileExists(atPath: path)
+            ? try read(from: path)
+            : standard()
+        change(&config)
+        try write(config, to: path)
+        return config
     }
 
     /// Effective ssh settings for one instance, defaults merged with any matching
