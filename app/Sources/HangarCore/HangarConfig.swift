@@ -359,6 +359,23 @@ public struct HangarConfig: Codable, Sendable {
         return result
     }
 
+    /// True when something has already chosen how ssh finds a key, which is the
+    /// one state in which Hangar must not choose on the user's behalf.
+    public var pinsAKey: Bool {
+        ssh?.identityAgent?.isEmpty == false || ssh?.identityFile?.isEmpty == false
+    }
+
+    /// Records a login only when nothing has chosen one, and reports whether it
+    /// did. The probe that learns a login takes long enough that the user can set
+    /// one by hand while it runs, and theirs is the answer, not ours.
+    public mutating func setLoginIfUnset(_ user: String) -> Bool {
+        guard (ssh?.user ?? "").isEmpty else { return false }
+        var settings = ssh ?? SSHSettings()
+        settings.user = user
+        ssh = settings
+        return true
+    }
+
     /// Inserts or replaces an override for exactly this `match`, then reorders so
     /// general rules stay ahead of specific ones. Overrides merge top to bottom,
     /// so a host-scoped rule has to sit after a product-scoped one to win.

@@ -97,10 +97,14 @@ did not reach, because the *decision* was made from the copy in memory even
 though the write re-reads. `learnLoginIfUnset` checks that no login is set, then
 spends up to eighteen ssh attempts finding one, and a login added by hand during
 that window was overwritten anyway. `adoptAgentKeyIfUnset` has the same shape
-around a process that lists an agent's keys. Both now re-check what `update`
-actually read and say nothing when the user has answered in the meantime. The
-check belongs in those two and not in `adopt`, which the setup window calls when
-somebody picks a key on purpose.
+around a process that lists an agent's keys. Both now decide inside the write,
+against what `update` actually read, and say nothing when the user has answered
+in the meantime. The rule each applies is in `HangarConfig` where it has a test:
+`setLoginIfUnset` records a login only when nothing has chosen one and reports
+whether it did, and `pinsAKey` is the single answer to whether a key is already
+chosen. The check belongs in those two paths and not in `adopt` itself, which the
+setup window calls when somebody picks a key on purpose, where replacing what is
+there is the whole point.
 
 **A title is a claim.** Write Aliases Now always announced "SSH config updated",
 so a config that will not parse produced that title above a body explaining the
