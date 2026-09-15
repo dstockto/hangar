@@ -92,4 +92,19 @@ control showing a state the file does not have. `toggleDailyUpdates` flips
 against what is on disk, so a refusal leaves it with nothing to report, and it
 says that instead of asserting whatever its own variable happened to hold.
 
+**Deciding from a held copy is the same bug.** Review found two places the seam
+did not reach, because the *decision* was made from the copy in memory even
+though the write re-reads. `learnLoginIfUnset` checks that no login is set, then
+spends up to eighteen ssh attempts finding one, and a login added by hand during
+that window was overwritten anyway. `adoptAgentKeyIfUnset` has the same shape
+around a process that lists an agent's keys. Both now re-check what `update`
+actually read and say nothing when the user has answered in the meantime. The
+check belongs in those two and not in `adopt`, which the setup window calls when
+somebody picks a key on purpose.
+
+**A title is a claim.** Write Aliases Now always announced "SSH config updated",
+so a config that will not parse produced that title above a body explaining the
+parse error. `syncSSHConfig` now reports whether it wrote anything and the caller
+titles the notification from that.
+
 The generated header stays as it is. It was never wrong about what should happen.

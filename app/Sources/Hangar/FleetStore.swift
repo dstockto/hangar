@@ -333,18 +333,22 @@ final class FleetStore: ObservableObject {
         error.localizedDescription
     }
 
-    func syncSSHConfig(announce: Bool = true) {
+    /// Writes the aliases. Returns whether anything was actually written, so a
+    /// caller that announces the result can say which of the two happened rather
+    /// than claiming the file changed over a body explaining why it did not.
+    @discardableResult
+    func syncSSHConfig(announce: Bool = true) -> Bool {
         // This renders from the config, and the header it writes tells the user
         // to edit that file and sync again. Reading it is what honours the line.
         // A file that will not parse stops the write: the alternative is aliases
         // built from a copy the user has already moved on from.
         if let problem = reloadConfig() {
             lastSyncMessage = problem
-            return
+            return false
         }
         guard !instances.isEmpty else {
             lastSyncMessage = "No hosts to write. Refresh the fleet first."
-            return
+            return false
         }
         // A fleet made entirely of imported hosts is a fleet Hangar writes
         // nothing for, and that is correct rather than a failure.
@@ -354,7 +358,7 @@ final class FleetStore: ObservableObject {
                 lastSyncMessage = "Nothing to write: every host is already in "
                     + "~/.ssh/config, and Hangar leaves those alone."
             }
-            return
+            return false
         }
         do {
             let writer = SSHConfigWriter(config: config)
@@ -374,9 +378,11 @@ final class FleetStore: ObservableObject {
                     ? "SSH config updated: ~/.ssh/config.d/hangar. Add the Include line to ~/.ssh/config."
                     : "SSH config updated: ~/.ssh/config.d/hangar"
             }
+            return true
         } catch let error as HangarError {
             lastSyncMessage = FleetStore.presentable(error)
             Log.error(.ssh, "sync failed", ["error": error.localizedDescription])
+            return false
         } catch {
             // An Include that cannot be written does not fail the sync: the
             // aliases are on disk and Hangar itself connects either way.
@@ -386,6 +392,7 @@ final class FleetStore: ObservableObject {
                 : "Aliases written. The Include line could not be added to "
                     + "~/.ssh/config: \(text)"
             Log.error(.ssh, "include line could not be added", ["error": text])
+            return true
         }
     }
 
@@ -709,6 +716,10 @@ final class FleetStore: ObservableObject {
         guard !hasKeyPreference, !hasCheckedAgents else { return nil }
         hasCheckedAgents = true
         detectAgents()
+        // Detecting ran a process, so re-read before writing: a key pinned by
+        // hand meanwhile is a preference, and this only acts when there is none.
+        reloadConfig()
+        guard !hasKeyPreference else { return nil }
         guard let agent = agents.first(where: { $0.keys.count == 1 }),
               let key = agent.keys.first,
               adopt(agent: agent, key: key) != nil else { return nil }
@@ -782,11 +793,18 @@ final class FleetStore: ObservableObject {
             if outcome.reached { Log.info(.ssh, "no login authenticated; leaving it to ssh") }
             return nil
         }
+        // The probe took a while and `update` re-reads, so a login that appeared
+        // by hand while it ran is the user's answer and outranks this one.
+        var alreadyChosen = false
         guard updateConfig({
+            guard ($0.ssh?.user ?? "").isEmpty else {
+                alreadyChosen = true
+                return
+            }
             var ssh = $0.ssh ?? HangarConfig.SSHSettings()
             ssh.user = found
             $0.ssh = ssh
-        }) == nil else { return nil }
+        }) == nil, !alreadyChosen else { return nil }
         rebuildIndex()
         syncSSHConfig(announce: false)
         Log.info(.ssh, "ssh login learned", ["user": found])

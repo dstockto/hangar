@@ -804,9 +804,10 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             $0.sources = settings
         }) {
             Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
+            // The file refused, so put the checkbox back to what Hangar has
+            // rather than leaving it showing a source that was never enabled.
+            sender.state = store.config.sourceSettings.wants(source) ? .on : .off
         }
-        // Redraws the toggles from the config either way, so a refused write
-        // leaves a checkbox showing what is actually on disk.
         Task { await runChecks() }
     }
 
