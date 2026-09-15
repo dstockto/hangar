@@ -793,7 +793,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     @objc private func sourceToggled(_ sender: NSButton) {
         guard let source = sourceToggles.first(where: { $0.value === sender })?.key else { return }
         let on = sender.state == .on
-        store.updateConfig {
+        if let problem = store.updateConfig({
             var settings = $0.sources ?? .standard
             switch source {
             case .ec2:       settings.ec2 = on
@@ -802,7 +802,11 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             case .hostsFile: settings.hostsFile = on
             }
             $0.sources = settings
+        }) {
+            Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
         }
+        // Redraws the toggles from the config either way, so a refused write
+        // leaves a checkbox showing what is actually on disk.
         Task { await runChecks() }
     }
 
@@ -1425,7 +1429,9 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     @objc private func toggleLogin() {
         let turningOn = loginToggle.state == .on
         let problem = LoginItem.set(turningOn)
-        store.updateConfig { $0.launchAtLogin = turningOn }
+        if let failed = store.updateConfig({ $0.launchAtLogin = turningOn }) {
+            Notifier.show(title: "Could not save the setting", body: failed, seconds: 4)
+        }
         // The system is the source of truth: if it refused, reflect that.
         loginToggle.state = LoginItem.isEnabled ? .on : .off
         if let problem {
@@ -1437,7 +1443,10 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     @objc private func toggleSync() {
         let on = syncToggle.state == .on
-        store.updateConfig { $0.syncSSHConfigOnRefresh = on }
+        if let problem = store.updateConfig({ $0.syncSSHConfigOnRefresh = on }) {
+            Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
+            syncToggle.state = (store.config.syncSSHConfigOnRefresh ?? true) ? .on : .off
+        }
     }
 
     @objc private func openPanel() {

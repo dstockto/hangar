@@ -52,7 +52,7 @@ final class FleetStore: ObservableObject {
     @Published private(set) var sshAliasesActive = false
 
     init() {
-        reloadConfig()
+        if let problem = reloadConfig() { status = .failed(problem) }
         loadCache()
         refreshManagedHosts()
         rebuildIndex()
@@ -81,14 +81,26 @@ final class FleetStore: ObservableObject {
         return formatter.localizedString(for: fetchedAt, relativeTo: Date())
     }
 
-    func reloadConfig() {
+    /// Re-reads the config from disk. Returns what to tell the user when the file
+    /// will not parse, leaving the copy in memory alone rather than clearing it.
+    /// Each caller reports in its own channel: a refresh has a status, a sync has
+    /// a message, and neither is the other.
+    @discardableResult
+    func reloadConfig() -> String? {
         do {
-            let previous = config
-            config = try HangarConfig.load()
-            if !instances.isEmpty, !sameSSHShape(previous, config) { rebuildIndex() }
+            install(try HangarConfig.load())
+            return nil
         } catch {
-            status = .failed(error.localizedDescription)
+            return FleetStore.presentable(error)
         }
+    }
+
+    /// Swaps in a config and rebuilds the search index only when the new one
+    /// changes what the aliases look like.
+    private func install(_ updated: HangarConfig) {
+        let previous = config
+        config = updated
+        if !instances.isEmpty, !sameSSHShape(previous, config) { rebuildIndex() }
     }
 
     /// Only ssh-affecting settings change aliases, so avoid rebuilding the index
@@ -107,17 +119,13 @@ final class FleetStore: ObservableObject {
     /// reloading afterwards only reads the damage back in.
     @discardableResult
     func updateConfig(_ change: (inout HangarConfig) -> Void) -> String? {
-        let previous = config
-        let updated: HangarConfig
         do {
-            updated = try HangarConfig.update(change)
+            install(try HangarConfig.update(change))
+            return nil
         } catch {
             Log.error(.app, "config not written", ["error": error.localizedDescription])
             return FleetStore.presentable(error)
         }
-        config = updated
-        if !instances.isEmpty, !sameSSHShape(previous, config) { rebuildIndex() }
-        return nil
     }
 
     func isManaged(_ host: String) -> Bool { managedHosts.contains(host) }
@@ -171,7 +179,7 @@ final class FleetStore: ObservableObject {
         status = .refreshing
         let started = Date()
         Log.info(.fleet, "refresh started")
-        reloadConfig()
+        if let problem = reloadConfig() { status = .failed(problem) }
 
         let settings = config.sourceSettings
         var groups: [HostSource: [Instance]] = [:]
@@ -328,7 +336,12 @@ final class FleetStore: ObservableObject {
     func syncSSHConfig(announce: Bool = true) {
         // This renders from the config, and the header it writes tells the user
         // to edit that file and sync again. Reading it is what honours the line.
-        reloadConfig()
+        // A file that will not parse stops the write: the alternative is aliases
+        // built from a copy the user has already moved on from.
+        if let problem = reloadConfig() {
+            lastSyncMessage = problem
+            return
+        }
         guard !instances.isEmpty else {
             lastSyncMessage = "No hosts to write. Refresh the fleet first."
             return
@@ -557,7 +570,7 @@ final class FleetStore: ObservableObject {
         lastSyncMessage = nil
         status = .idle
         config = .standard()
-        reloadConfig()
+        if let problem = reloadConfig() { status = .failed(problem) }
         loadCache()
         refreshManagedHosts()
         rebuildIndex()

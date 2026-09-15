@@ -276,12 +276,12 @@ public struct HangarConfig: Codable, Sendable {
     /// Loads the config, writing a documented starter file on first run. A config
     /// that fails to parse is reported rather than silently replaced, so a typo
     /// never costs the user their settings.
-    public static func load() throws -> HangarConfig {
+    public static func load(from path: String = HangarConfig.path) throws -> HangarConfig {
         let fm = FileManager.default
         if !fm.fileExists(atPath: path) {
-            PrivateFile.ensureDirectory(home)
-            try write(standard())
-            return standard()
+            let starter = standard()
+            try write(starter, to: path)
+            return starter
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let decoder = JSONDecoder()
@@ -331,9 +331,7 @@ public struct HangarConfig: Codable, Sendable {
                               _ change: (inout HangarConfig) -> Void) throws -> HangarConfig {
         // A file that will not parse is someone mid-edit. Replacing it with the
         // last copy we read would cost them that edit, so refuse and say so.
-        var config = FileManager.default.fileExists(atPath: path)
-            ? try read(from: path)
-            : standard()
+        var config = try load(from: path)
         change(&config)
         try write(config, to: path)
         return config

@@ -431,6 +431,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// everything.
     private func registerHotKeys() {
         hotKeys.unregisterAll()
+        // A config that will not parse leaves the last good one in place, and
+        // hotkeys that still work beat a notification nobody asked for here.
         store.reloadConfig()
         let configured = store.config.hotkeys ?? [HangarConfig.Hotkey(
             keys: "cmd+shift+h", title: "All hosts", filter: [:])]
