@@ -78,7 +78,18 @@ a config which fails to parse is reported rather than silently replaced, so a ty
 never costs the user their settings. `update` keeps that promise: it throws, the
 file is left exactly as the user left it, and the caller reports it.
 
-**`syncSSHConfig` reloads first**, which is the reported bug and is now one line,
-because the sync renders from the config and the config may have changed.
+**`syncSSHConfig` reloads first**, which is the reported bug, because the sync
+renders from the config and the config may have changed. A file that will not
+parse stops the write rather than falling through to the copy in memory: aliases
+built from a config the user has already moved on from are the thing being fixed
+here, not an acceptable fallback. `reloadConfig` returns the problem rather than
+setting a fleet status, because a refresh reports one as a status and a sync
+reports one as a sync message, and those are not the same thing.
+
+**A refused write is reported.** Six toggles across the menubar and the setup
+window now say so when the config cannot be written, rather than leaving a
+control showing a state the file does not have. `toggleDailyUpdates` flips
+against what is on disk, so a refusal leaves it with nothing to report, and it
+says that instead of asserting whatever its own variable happened to hold.
 
 The generated header stays as it is. It was never wrong about what should happen.

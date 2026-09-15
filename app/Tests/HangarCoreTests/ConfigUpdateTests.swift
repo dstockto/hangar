@@ -68,6 +68,20 @@ final class ConfigUpdateTests: TemporaryDirectoryTestCase {
         XCTAssertEqual(try HangarConfig.read(from: file).region, "eu-west-1")
     }
 
+    /// `update` leans on `load` for the absent case rather than answering it a
+    /// second time, and `load` taking a path is what makes the starter file it
+    /// writes provable against somewhere other than the real ~/.hangar.
+    func testLoadWritesTheStarterFileWhenThereIsNone() throws {
+        let file = path("config.json")
+        let loaded = try HangarConfig.load(from: file)
+
+        XCTAssertEqual(loaded.terminal, HangarConfig.standard().terminal)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file),
+                      "the starter file is written, not only returned")
+        XCTAssertEqual(try HangarConfig.read(from: file).tags, .standard,
+                       "and it ships the tag mapping so it can be edited")
+    }
+
     /// The config sits beside the fleet cache and is no less private.
     func testTheFileItWritesIs0600() throws {
         let file = path("config.json")

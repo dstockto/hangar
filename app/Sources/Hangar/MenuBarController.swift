@@ -774,7 +774,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleLoginItem() {
         let turningOn = !LoginItem.isEnabled
         let problem = LoginItem.set(turningOn)
-        store.updateConfig { $0.launchAtLogin = turningOn }
+        if let failed = store.updateConfig({ $0.launchAtLogin = turningOn }) {
+            Notifier.show(title: "Could not save the setting", body: failed, seconds: 4)
+            return
+        }
         Notifier.show(title: turningOn ? "Opens at login" : "No longer opens at login",
                       body: problem ?? LoginItem.statusDescription,
                       seconds: problem == nil ? 2 : 4)
@@ -789,9 +792,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Flipped against what is on disk, not against the copy in memory, so a
         // hand edit decides what this toggle is toggling.
         var turningOn = false
-        store.updateConfig {
+        if let problem = store.updateConfig({
             turningOn = !($0.checkUpdatesOnLaunch ?? true)
             $0.checkUpdatesOnLaunch = turningOn
+        }) {
+            // The closure never ran, so turningOn says nothing about the file.
+            Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
+            return
         }
         Notifier.show(
             title: turningOn ? "Checking for updates daily" : "Automatic checks off",
@@ -803,7 +810,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func pickChannel(_ sender: NSMenuItem) {
         let channel = sender.representedObject as? String
-        store.updateConfig { $0.updateChannel = channel }
+        if let problem = store.updateConfig({ $0.updateChannel = channel }) {
+            Notifier.show(title: "Could not save the setting", body: problem, seconds: 4)
+        }
     }
 
     private func errorRow(_ message: String) -> NSMenuItem {
