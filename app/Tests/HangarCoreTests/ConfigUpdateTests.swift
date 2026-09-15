@@ -82,6 +82,62 @@ final class ConfigUpdateTests: TemporaryDirectoryTestCase {
                        "and it ships the tag mapping so it can be edited")
     }
 
+    /// The probe that learns an ssh login runs long enough for the user to set
+    /// one by hand while it goes, and theirs is the answer. This is issue 9's own
+    /// bug class, so it is pinned rather than left to the AppKit layer.
+    func testALoginSetByHandOutranksOneTheProbeLearned() throws {
+        let file = path("config.json")
+        try HangarConfig.write(HangarConfig.standard(), to: file)
+
+        var byHand = try HangarConfig.read(from: file)
+        byHand.ssh?.user = "rocky"
+        try HangarConfig.write(byHand, to: file)
+
+        var applied = true
+        let updated = try HangarConfig.update(at: file) {
+            applied = $0.setLoginIfUnset("ec2-user")
+        }
+
+        XCTAssertFalse(applied, "it reports that it recorded nothing")
+        XCTAssertEqual(updated.ssh?.user, "rocky")
+        XCTAssertEqual(try HangarConfig.read(from: file).ssh?.user, "rocky",
+                       "the hand edit is still on disk")
+    }
+
+    func testTheLearnedLoginIsRecordedWhenNothingHasChosenOne() throws {
+        let file = path("config.json")
+        try HangarConfig.write(HangarConfig.standard(), to: file)
+
+        var applied = false
+        try HangarConfig.update(at: file) { applied = $0.setLoginIfUnset("ec2-user") }
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(try HangarConfig.read(from: file).ssh?.user, "ec2-user")
+    }
+
+    /// Hangar ships no login, so the empty spelling has to count as unset or the
+    /// probe could never record anything.
+    func testAnEmptyLoginCountsAsUnset() {
+        var config = HangarConfig.standard()
+        config.ssh?.user = ""
+        XCTAssertTrue(config.setLoginIfUnset("ec2-user"))
+        XCTAssertEqual(config.ssh?.user, "ec2-user")
+    }
+
+    /// The one answer to whether a key has been chosen, which is what the
+    /// unprompted adoption at launch is allowed to act on.
+    func testPinsAKeyCountsBothAnAgentAndAFile() {
+        var config = HangarConfig.standard()
+        XCTAssertFalse(config.pinsAKey, "a fresh config has no opinion about keys")
+
+        config.ssh?.identityFile = "~/.hangar/keys/k.pub"
+        XCTAssertTrue(config.pinsAKey)
+
+        config.ssh?.identityFile = nil
+        config.ssh?.identityAgent = "/tmp/agent.sock"
+        XCTAssertTrue(config.pinsAKey, "an agent socket is a preference too")
+    }
+
     /// The config sits beside the fleet cache and is no less private.
     func testTheFileItWritesIs0600() throws {
         let file = path("config.json")

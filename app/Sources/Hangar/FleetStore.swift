@@ -698,10 +698,9 @@ final class FleetStore: ObservableObject {
     }
 
     /// True when Hangar has no opinion about keys yet, which is the only state in
-    /// which it is allowed to form one on the user's behalf.
-    var hasKeyPreference: Bool {
-        config.ssh?.identityAgent?.isEmpty == false || config.ssh?.identityFile?.isEmpty == false
-    }
+    /// which it is allowed to form one on the user's behalf. The rule itself is
+    /// in the core, so the check here and the write cannot drift apart.
+    var hasKeyPreference: Bool { config.pinsAKey }
 
     /// Adopts the only key there is, once, when the user has expressed no
     /// preference. Returns what to tell them, or nil when nothing was done.
@@ -716,13 +715,11 @@ final class FleetStore: ObservableObject {
         guard !hasKeyPreference, !hasCheckedAgents else { return nil }
         hasCheckedAgents = true
         detectAgents()
-        // Detecting ran a process, so re-read before writing: a key pinned by
-        // hand meanwhile is a preference, and this only acts when there is none.
-        reloadConfig()
-        guard !hasKeyPreference else { return nil }
+        // The guard above is a cheap early out from the copy in memory. The one
+        // that decides is inside the write, against what the file actually says.
         guard let agent = agents.first(where: { $0.keys.count == 1 }),
               let key = agent.keys.first,
-              adopt(agent: agent, key: key) != nil else { return nil }
+              adopt(agent: agent, key: key, onlyIfUnset: true) != nil else { return nil }
         return "\(key.title). The private key stays in \(agent.name)."
     }
 
@@ -794,17 +791,11 @@ final class FleetStore: ObservableObject {
             return nil
         }
         // The probe took a while and `update` re-reads, so a login that appeared
-        // by hand while it ran is the user's answer and outranks this one.
-        var alreadyChosen = false
-        guard updateConfig({
-            guard ($0.ssh?.user ?? "").isEmpty else {
-                alreadyChosen = true
-                return
-            }
-            var ssh = $0.ssh ?? HangarConfig.SSHSettings()
-            ssh.user = found
-            $0.ssh = ssh
-        }) == nil, !alreadyChosen else { return nil }
+        // by hand while it ran is the user's answer and outranks this one. The
+        // rule is in the core, where it has a test.
+        var applied = false
+        guard updateConfig({ applied = $0.setLoginIfUnset(found) }) == nil,
+              applied else { return nil }
         rebuildIndex()
         syncSSHConfig(announce: false)
         Log.info(.ssh, "ssh login learned", ["user": found])
@@ -814,13 +805,23 @@ final class FleetStore: ObservableObject {
     /// Pins one agent key for every host. The public half is written under
     /// ~/.hangar/keys and named by IdentityFile; the private half is never read,
     /// asked for, or stored.
+    ///
+    /// `onlyIfUnset` is for the unprompted adoption at launch, which must not
+    /// replace a key pinned by hand while the agent was being listed. The setup
+    /// window leaves it false, because picking a key there is a deliberate
+    /// replacement and refusing it would be the bug.
     @discardableResult
-    func adopt(agent: SSHAgent, key: AgentKey) -> String? {
+    func adopt(agent: SSHAgent, key: AgentKey, onlyIfUnset: Bool = false) -> String? {
         guard let path = KeySource.materialize(key) else {
             lastSyncMessage = "Could not write the public key under ~/.hangar/keys."
             return nil
         }
+        var skipped = false
         if let problem = updateConfig({
+            guard !onlyIfUnset || !$0.pinsAKey else {
+                skipped = true
+                return
+            }
             var ssh = $0.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
             ssh.identityAgent = agent.socket
             ssh.identityFile = path
@@ -830,6 +831,7 @@ final class FleetStore: ObservableObject {
             lastSyncMessage = problem
             return nil
         }
+        guard !skipped else { return nil }
         rebuildIndex()
         syncSSHConfig(announce: false)
         Log.info(.ssh, "agent key adopted",
