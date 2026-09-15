@@ -222,6 +222,13 @@ public enum KeySource {
         (HangarConfig.home as NSString).appendingPathComponent("keys")
     }
 
+    /// Where the public half of a key goes on disk. One definition, because
+    /// `materialize` writes it, the cleanup looks for it, and the unprompted
+    /// adoption has to know it before anything has been written.
+    public static func publicKeyPath(for key: AgentKey) -> String {
+        (keyDirectory as NSString).appendingPathComponent("\(key.slug).pub")
+    }
+
     /// Writes the agent's public key where `IdentityFile` can point at it, and
     /// returns the path in `~` form so the config file stays portable.
     ///
@@ -230,7 +237,7 @@ public enum KeySource {
     @discardableResult
     public static func materialize(_ key: AgentKey) -> String? {
         let name = "\(key.slug).pub"
-        let path = (keyDirectory as NSString).appendingPathComponent(name)
+        let path = publicKeyPath(for: key)
         guard PrivateFile.write(Data((key.publicKeyLine + "\n").utf8), to: path) else {
             Log.error(.ssh, "could not write public key", ["name": name])
             return nil

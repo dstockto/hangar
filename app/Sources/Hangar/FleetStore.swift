@@ -697,9 +697,9 @@ final class FleetStore: ObservableObject {
         }
     }
 
-    /// True when Hangar has no opinion about keys yet, which is the only state in
-    /// which it is allowed to form one on the user's behalf. The rule itself is
-    /// in the core, so the check here and the write cannot drift apart.
+    /// True when a key is already pinned, by an agent socket or by a file. The
+    /// unprompted adoption acts only when this is false, and the rule itself is
+    /// in the core so the check here and the write cannot drift apart.
     var hasKeyPreference: Bool { config.pinsAKey }
 
     /// Adopts the only key there is, once, when the user has expressed no
@@ -715,11 +715,34 @@ final class FleetStore: ObservableObject {
         guard !hasKeyPreference, !hasCheckedAgents else { return nil }
         hasCheckedAgents = true
         detectAgents()
-        // The guard above is a cheap early out from the copy in memory. The one
-        // that decides is inside the write, against what the file actually says.
         guard let agent = agents.first(where: { $0.keys.count == 1 }),
-              let key = agent.keys.first,
-              adopt(agent: agent, key: key, onlyIfUnset: true) != nil else { return nil }
+              let key = agent.keys.first else { return nil }
+
+        // Written before the config so IdentityFile never names a file that is
+        // not there. If the write is refused below, only a file this call created
+        // is removed again: one that was already there belongs to the pin that
+        // refused it.
+        let expected = KeySource.publicKeyPath(for: key)
+        let existed = FileManager.default.fileExists(atPath: expected)
+        guard let path = KeySource.materialize(key) else {
+            lastSyncMessage = "Could not write the public key under ~/.hangar/keys."
+            return nil
+        }
+        // The guard at the top is a cheap early out from the copy in memory.
+        // This one decides, against what the file actually says.
+        var pinned = false
+        if let problem = updateConfig({
+            pinned = $0.pinKeyIfUnset(agentSocket: agent.socket, identityFile: path,
+                                      defaultLogin: NSUserName())
+        }) {
+            lastSyncMessage = problem
+            return nil
+        }
+        guard pinned else {
+            if !existed { try? FileManager.default.removeItem(atPath: expected) }
+            return nil
+        }
+        keyWasPinned(agent: agent, key: key)
         return "\(key.title). The private key stays in \(agent.name)."
     }
 
@@ -806,22 +829,16 @@ final class FleetStore: ObservableObject {
     /// ~/.hangar/keys and named by IdentityFile; the private half is never read,
     /// asked for, or stored.
     ///
-    /// `onlyIfUnset` is for the unprompted adoption at launch, which must not
-    /// replace a key pinned by hand while the agent was being listed. The setup
-    /// window leaves it false, because picking a key there is a deliberate
-    /// replacement and refusing it would be the bug.
+    /// This always replaces whatever was pinned, because the setup window calls
+    /// it when somebody picks a key on purpose. The unprompted adoption at launch
+    /// goes through `adoptAgentKeyIfUnset`, which must not replace a hand pin.
     @discardableResult
-    func adopt(agent: SSHAgent, key: AgentKey, onlyIfUnset: Bool = false) -> String? {
+    func adopt(agent: SSHAgent, key: AgentKey) -> String? {
         guard let path = KeySource.materialize(key) else {
             lastSyncMessage = "Could not write the public key under ~/.hangar/keys."
             return nil
         }
-        var skipped = false
         if let problem = updateConfig({
-            guard !onlyIfUnset || !$0.pinsAKey else {
-                skipped = true
-                return
-            }
             var ssh = $0.ssh ?? HangarConfig.SSHSettings(user: NSUserName())
             ssh.identityAgent = agent.socket
             ssh.identityFile = path
@@ -831,7 +848,12 @@ final class FleetStore: ObservableObject {
             lastSyncMessage = problem
             return nil
         }
-        guard !skipped else { return nil }
+        keyWasPinned(agent: agent, key: key)
+        return path
+    }
+
+    /// What follows a key being pinned, whichever path pinned it.
+    private func keyWasPinned(agent: SSHAgent, key: AgentKey) {
         rebuildIndex()
         syncSSHConfig(announce: false)
         Log.info(.ssh, "agent key adopted",
@@ -841,7 +863,6 @@ final class FleetStore: ObservableObject {
         for stale in KeySource.staleKeyFiles(keeping: agent.keys) {
             try? FileManager.default.removeItem(atPath: stale)
         }
-        return path
     }
 
     /// Stops pinning a key, which puts ssh back to deciding for itself.

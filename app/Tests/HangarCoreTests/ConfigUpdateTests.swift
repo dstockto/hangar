@@ -138,6 +138,62 @@ final class ConfigUpdateTests: TemporaryDirectoryTestCase {
         XCTAssertTrue(config.pinsAKey, "an agent socket is a preference too")
     }
 
+    /// The launch-time adoption lists an agent's keys before it writes, which is
+    /// long enough for the user to pin one by hand. Theirs wins.
+    func testAKeyPinnedByHandOutranksTheAdoptionAlreadyRunning() throws {
+        let file = path("config.json")
+        var byHand = HangarConfig.standard()
+        byHand.ssh?.identityFile = "~/.ssh/mine.pub"
+        try HangarConfig.write(byHand, to: file)
+
+        var pinned = true
+        let updated = try HangarConfig.update(at: file) {
+            pinned = $0.pinKeyIfUnset(agentSocket: "/tmp/agent.sock",
+                                      identityFile: "~/.hangar/keys/other.pub")
+        }
+
+        XCTAssertFalse(pinned, "it reports that it pinned nothing")
+        XCTAssertEqual(updated.ssh?.identityFile, "~/.ssh/mine.pub")
+        XCTAssertNil(updated.ssh?.identityAgent, "and did not attach an agent either")
+        XCTAssertEqual(try HangarConfig.read(from: file).ssh?.identityFile,
+                       "~/.ssh/mine.pub", "the hand pin is still on disk")
+    }
+
+    /// An agent socket is a preference too, even with no file named.
+    func testAnAgentPinnedByHandAlsoOutranksIt() throws {
+        let file = path("config.json")
+        var byHand = HangarConfig.standard()
+        byHand.ssh?.identityAgent = "/tmp/mine.sock"
+        try HangarConfig.write(byHand, to: file)
+
+        var pinned = true
+        try HangarConfig.update(at: file) {
+            pinned = $0.pinKeyIfUnset(agentSocket: "/tmp/other.sock",
+                                      identityFile: "~/.hangar/keys/other.pub")
+        }
+
+        XCTAssertFalse(pinned)
+        XCTAssertEqual(try HangarConfig.read(from: file).ssh?.identityAgent,
+                       "/tmp/mine.sock")
+    }
+
+    func testTheAgentKeyIsPinnedWhenNothingHasChosenOne() throws {
+        let file = path("config.json")
+        try HangarConfig.write(HangarConfig.standard(), to: file)
+
+        var pinned = false
+        try HangarConfig.update(at: file) {
+            pinned = $0.pinKeyIfUnset(agentSocket: "/tmp/agent.sock",
+                                      identityFile: "~/.hangar/keys/k.pub")
+        }
+
+        XCTAssertTrue(pinned)
+        let onDisk = try HangarConfig.read(from: file)
+        XCTAssertEqual(onDisk.ssh?.identityFile, "~/.hangar/keys/k.pub")
+        XCTAssertEqual(onDisk.ssh?.identityAgent, "/tmp/agent.sock")
+        XCTAssertEqual(onDisk.ssh?.identitiesOnly, true)
+    }
+
     /// The config sits beside the fleet cache and is no less private.
     func testTheFileItWritesIs0600() throws {
         let file = path("config.json")

@@ -376,6 +376,23 @@ public struct HangarConfig: Codable, Sendable {
         return true
     }
 
+    /// Pins a key only when nothing has chosen one, and reports whether it did.
+    /// The unprompted adoption at launch lists an agent's keys before it writes,
+    /// which is long enough for the user to pin one by hand while it runs.
+    ///
+    /// `defaultLogin` fills the login only when there is no ssh block at all. It
+    /// is a parameter so the core never reads the machine's own account name.
+    public mutating func pinKeyIfUnset(agentSocket: String?, identityFile: String,
+                                       defaultLogin: String? = nil) -> Bool {
+        guard !pinsAKey else { return false }
+        var settings = ssh ?? SSHSettings(user: defaultLogin)
+        settings.identityAgent = agentSocket
+        settings.identityFile = identityFile
+        settings.identitiesOnly = true
+        ssh = settings
+        return true
+    }
+
     /// Inserts or replaces an override for exactly this `match`, then reorders so
     /// general rules stay ahead of specific ones. Overrides merge top to bottom,
     /// so a host-scoped rule has to sit after a product-scoped one to win.
