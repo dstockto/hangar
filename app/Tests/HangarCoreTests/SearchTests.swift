@@ -288,6 +288,9 @@ final class SearchPerformanceTests: XCTestCase {
                                  "narrowing must not be slower than a full rescan")
         XCTAssertEqual(full.count, incremental.count,
                        "both strategies must agree on the result set")
+        // The query is a separator-bearing alias, so this also pins that one
+        // matches at all: agreeing on zero hid a regression that matched nothing.
+        XCTAssertGreaterThan(full.count, 0, "the typed alias has to find its host")
     }
 }
 
@@ -445,5 +448,48 @@ final class HighlightAgreesWithScoreTests: XCTestCase {
     func testEveryTermStillGetsItsOwnRanges() {
         XCTAssertEqual(marked("payments web", "payments-prod-web"),
                        "^^^^^^^^      ^^^")
+    }
+}
+
+/// A typed separator is punctuation in the name, not part of a word. Every alias
+/// the menu displays carries one, so a query that repeats what is on screen has
+/// to match the row it was read from.
+final class SeparatorBearingQueryTests: XCTestCase {
+
+    private let entry = SearchEntry(instance: Fixture.instance([
+        "product": "payments", "env": "prod", "Name": "web",
+        "hostname": "web.prod.payments.example.com"]), alias: "payments-prod-web-1")
+
+    private func matches(_ query: String) -> Bool {
+        entry.score(for: Fuzzy.Query(query)) != nil
+    }
+
+    func testTypingTheAliasTheMenuShowsFindsIt() {
+        XCTAssertTrue(matches("payments-prod-web-1"))
+        XCTAssertTrue(matches("payments-prod"))
+        XCTAssertTrue(matches("db-prod") == false, "a different host is still a miss")
+    }
+
+    func testADottedNameMatchesItself() {
+        let imported = SearchEntry(instance: Fixture.instance([
+            "Name": "workers", "hostname": "workers.example"]), alias: "workers.example")
+        XCTAssertTrue(imported.score(for: Fuzzy.Query("workers.example")) != nil)
+        XCTAssertTrue(imported.score(for: Fuzzy.Query("workers")) != nil)
+    }
+
+    /// `hostname` falls back to the private IP and then the instance id, so both
+    /// of those are things a person types with separators in them.
+    func testAnAddressAndAnInstanceIdMatchThemselves() {
+        // No hostname tag, so `host` falls back to the private IP the fixture sets.
+        let bare = SearchEntry(instance: Fixture.instance(["Name": "db"]), alias: "db-1")
+        XCTAssertTrue(bare.score(for: Fuzzy.Query("10.0.0.1")) != nil)
+    }
+
+    /// Folding the separator out must not reopen roaming: it is dropped from the
+    /// token, not turned into a licence to cross labels.
+    func testFoldingTheSeparatorDoesNotReopenRoaming() {
+        XCTAssertFalse(matches("q-a"))
+        XCTAssertFalse(matches("p-d-w"))
+        XCTAssertTrue(matches("p-p-w"), "still an acronym once the dashes go")
     }
 }

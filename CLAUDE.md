@@ -263,7 +263,16 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     already painted, and a term matching invisibly looked exactly like a term
     matching nothing. A highlight is the only account of itself a search gives,
     so it answers through the same rule the score does. See mistake 18: that is
-    twice.
+    twice. The first cut of the rule then split the name on its separators and
+    held the typed token to the pieces, and none of the pieces holds a separator,
+    because they are what splitting removed. Every query carrying a `-`, `.` or
+    `_` matched nothing, so typing back the alias the menu was displaying found
+    nothing, and so did a documented `db-prod`, an imported `workers.example` and
+    a private IP. The suite stayed green because one test covered the opposite
+    direction and the perf test only asserted two strategies agreed on a count,
+    which they did, on zero. A rule that splits a name has to remember the query
+    was typed with the same punctuation in it, and a test that compares two
+    results has to insist there are some.
 
 ## Testing against a fake fleet
 
