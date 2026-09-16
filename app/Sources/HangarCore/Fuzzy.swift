@@ -75,44 +75,16 @@ public enum Fuzzy {
         return score - hay.count / 8
     }
 
+    /// The punctuation a host name is written with: `-`, `.`, `_` and space.
     static func isSeparator(_ byte: UInt8) -> Bool {
         byte == 0x2D || byte == 0x2E || byte == 0x5F || byte == 0x20
     }
 
-    /// A candidate split the way its name is actually written. Built once per
-    /// refresh alongside the bytes, so the hot path still only splits the query.
-    public struct Haystack: Sendable {
-        public let bytes: Bytes
-        /// The parts between separators: `web`, `prod`, `payments`, `example`.
-        public let labels: [Bytes]
-        /// The same with the separators removed, for a query typed straight
-        /// through them.
-        public let stripped: Bytes
-        /// The first byte of each label, in order, which is what an acronym reads.
-        public let initials: Bytes
-
-        public init(_ text: String) {
-            let lowered = Fuzzy.lowered(text)
-            var labels: [Bytes] = []
-            var stripped = Bytes()
-            var initials = Bytes()
-            stripped.reserveCapacity(lowered.count)
-            var current = Bytes()
-            for byte in lowered {
-                if Fuzzy.isSeparator(byte) {
-                    if !current.isEmpty { labels.append(current); current = Bytes() }
-                } else {
-                    if current.isEmpty { initials.append(byte) }
-                    current.append(byte)
-                    stripped.append(byte)
-                }
-            }
-            if !current.isEmpty { labels.append(current) }
-            self.bytes = lowered
-            self.labels = labels
-            self.stripped = stripped
-            self.initials = initials
-        }
+    /// The same question asked of a character, for the highlight path, which
+    /// works in `String`. One list, so the two cannot drift apart.
+    static func isSeparator(_ character: Character) -> Bool {
+        guard let ascii = character.asciiValue else { return false }
+        return isSeparator(ascii)
     }
 
     /// Whether a token is anchored to how the name is written, rather than taking
@@ -122,21 +94,35 @@ public enum Fuzzy {
     /// took its `q` from a role and its `a` from the region, so every host in the
     /// product matched and typing more never narrowed. A token has to be one of
     /// three things instead, each of which a person can point at on screen.
-    public static func admits(_ token: Bytes, _ hay: Haystack) -> Bool {
+    ///
+    /// The labels are found by scanning rather than precomputed. Precomputing
+    /// them cost a split of all three fields of every host at index time, which
+    /// is work done for hosts no one goes on to search for; this is work done
+    /// only for a field a score already matched.
+    public static func admits(_ token: Bytes, in hay: Bytes) -> Bool {
         if token.isEmpty { return true }
-        // None of the three hold a separator, because a name is split on them, so
-        // a typed one is punctuation rather than a letter to find: without this
-        // every alias the menu displays stopped matching when it was typed back.
-        // Already folded when it arrives from a Query, and this costs a scan.
+        // A name is split on its separators, so none of the three routes can hold
+        // one: a typed separator is punctuation rather than a letter to find, and
+        // without this every alias the menu displays stopped matching when it was
+        // typed back. Already folded when it arrives from a Query, so this scans.
         let word = withoutSeparators(token)
         if word.isEmpty { return true }
-        // Inside one label: `wstore` in `webstore`, `torq` in `torque`.
-        for label in hay.labels where isSubsequence(word, of: label) { return true }
         // Typed straight through the separators: `paymentsprod` for `payments prod`,
-        // and `payments-prod` now that it folds to the same word.
-        if contains(hay.stripped, word) { return true }
+        // and `payments-prod` now that it folds to the same word. First because a
+        // prefix of a label lands here in one pass, and a prefix is what a person
+        // has typed for most of the keystrokes on the way to a whole word.
+        if containsSkippingSeparators(hay, word) { return true }
+        // Inside one label: `wstore` in `webstore`, `torq` in `torque`.
+        var start = 0
+        while start < hay.count {
+            if isSeparator(hay[start]) { start += 1; continue }
+            var end = start
+            while end < hay.count, !isSeparator(hay[end]) { end += 1 }
+            if isSubsequence(word, of: hay, in: start..<end) { return true }
+            start = end
+        }
         // Label initials, which is what makes `ppw` find `payments-prod-web`.
-        return isSubsequence(word, of: hay.initials)
+        return matchesInitials(word, hay)
     }
 
     /// The typed token with its punctuation dropped. Returns the token untouched
@@ -149,29 +135,51 @@ public enum Fuzzy {
         return word
     }
 
-    static func isSubsequence(_ token: Bytes, of hay: Bytes) -> Bool {
-        if token.count > hay.count { return false }
-        var index = 0
+    static func isSubsequence(_ token: Bytes, of hay: Bytes,
+                              in range: Range<Int>) -> Bool {
+        if token.count > range.count { return false }
+        var index = range.lowerBound
         for needle in token {
-            while index < hay.count, hay[index] != needle { index += 1 }
-            if index == hay.count { return false }
+            while index < range.upperBound, hay[index] != needle { index += 1 }
+            if index == range.upperBound { return false }
             index += 1
         }
         return true
     }
 
-    static func contains(_ hay: Bytes, _ token: Bytes) -> Bool {
+    /// Whether the token reads contiguously through the name once its separators
+    /// are passed over, which is what `payments-prod` and `paymentsprod` both are.
+    static func containsSkippingSeparators(_ hay: Bytes, _ token: Bytes) -> Bool {
         if token.isEmpty { return true }
-        if token.count > hay.count { return false }
-        let last = hay.count - token.count
         var start = 0
-        while start <= last {
-            var offset = 0
-            while offset < token.count, hay[start + offset] == token[offset] { offset += 1 }
-            if offset == token.count { return true }
+        while start < hay.count {
+            if hay[start] == token[0] {
+                var index = start
+                var offset = 0
+                while index < hay.count, offset < token.count {
+                    if isSeparator(hay[index]) { index += 1; continue }
+                    if hay[index] != token[offset] { break }
+                    index += 1
+                    offset += 1
+                }
+                if offset == token.count { return true }
+            }
             start += 1
         }
         return false
+    }
+
+    /// Whether the token reads off the first byte of each label, in order, which
+    /// is what makes an acronym an acronym.
+    static func matchesInitials(_ token: Bytes, _ hay: Bytes) -> Bool {
+        var offset = 0
+        var index = 0
+        while index < hay.count, offset < token.count {
+            if isSeparator(hay[index]) { index += 1; continue }
+            if hay[index] == token[offset] { offset += 1 }
+            while index < hay.count, !isSeparator(hay[index]) { index += 1 }
+        }
+        return offset == token.count
     }
 
     /// Ranges for every token, merged. Tokens are order-independent, so each one
@@ -185,10 +193,9 @@ public enum Fuzzy {
     /// matched nothing and a term that matched invisibly looked identical.
     public static func ranges(query: Query, in candidate: String) -> [Range<String.Index>] {
         guard !query.isEmpty else { return [] }
-        let hay = Haystack(candidate)
         var all: [Range<String.Index>] = []
         for term in query.terms {
-            all.append(contentsOf: ranges(term: term, in: candidate, hay: hay))
+            all.append(contentsOf: ranges(term: term, in: candidate))
         }
         guard !all.isEmpty else { return [] }
         all.sort { $0.lowerBound < $1.lowerBound }
@@ -207,7 +214,7 @@ public enum Fuzzy {
     /// Character ranges of one term, for highlighting. Only ever called for the
     /// handful of rows actually on screen, so working in `String` is fine here.
     public static func ranges(query: String, in candidate: String) -> [Range<String.Index>] {
-        ranges(term: query, in: candidate, hay: Haystack(candidate))
+        ranges(term: query, in: candidate)
     }
 
     /// One term, confined to the label it actually matched when it matched one.
@@ -217,15 +224,15 @@ public enum Fuzzy {
     /// domain. Only a query spelled straight through the separators, or read off
     /// the label initials, is painted across the whole name, because that is what
     /// those two genuinely match.
-    static func ranges(term: String, in candidate: String,
-                       hay: Haystack) -> [Range<String.Index>] {
+    static func ranges(term: String, in candidate: String) -> [Range<String.Index>] {
         guard !term.isEmpty else { return [] }
         let token = Fuzzy.lowered(term)
-        guard admits(token, hay) else { return [] }
+        guard admits(token, in: Fuzzy.lowered(candidate)) else { return [] }
         var best: (score: Int, range: Range<String.Index>)?
         for label in labelRanges(of: candidate) {
             let bytes = Fuzzy.lowered(String(candidate[label]))
-            guard isSubsequence(token, of: bytes), let s = score(token, in: bytes) else { continue }
+            guard isSubsequence(token, of: bytes, in: 0..<bytes.count),
+                  let s = score(token, in: bytes) else { continue }
             if s > (best?.score ?? Int.min) { best = (s, label) }
         }
         let window = best?.range ?? candidate.startIndex..<candidate.endIndex
@@ -238,9 +245,7 @@ public enum Fuzzy {
         var start: String.Index?
         var index = candidate.startIndex
         while index < candidate.endIndex {
-            let isBreak = candidate[index] == "-" || candidate[index] == "."
-                || candidate[index] == "_" || candidate[index] == " "
-            if isBreak {
+            if isSeparator(candidate[index]) {
                 if let from = start { ranges.append(from..<index); start = nil }
             } else if start == nil {
                 start = index
@@ -279,9 +284,9 @@ public struct SearchEntry: Sendable {
     public let hostname: String
     public let metadata: String
 
-    public let aliasHaystack: Fuzzy.Haystack
-    public let hostnameHaystack: Fuzzy.Haystack
-    public let metadataHaystack: Fuzzy.Haystack
+    public let aliasBytes: Fuzzy.Bytes
+    public let hostnameBytes: Fuzzy.Bytes
+    public let metadataBytes: Fuzzy.Bytes
 
     public init(instance: Instance, alias: String) {
         self.instance = instance
@@ -302,9 +307,9 @@ public struct SearchEntry: Sendable {
             }
         }
         self.metadata = fields.joined(separator: " ")
-        self.aliasHaystack = Fuzzy.Haystack(alias)
-        self.hostnameHaystack = Fuzzy.Haystack(hostname)
-        self.metadataHaystack = Fuzzy.Haystack(metadata)
+        self.aliasBytes = Fuzzy.lowered(alias)
+        self.hostnameBytes = Fuzzy.lowered(hostname)
+        self.metadataBytes = Fuzzy.lowered(metadata)
     }
 
     /// Best score for one token across the three fields, weighted so an alias hit
@@ -325,14 +330,14 @@ public struct SearchEntry: Sendable {
         // field once and stops dead on a byte the field does not contain, which is
         // most hosts on most keystrokes. Anchoring is only asked about a match.
         var best: Int?
-        if let s = Fuzzy.score(token, in: aliasHaystack.bytes),
-           Fuzzy.admits(word, aliasHaystack) { best = s + 24 }
-        if let s = Fuzzy.score(token, in: hostnameHaystack.bytes), s + 8 > (best ?? Int.min),
-           Fuzzy.admits(word, hostnameHaystack) {
+        if let s = Fuzzy.score(token, in: aliasBytes),
+           Fuzzy.admits(word, in: aliasBytes) { best = s + 24 }
+        if let s = Fuzzy.score(token, in: hostnameBytes), s + 8 > (best ?? Int.min),
+           Fuzzy.admits(word, in: hostnameBytes) {
             best = s + 8
         }
-        if let s = Fuzzy.score(token, in: metadataHaystack.bytes), s > (best ?? Int.min),
-           Fuzzy.admits(word, metadataHaystack) {
+        if let s = Fuzzy.score(token, in: metadataBytes), s > (best ?? Int.min),
+           Fuzzy.admits(word, in: metadataBytes) {
             best = s
         }
         return best

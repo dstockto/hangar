@@ -272,7 +272,14 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     direction and the perf test only asserted two strategies agreed on a count,
     which they did, on zero. A rule that splits a name has to remember the query
     was typed with the same punctuation in it, and a test that compares two
-    results has to insist there are some.
+    results has to insist there are some. The first fix for the cost of all this
+    precomputed each field's labels into the search index, which is work done for
+    every host including the ones nobody searches for, and it doubled index
+    construction; CI caught it on a threshold a faster developer machine cleared.
+    Holding the labels as offsets rather than as separate arrays recovered none of
+    it, because the precomputing was the cost and not the layout. Scanning for
+    them inside the check that needs them, which only runs for a field that
+    already matched, put construction back where it was.
 
 ## Testing against a fake fleet
 

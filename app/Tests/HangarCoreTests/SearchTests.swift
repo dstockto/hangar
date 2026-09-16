@@ -370,10 +370,10 @@ final class RoamingTokenSearchTests: XCTestCase {
 /// over once they are the only three.
 final class AnchoredTokenTests: XCTestCase {
 
-    private let hay = Fuzzy.Haystack("payments-prod-web-1")
+    private let hay = Fuzzy.lowered("payments-prod-web-1")
 
     private func admits(_ token: String) -> Bool {
-        Fuzzy.admits(Fuzzy.lowered(token), hay)
+        Fuzzy.admits(Fuzzy.lowered(token), in: hay)
     }
 
     func testInsideOneLabel() {
@@ -401,11 +401,17 @@ final class AnchoredTokenTests: XCTestCase {
         XCTAssertFalse(admits("mw"))
     }
 
+    /// The three routes are asked of the name as written, so pin what the name
+    /// actually offers each of them: four labels, the initials `ppw1`, and the
+    /// whole thing read straight through its separators.
     func testTheWholeLabelSetIsWhatGetsSplit() {
-        XCTAssertEqual(hay.labels.map { String(decoding: $0, as: UTF8.self) },
-                       ["payments", "prod", "web", "1"])
-        XCTAssertEqual(String(decoding: hay.initials, as: UTF8.self), "ppw1")
-        XCTAssertEqual(String(decoding: hay.stripped, as: UTF8.self), "paymentsprodweb1")
+        for label in ["payments", "prod", "web", "1"] {
+            XCTAssertTrue(admits(label), "\(label) is a label of this name")
+        }
+        XCTAssertTrue(admits("ppw1"), "the initials an acronym reads")
+        XCTAssertTrue(admits("paymentsprodweb1"),
+                      "and the name read straight through its separators")
+        XCTAssertFalse(admits("paymentsweb1"), "which is not the same as skipping one")
     }
 }
 
