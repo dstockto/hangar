@@ -70,14 +70,103 @@ public enum Fuzzy {
         return score - hay.count / 8
     }
 
+    static func isSeparator(_ byte: UInt8) -> Bool {
+        byte == 0x2D || byte == 0x2E || byte == 0x5F || byte == 0x20
+    }
+
+    /// A candidate split the way its name is actually written. Built once per
+    /// refresh alongside the bytes, so the hot path still only splits the query.
+    public struct Haystack: Sendable {
+        public let bytes: Bytes
+        /// The parts between separators: `web`, `prod`, `payments`, `example`.
+        public let labels: [Bytes]
+        /// The same with the separators removed, for a query typed straight
+        /// through them.
+        public let stripped: Bytes
+        /// The first byte of each label, in order, which is what an acronym reads.
+        public let initials: Bytes
+
+        public init(_ text: String) {
+            let lowered = Fuzzy.lowered(text)
+            var labels: [Bytes] = []
+            var stripped = Bytes()
+            var initials = Bytes()
+            stripped.reserveCapacity(lowered.count)
+            var current = Bytes()
+            for byte in lowered {
+                if Fuzzy.isSeparator(byte) {
+                    if !current.isEmpty { labels.append(current); current = Bytes() }
+                } else {
+                    if current.isEmpty { initials.append(byte) }
+                    current.append(byte)
+                    stripped.append(byte)
+                }
+            }
+            if !current.isEmpty { labels.append(current) }
+            self.bytes = lowered
+            self.labels = labels
+            self.stripped = stripped
+            self.initials = initials
+        }
+    }
+
+    /// Whether a token is anchored to how the name is written, rather than taking
+    /// one letter here and another three labels away.
+    ///
+    /// Subsequence alone is too generous on a name with six labels in it: `qa`
+    /// took its `q` from a role and its `a` from the region, so every host in the
+    /// product matched and typing more never narrowed. A token has to be one of
+    /// three things instead, each of which a person can point at on screen.
+    public static func admits(_ token: Bytes, _ hay: Haystack) -> Bool {
+        if token.isEmpty { return true }
+        // Inside one label: `wstore` in `webstore`, `torq` in `torque`.
+        for label in hay.labels where isSubsequence(token, of: label) { return true }
+        // Typed straight through the separators: `paymentsprod` for `payments prod`.
+        if contains(hay.stripped, token) { return true }
+        // Label initials, which is what makes `ppw` find `payments-prod-web`.
+        return isSubsequence(token, of: hay.initials)
+    }
+
+    static func isSubsequence(_ token: Bytes, of hay: Bytes) -> Bool {
+        if token.count > hay.count { return false }
+        var index = 0
+        for needle in token {
+            while index < hay.count, hay[index] != needle { index += 1 }
+            if index == hay.count { return false }
+            index += 1
+        }
+        return true
+    }
+
+    static func contains(_ hay: Bytes, _ token: Bytes) -> Bool {
+        if token.isEmpty { return true }
+        if token.count > hay.count { return false }
+        let last = hay.count - token.count
+        var start = 0
+        while start <= last {
+            var offset = 0
+            while offset < token.count, hay[start + offset] == token[offset] { offset += 1 }
+            if offset == token.count { return true }
+            start += 1
+        }
+        return false
+    }
+
     /// Ranges for every token, merged. Tokens are order-independent, so each one
     /// searches from the start of the candidate rather than continuing where the
     /// previous token stopped.
+    ///
+    /// Held to the same `admits` rule the score is, because a highlight is the
+    /// only account of itself the search gives. When it was not, a term could
+    /// qualify a host and paint nothing a reader could see: both its characters
+    /// landed inside ranges another term had already painted, so a term that
+    /// matched nothing and a term that matched invisibly looked identical.
     public static func ranges(query: Query, in candidate: String) -> [Range<String.Index>] {
         guard !query.isEmpty else { return [] }
+        let hay = Haystack(candidate)
         var all: [Range<String.Index>] = []
         for term in query.terms {
-            all.append(contentsOf: ranges(query: term, in: candidate))
+            all.append(contentsOf: ranges(term: term, in: candidate, hay: hay))
         }
         guard !all.isEmpty else { return [] }
         all.sort { $0.lowerBound < $1.lowerBound }
@@ -96,11 +185,56 @@ public enum Fuzzy {
     /// Character ranges of one term, for highlighting. Only ever called for the
     /// handful of rows actually on screen, so working in `String` is fine here.
     public static func ranges(query: String, in candidate: String) -> [Range<String.Index>] {
-        guard !query.isEmpty else { return [] }
+        ranges(term: query, in: candidate, hay: Haystack(candidate))
+    }
+
+    /// One term, confined to the label it actually matched when it matched one.
+    ///
+    /// Confining matters as much as admitting: a term that fits inside `torque`
+    /// should underline `torque`, not scatter itself from there to the end of the
+    /// domain. Only a query spelled straight through the separators, or read off
+    /// the label initials, is painted across the whole name, because that is what
+    /// those two genuinely match.
+    static func ranges(term: String, in candidate: String,
+                       hay: Haystack) -> [Range<String.Index>] {
+        guard !term.isEmpty else { return [] }
+        let token = Fuzzy.lowered(term)
+        guard admits(token, hay) else { return [] }
+        var best: (score: Int, range: Range<String.Index>)?
+        for label in labelRanges(of: candidate) {
+            let bytes = Fuzzy.lowered(String(candidate[label]))
+            guard isSubsequence(token, of: bytes), let s = score(token, in: bytes) else { continue }
+            if s > (best?.score ?? Int.min) { best = (s, label) }
+        }
+        let window = best?.range ?? candidate.startIndex..<candidate.endIndex
+        return ranges(term: term, in: candidate, within: window)
+    }
+
+    /// The parts of a name between its separators, as ranges into the name.
+    static func labelRanges(of candidate: String) -> [Range<String.Index>] {
         var ranges: [Range<String.Index>] = []
+        var start: String.Index?
         var index = candidate.startIndex
-        for needle in query.lowercased() {
-            guard let found = candidate[index...].firstIndex(where: {
+        while index < candidate.endIndex {
+            let isBreak = candidate[index] == "-" || candidate[index] == "."
+                || candidate[index] == "_" || candidate[index] == " "
+            if isBreak {
+                if let from = start { ranges.append(from..<index); start = nil }
+            } else if start == nil {
+                start = index
+            }
+            index = candidate.index(after: index)
+        }
+        if let from = start { ranges.append(from..<candidate.endIndex) }
+        return ranges
+    }
+
+    private static func ranges(term: String, in candidate: String,
+                               within window: Range<String.Index>) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        var index = window.lowerBound
+        for needle in term.lowercased() {
+            guard let found = candidate[index..<window.upperBound].firstIndex(where: {
                 $0.lowercased() == String(needle)
             }) else { return [] }
             let next = candidate.index(after: found)
@@ -123,9 +257,13 @@ public struct SearchEntry: Sendable {
     public let hostname: String
     public let metadata: String
 
-    public let aliasBytes: Fuzzy.Bytes
-    public let hostnameBytes: Fuzzy.Bytes
-    public let metadataBytes: Fuzzy.Bytes
+    public let aliasHaystack: Fuzzy.Haystack
+    public let hostnameHaystack: Fuzzy.Haystack
+    public let metadataHaystack: Fuzzy.Haystack
+
+    public var aliasBytes: Fuzzy.Bytes { aliasHaystack.bytes }
+    public var hostnameBytes: Fuzzy.Bytes { hostnameHaystack.bytes }
+    public var metadataBytes: Fuzzy.Bytes { metadataHaystack.bytes }
 
     public init(instance: Instance, alias: String) {
         self.instance = instance
@@ -146,20 +284,28 @@ public struct SearchEntry: Sendable {
             }
         }
         self.metadata = fields.joined(separator: " ")
-        self.aliasBytes = Fuzzy.lowered(alias)
-        self.hostnameBytes = Fuzzy.lowered(hostname)
-        self.metadataBytes = Fuzzy.lowered(metadata)
+        self.aliasHaystack = Fuzzy.Haystack(alias)
+        self.hostnameHaystack = Fuzzy.Haystack(hostname)
+        self.metadataHaystack = Fuzzy.Haystack(metadata)
     }
 
     /// Best score for one token across the three fields, weighted so an alias hit
     /// outranks a hostname hit, which outranks a tag hit.
+    ///
+    /// A field only offers a score for a token it `admits`. The weights are the
+    /// ones that were already tuned: anchoring decides whether a field answers at
+    /// all, and nothing about how loudly it answers, so ranking is unchanged among
+    /// the hosts that still match.
     public func score(for token: Fuzzy.Bytes) -> Int? {
         var best: Int?
-        if let s = Fuzzy.score(token, in: aliasBytes) { best = s + 24 }
-        if let s = Fuzzy.score(token, in: hostnameBytes), s + 8 > (best ?? Int.min) {
+        if Fuzzy.admits(token, aliasHaystack),
+           let s = Fuzzy.score(token, in: aliasHaystack.bytes) { best = s + 24 }
+        if Fuzzy.admits(token, hostnameHaystack),
+           let s = Fuzzy.score(token, in: hostnameHaystack.bytes), s + 8 > (best ?? Int.min) {
             best = s + 8
         }
-        if let s = Fuzzy.score(token, in: metadataBytes), s > (best ?? Int.min) {
+        if Fuzzy.admits(token, metadataHaystack),
+           let s = Fuzzy.score(token, in: metadataHaystack.bytes), s > (best ?? Int.min) {
             best = s
         }
         return best

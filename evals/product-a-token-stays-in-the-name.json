@@ -1,0 +1,7 @@
+{
+  "id": "product-a-token-stays-in-the-name",
+  "promise": "A query term matches a host only where the host's name actually holds it: inside one label, typed straight through the separators, or read off the label initials.",
+  "why": "Subsequence over a whole name is too generous once names carry six labels. On a fleet named role.env.product.region.example.com, 'qa' took its q from the role and its a from a label three along, so three terms that named one host returned every host in the product and typing more never narrowed. The highlight had the same bug and hid it: both characters landed under ranges other terms had already painted, so a term matching invisibly looked exactly like a term matching nothing.",
+  "command": "scripts/test.sh --filter RoamingTokenSearchTests --filter AnchoredTokenTests --filter HighlightAgreesWithScoreTests 2>&1 | grep -qE 'Executed [1-9][0-9]* tests, with 0 failures'",
+  "expect": "exit 0"
+}

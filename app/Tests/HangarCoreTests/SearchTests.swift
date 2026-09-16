@@ -139,7 +139,11 @@ final class DuplicateMetadataSearchTests: XCTestCase {
             alias: "payments-prod-web-1")
         XCTAssertEqual(entry.metadata, "payments prod prod-1 web")
         XCTAssertTrue(matches("payments web", entry))
-        XCTAssertTrue(matches("pdw", entry), "one token may still span two fields")
+        XCTAssertFalse(matches("pdw", entry),
+                       "0034 closed this: one letter from each of three fields, "
+                       + "naming none of them, is the roaming the label rule bans")
+        XCTAssertTrue(matches("ppw", entry),
+                      "the acronym survives, because every letter is a label initial")
     }
 
     /// `Fuzzy.lowered` folds ASCII only, so these two are different bytes to the
@@ -284,5 +288,162 @@ final class SearchPerformanceTests: XCTestCase {
                                  "narrowing must not be slower than a full rescan")
         XCTAssertEqual(full.count, incremental.count,
                        "both strategies must agree on the result set")
+    }
+}
+
+/// A token used to be free to take one letter from a role and the next from the
+/// region three labels later, which on a fleet whose names carry six labels each
+/// matched every host in the product. Names here are placeholders in the shape
+/// `role.env.product.example.com`, chosen so the derivation below reproduces:
+/// `torque` holds the `q`, and no `a` follows it in either the alias or the tags.
+final class RoamingTokenSearchTests: XCTestCase {
+
+    private func fleet() -> [SearchEntry] {
+        func host(_ alias: String, _ hostname: String, env: String,
+                  envName: String = "") -> SearchEntry {
+            var tags = ["product": "payments", "env": env, "Name": "torque",
+                        "hostname": hostname]
+            if !envName.isEmpty { tags["env_name"] = envName }
+            return SearchEntry(instance: Fixture.instance(tags), alias: alias)
+        }
+        return [
+            host("payments-qa-torque", "torque.qa.payments.example.com", env: "qa"),
+            // The autoscaled pair carry an instance-id label in the hostname, which
+            // is 19 more characters for a token to roam through.
+            host("payments-prod-torque-1",
+                 "i-0000000000000f264.torque.prod.payments.example.com", env: "prod"),
+            host("payments-prod-torque-2",
+                 "i-0000000000000abe0.torque.prod.payments.example.com", env: "prod"),
+            host("payments-uat-torque-1",
+                 "i-0000000000000cad5.torque.uat.payments.example.com", env: "uat"),
+            host("payments-dev-dev1-torque", "dev1.torque.dev.payments.example.com",
+                 env: "dev", envName: "dev1"),
+        ]
+    }
+
+    private func matching(_ query: String) -> [String] {
+        FleetIndex.ranked(fleet(), matching: Fuzzy.Query(query)).map(\.alias)
+    }
+
+    /// The reported case: three terms that name exactly one host, and a menu.
+    func testEveryTermNamesTheSameOneHost() {
+        XCTAssertEqual(matching("payments qa torque"), ["payments-qa-torque"])
+    }
+
+    /// Why the other four used to come along. `qa` is in no label of theirs; it
+    /// took `q` from `torque` and `a` from `payments` a label later.
+    func testTheStrayTermMatchesNoOtherHost() {
+        let prod = fleet()[1]
+        XCTAssertNil(prod.score(for: Fuzzy.Query("qa")))
+        XCTAssertNotNil(prod.score(for: Fuzzy.Query("payments")),
+                        "the terms that do name it are untouched")
+        XCTAssertNotNil(prod.score(for: Fuzzy.Query("torque")))
+    }
+
+    /// The instance-id label is 19 characters of hex sitting in a searchable
+    /// hostname, which is 19 more characters for a token to roam through.
+    func testATokenDoesNotRoamThroughAnInstanceId() {
+        let prod = fleet()[1]
+        XCTAssertNotNil(prod.score(for: Fuzzy.Query("f264")),
+                        "inside the id is still a label, and still findable")
+        XCTAssertNotNil(prod.score(for: Fuzzy.Query("f264torque")),
+                        "straight through the dot is the same rule as paymentsprod")
+        XCTAssertNil(prod.score(for: Fuzzy.Query("f2torque")),
+                     "but skipping characters on the way out of the id is roaming")
+    }
+
+    /// Narrowing, the property 0030 was about, now holds a character further in.
+    func testTypingMoreKeepsNarrowing() {
+        XCTAssertEqual(matching("torque").count, 5)
+        XCTAssertEqual(matching("payments torque").count, 5)
+        XCTAssertEqual(matching("payments torque qa").count, 1)
+        // A bare `q` is inside `torque` on all five and narrows nothing, which is
+        // honest: it is the second character that first names one host.
+        XCTAssertEqual(matching("torque q").count, 5)
+    }
+}
+
+/// Three ways a token can be anchored to a name, and the roaming that is left
+/// over once they are the only three.
+final class AnchoredTokenTests: XCTestCase {
+
+    private let hay = Fuzzy.Haystack("payments-prod-web-1")
+
+    private func admits(_ token: String) -> Bool {
+        Fuzzy.admits(Fuzzy.lowered(token), hay)
+    }
+
+    func testInsideOneLabel() {
+        XCTAssertTrue(admits("pay"))
+        XCTAssertTrue(admits("pymnts"), "a subsequence of one label is still fuzzy")
+        XCTAssertTrue(admits("web"))
+    }
+
+    /// 0030 kept per-field scoring out partly because it would have dropped this,
+    /// so the rule that replaced it has to keep it.
+    func testTypedStraightThroughTheSeparators() {
+        XCTAssertTrue(admits("paymentsprod"))
+        XCTAssertTrue(admits("prodweb"))
+        XCTAssertFalse(admits("paymentsweb"), "straight through means contiguous")
+    }
+
+    func testLabelInitials() {
+        XCTAssertTrue(admits("ppw"), "the docblock's own example")
+        XCTAssertTrue(admits("pw"))
+        XCTAssertFalse(admits("pdw"), "d is in the middle of prod, not the start")
+    }
+
+    func testRoamingIsWhatIsLeft() {
+        XCTAssertFalse(admits("ysod"), "one letter from payments, three from prod")
+        XCTAssertFalse(admits("mw"))
+    }
+
+    func testTheWholeLabelSetIsWhatGetsSplit() {
+        XCTAssertEqual(hay.labels.map { String(decoding: $0, as: UTF8.self) },
+                       ["payments", "prod", "web", "1"])
+        XCTAssertEqual(String(decoding: hay.initials, as: UTF8.self), "ppw1")
+        XCTAssertEqual(String(decoding: hay.stripped, as: UTF8.self), "paymentsprodweb1")
+    }
+}
+
+/// A highlight is the only account of itself the search gives, so it answers the
+/// same question the score does. It used to be able to paint nothing at all for a
+/// term that had qualified the host.
+final class HighlightAgreesWithScoreTests: XCTestCase {
+
+    private func marked(_ query: String, _ candidate: String) -> String {
+        let ranges = Fuzzy.ranges(query: Fuzzy.Query(query), in: candidate)
+        var marks = [Character](repeating: " ", count: candidate.count)
+        for range in ranges {
+            let lower = candidate.distance(from: candidate.startIndex, to: range.lowerBound)
+            let upper = candidate.distance(from: candidate.startIndex, to: range.upperBound)
+            for i in lower..<upper { marks[i] = "^" }
+        }
+        return String(marks)
+    }
+
+    /// The term that qualified six hosts and painted two characters, one of them
+    /// underneath another term's highlight. Now it qualifies nothing and paints
+    /// nothing, which is the same answer twice rather than two answers.
+    func testARoamingTermPaintsNothingBecauseItMatchesNothing() {
+        XCTAssertEqual(marked("qa", "torque.prod.payments.example.com"),
+                       "                                ")
+    }
+
+    /// A term that fits inside one label underlines that label, rather than
+    /// scattering itself from there to the end of the domain.
+    func testAMatchIsConfinedToTheLabelItMatched() {
+        XCTAssertEqual(marked("tore", "torque.prod.payments.example.com"),
+                       "^^^  ^                          ")
+    }
+
+    func testAnAcronymStillPaintsAcrossTheWholeName() {
+        XCTAssertEqual(marked("ppw", "payments-prod-web"),
+                       "^        ^    ^  ")
+    }
+
+    func testEveryTermStillGetsItsOwnRanges() {
+        XCTAssertEqual(marked("payments web", "payments-prod-web"),
+                       "^^^^^^^^      ^^^")
     }
 }

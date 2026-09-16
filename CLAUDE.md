@@ -247,6 +247,24 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     form cannot drift from the long one, and the room is computed from the numbers
     rather than from a fitting size. See mistake 15: that is twice.
 
+33. **A subsequence over a whole name, once names got long.** Mistake 29 stopped a
+    token crossing between two copies of one value. It did not stop one crossing
+    between two different labels of the same name, and on a fleet tagged
+    `role.env.product.<region>.example.com` every alias carries four labels and
+    every hostname six. Searching three terms that named one host returned all
+    seven in the product, because `qa` took its `q` from the role and its `a`
+    from a label three along, in the **hostname**, one field. Per-field scoring
+    was the obvious fix and would have done nothing: splitting `metadata` four
+    ways does not touch a token roaming inside a field that was never joined.
+    A token has to be anchored to how the name is written: inside one label, or
+    typed straight through the separators, or read off the label initials. The
+    highlight had the same bug and hid the first one: `Fuzzy.ranges` merged every
+    term, so `qa`'s two characters landed under highlights other terms had
+    already painted, and a term matching invisibly looked exactly like a term
+    matching nothing. A highlight is the only account of itself a search gives,
+    so it answers through the same rule the score does. See mistake 18: that is
+    twice.
+
 ## Testing against a fake fleet
 
 `make testbed` builds a fabricated home directory, runs every host source, the

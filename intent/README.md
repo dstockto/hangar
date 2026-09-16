@@ -66,3 +66,4 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0031 | A command the app could not see | Shipped |
 | 0032 | A hand edit the app wrote over | Shipped |
 | 0033 | A sentence in a strip that had no room | Shipped |
+| 0034 | A token that roamed the whole name | Shipped |
