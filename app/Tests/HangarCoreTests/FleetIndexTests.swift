@@ -71,10 +71,14 @@ final class FleetIndexTests: XCTestCase {
         }
         XCTAssertEqual(count("wer"), 4, "an honest subsequence of every name here")
         XCTAssertEqual(count("wers"), 1, "one more character has to drop three")
-        XCTAssertEqual(count("werse"), 1, "and another has to keep them dropped")
         XCTAssertEqual(FleetIndex.ranked(entries, matching: Fuzzy.Query("wers"))
             .first?.alias, "workers.example",
             "the host the query is an honest subsequence of")
+        // 0030 recorded 1 here. `werse` reached the last `e` by leaving `workers`
+        // and landing in `example`, which is the domain every one of these shares,
+        // and 0034 stopped a token crossing a label boundary to finish. Nothing on
+        // this fleet is named `werse`, so nothing is the honest count.
+        XCTAssertEqual(count("werse"), 0, "and another has to keep them dropped")
     }
 
     func testRankingPutsTheBestMatchFirst() {
