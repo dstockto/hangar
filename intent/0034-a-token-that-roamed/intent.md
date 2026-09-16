@@ -193,8 +193,9 @@ the worst keystroke of a full fleet on this machine.
 ## Reach
 
 `Fuzzy.swift` reaches both front ends through `FleetIndex`, so the panel and
-`hangar` narrow identically, as they did before. `Fuzzy.Haystack` is built once
-per entry per refresh alongside the bytes it already built, so the per-keystroke
-path still splits only the query. `Fuzzy.score` itself is untouched: the label
-rule is policy on top of the primitive, which is why `FuzzyTests` needed no
-changes.
+`hangar` narrow identically, as they did before. `SearchEntry` holds the same
+three byte arrays it always did, so the index costs what it costs today; the
+finding of labels moved onto the keystroke instead, where it runs only for a
+field a score already matched. See Cost above for why that way round.
+`Fuzzy.score` itself is untouched: the anchoring rule is policy on top of the
+primitive, which is why `FuzzyTests` needed no changes.
