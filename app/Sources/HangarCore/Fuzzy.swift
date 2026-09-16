@@ -13,12 +13,17 @@ public enum Fuzzy {
     /// whole-string subsequence never could because it would need a literal space.
     public struct Query: Sendable {
         public let tokens: [Bytes]
+        /// The tokens with their punctuation folded out, for `admits`. Done once
+        /// here rather than per field per host, which is three times a fleet.
+        public let words: [Bytes]
         public let terms: [String]
 
         public init(_ text: String) {
             let pieces = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
             self.terms = pieces
-            self.tokens = pieces.map(Fuzzy.lowered)
+            let tokens = pieces.map(Fuzzy.lowered)
+            self.tokens = tokens
+            self.words = tokens.map(Fuzzy.withoutSeparators)
         }
 
         public var isEmpty: Bool { tokens.isEmpty }
@@ -119,12 +124,29 @@ public enum Fuzzy {
     /// three things instead, each of which a person can point at on screen.
     public static func admits(_ token: Bytes, _ hay: Haystack) -> Bool {
         if token.isEmpty { return true }
+        // None of the three hold a separator, because a name is split on them, so
+        // a typed one is punctuation rather than a letter to find: without this
+        // every alias the menu displays stopped matching when it was typed back.
+        // Already folded when it arrives from a Query, and this costs a scan.
+        let word = withoutSeparators(token)
+        if word.isEmpty { return true }
         // Inside one label: `wstore` in `webstore`, `torq` in `torque`.
-        for label in hay.labels where isSubsequence(token, of: label) { return true }
-        // Typed straight through the separators: `paymentsprod` for `payments prod`.
-        if contains(hay.stripped, token) { return true }
+        for label in hay.labels where isSubsequence(word, of: label) { return true }
+        // Typed straight through the separators: `paymentsprod` for `payments prod`,
+        // and `payments-prod` now that it folds to the same word.
+        if contains(hay.stripped, word) { return true }
         // Label initials, which is what makes `ppw` find `payments-prod-web`.
-        return isSubsequence(token, of: hay.initials)
+        return isSubsequence(word, of: hay.initials)
+    }
+
+    /// The typed token with its punctuation dropped. Returns the token untouched
+    /// when it holds none, which is almost every keystroke.
+    static func withoutSeparators(_ token: Bytes) -> Bytes {
+        guard token.contains(where: isSeparator) else { return token }
+        var word = Bytes()
+        word.reserveCapacity(token.count)
+        for byte in token where !isSeparator(byte) { word.append(byte) }
+        return word
     }
 
     static func isSubsequence(_ token: Bytes, of hay: Bytes) -> Bool {
@@ -261,10 +283,6 @@ public struct SearchEntry: Sendable {
     public let hostnameHaystack: Fuzzy.Haystack
     public let metadataHaystack: Fuzzy.Haystack
 
-    public var aliasBytes: Fuzzy.Bytes { aliasHaystack.bytes }
-    public var hostnameBytes: Fuzzy.Bytes { hostnameHaystack.bytes }
-    public var metadataBytes: Fuzzy.Bytes { metadataHaystack.bytes }
-
     public init(instance: Instance, alias: String) {
         self.instance = instance
         self.alias = alias
@@ -297,15 +315,24 @@ public struct SearchEntry: Sendable {
     /// all, and nothing about how loudly it answers, so ranking is unchanged among
     /// the hosts that still match.
     public func score(for token: Fuzzy.Bytes) -> Int? {
+        score(for: token, word: Fuzzy.withoutSeparators(token))
+    }
+
+    /// `word` is `token` with its punctuation already folded out, which the query
+    /// does once for the whole fleet.
+    func score(for token: Fuzzy.Bytes, word: Fuzzy.Bytes) -> Int? {
+        // Both have to hold, and the score is the cheaper rejection: it walks the
+        // field once and stops dead on a byte the field does not contain, which is
+        // most hosts on most keystrokes. Anchoring is only asked about a match.
         var best: Int?
-        if Fuzzy.admits(token, aliasHaystack),
-           let s = Fuzzy.score(token, in: aliasHaystack.bytes) { best = s + 24 }
-        if Fuzzy.admits(token, hostnameHaystack),
-           let s = Fuzzy.score(token, in: hostnameHaystack.bytes), s + 8 > (best ?? Int.min) {
+        if let s = Fuzzy.score(token, in: aliasHaystack.bytes),
+           Fuzzy.admits(word, aliasHaystack) { best = s + 24 }
+        if let s = Fuzzy.score(token, in: hostnameHaystack.bytes), s + 8 > (best ?? Int.min),
+           Fuzzy.admits(word, hostnameHaystack) {
             best = s + 8
         }
-        if Fuzzy.admits(token, metadataHaystack),
-           let s = Fuzzy.score(token, in: metadataHaystack.bytes), s > (best ?? Int.min) {
+        if let s = Fuzzy.score(token, in: metadataHaystack.bytes), s > (best ?? Int.min),
+           Fuzzy.admits(word, metadataHaystack) {
             best = s
         }
         return best
@@ -316,8 +343,9 @@ public struct SearchEntry: Sendable {
     public func score(for query: Fuzzy.Query) -> Int? {
         if query.isEmpty { return 0 }
         var total = 0
-        for token in query.tokens {
-            guard let best = score(for: token) else { return nil }
+        for index in query.tokens.indices {
+            guard let best = score(for: query.tokens[index],
+                                   word: query.words[index]) else { return nil }
             total += best
         }
         return total

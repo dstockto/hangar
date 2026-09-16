@@ -87,6 +87,35 @@ question the first already answers, it has to call the first one. A match inside
 one label is also confined to that label, so `tore` underlines `tore` in
 `torque` rather than scattering to the end of the domain.
 
+## The rule had to know the query is typed with punctuation too
+
+The first version of this split the name on its separators and then held the
+typed token to the three routes directly. None of `labels`, `stripped` or
+`initials` holds a separator, because they are what is left after splitting on
+them, so any token carrying a `-`, `.` or `_` failed all three and matched
+nothing at all.
+
+That is worse than the bug it was fixing, and it hit the most ordinary thing a
+person can do: type back the alias the menu is showing them.
+`payments-prod-web-1` found nothing. So did `db-prod`, which `README.md`
+documents, and `workers.example`, which is what every imported ssh_config host is
+called, and `10.0.0.1`, because `hostname` falls back to the private IP.
+
+The suite stayed green because nothing asserted a query that *contains* a
+separator. `AnchoredTokenTests.testTypedStraightThroughTheSeparators` covers the
+opposite direction, a query with them removed. `testTypingStaysImperceptible`
+does type `payments-prod-web`, but only asserted that two strategies agreed on
+the count, and they agreed on zero.
+
+A typed separator is punctuation in the name, not a letter to find, so the token
+is folded before the three comparisons and `payments-prod` is held to exactly the
+rule `paymentsprod` already was. Folding cannot reopen roaming: it drops
+characters from the token rather than licensing it to cross a label, and the
+straight-through route it lands in is contiguous. `q-a` is still refused.
+
+The fold is done once per query in `Fuzzy.Query`, not per field per host, which
+is three times a fleet per keystroke.
+
 ## What this drops, deliberately
 
 Two assertions changed, and no others across 725 tests.
@@ -118,6 +147,31 @@ because skipping characters on the way out of the id is roaming.
 
 `HighlightAgreesWithScoreTests` asserts the marks themselves rather than a count,
 so a term that paints nothing is visible as nothing in the test too.
+
+`SeparatorBearingQueryTests` covers the direction the first version broke: the
+displayed alias, a dotted imported name, a private IP, and `q-a` still refused.
+`testTypingStaysImperceptible` now also asserts the result set is not empty, so
+two strategies agreeing on zero can no longer stand in for agreeing.
+
+## Cost
+
+Anchoring is real work per host per keystroke. Measured on a release build,
+worst keystroke over ten thousand hosts, which is the first character typed:
+
+| | main | this branch |
+|---|---|---|
+| narrowing, as the app does | 2.00 ms | 2.98 ms |
+| full rescan | 1.75 ms | 2.29 ms |
+
+Roughly 1.5x. Most of it was recovered by asking the cheaper question first:
+`score` and `admits` both have to hold, and `score` stops dead on a byte the
+field does not contain, so anchoring is only asked about a field that already
+matched. Before that inversion the same measurement was 3.53 ms.
+
+Worth noting separately, because it is not this change: the landing page claims
+under a millisecond per keystroke at ten thousand hosts, and main does not meet
+that on this measurement either. Whatever that number was taken from, it was not
+the worst keystroke of a full fleet on this machine.
 
 ## Reach
 
