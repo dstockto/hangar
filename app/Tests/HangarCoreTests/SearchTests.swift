@@ -479,10 +479,27 @@ final class SeparatorBearingQueryTests: XCTestCase {
 
     /// `hostname` falls back to the private IP and then the instance id, so both
     /// of those are things a person types with separators in them.
-    func testAnAddressAndAnInstanceIdMatchThemselves() {
+    func testAnAddressMatchesItself() {
         // No hostname tag, so `host` falls back to the private IP the fixture sets.
         let bare = SearchEntry(instance: Fixture.instance(["Name": "db"]), alias: "db-1")
-        XCTAssertTrue(bare.score(for: Fuzzy.Query("10.0.0.1")) != nil)
+        XCTAssertNotNil(bare.score(for: Fuzzy.Query("10.0.0.1")))
+        XCTAssertEqual(bare.hostname, "10.0.0.1", "the fallback this covers")
+    }
+
+    /// The third fallback, which `Fixture.instance` cannot reach because it always
+    /// sets a private IP. An id is the one name a host can never not have.
+    func testAnInstanceIdMatchesItself() {
+        let idOnly = Instance(id: "i-0a1b2c3d4e5f60718", state: "running",
+                              type: "t3.small", privateIP: nil, publicIP: nil,
+                              availabilityZone: nil,
+                              launchTime: "2026-08-20T15:46:42.000Z",
+                              tags: ["Name": "db"])
+        let entry = SearchEntry(instance: idOnly, alias: "db-1")
+        XCTAssertEqual(entry.hostname, "i-0a1b2c3d4e5f60718",
+                       "neither a hostname tag nor an address, so the id is the name")
+        XCTAssertNotNil(entry.score(for: Fuzzy.Query("i-0a1b")))
+        XCTAssertNotNil(entry.score(for: Fuzzy.Query("i-0a1b2c3d4e5f60718")))
+        XCTAssertNil(entry.score(for: Fuzzy.Query("i-0b1a")), "still not roaming")
     }
 
     /// Folding the separator out must not reopen roaming: it is dropped from the
