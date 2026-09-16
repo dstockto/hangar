@@ -404,7 +404,7 @@ final class AnchoredTokenTests: XCTestCase {
     /// The three routes are asked of the name as written, so pin what the name
     /// actually offers each of them: four labels, the initials `ppw1`, and the
     /// whole thing read straight through its separators.
-    func testTheWholeLabelSetIsWhatGetsSplit() {
+    func testTheNameOffersEachRouteSomethingDifferent() {
         for label in ["payments", "prod", "web", "1"] {
             XCTAssertTrue(admits(label), "\(label) is a label of this name")
         }
