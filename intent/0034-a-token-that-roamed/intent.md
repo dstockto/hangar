@@ -155,18 +155,35 @@ two strategies agreeing on zero can no longer stand in for agreeing.
 
 ## Cost
 
-Anchoring is real work per host per keystroke. Measured on a release build,
-worst keystroke over ten thousand hosts, which is the first character typed:
+Anchoring is real work per host per keystroke, and the first attempt paid it in
+the wrong place. It gave each field a prepared `Haystack` holding the labels as
+their own arrays, which meant splitting all three fields of every host at index
+time, plus a heap allocation per label. Building the index took half again as
+long, and on CI, which runs unoptimized on slower hardware than a developer's
+machine, `testTypingStaysImperceptible` went through its 25 ms budget at 29 ms.
 
-| | main | this branch |
-|---|---|---|
-| narrowing, as the app does | 2.00 ms | 2.98 ms |
-| full rescan | 1.75 ms | 2.29 ms |
+Holding the labels as offsets rather than as separate arrays did not recover it.
+Precomputing them at all was the cost, because it is work done for every host
+including the ones nobody goes on to search for. The labels are found by scanning
+instead, inside `admits`, which only runs for a field a score already matched.
 
-Roughly 1.5x. Most of it was recovered by asking the cheaper question first:
-`score` and `admits` both have to hold, and `score` stops dead on a byte the
-field does not contain, so anchoring is only asked about a field that already
-matched. Before that inversion the same measurement was 3.53 ms.
+Measured unoptimized, which is what the suite and CI run, building ten thousand
+entries:
+
+| | main | precomputed labels | scanned on demand |
+|---|---|---|---|
+| index construction | 76 ms | 157 ms | 74 ms |
+| widest keystroke, `p` | 9.3 ms | 20.2 ms | 12.9 ms |
+
+Construction is back to what it was, because `SearchEntry` holds the same three
+byte arrays it always did. Scoring still costs more than it did, which is the
+rule doing its job; the remaining gap narrowed by asking the cheaper question
+first, since `score` and `admits` both have to hold and `score` stops dead on a
+byte the field does not contain.
+
+On a release build, the worst keystroke over ten thousand hosts is 2.43 ms
+against main's 2.00 ms, down from 2.98 ms before that inversion and 3.53 ms
+before the one after it.
 
 Worth noting separately, because it is not this change: the landing page claims
 under a millisecond per keystroke at ten thousand hosts, and main does not meet
