@@ -281,6 +281,17 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     them inside the check that needs them, which only runs for a field that
     already matched, put construction back where it was.
 
+34. **A selection carried across a keystroke that nobody had made.** The panel
+    kept the previously selected host whenever it survived the new query, so
+    Return would still open the host you had arrowed to. But the panel selects
+    the top result itself, and that pick was carried the same way, so an
+    auto-selection made three characters earlier rode every later keystroke and
+    sat mid-list while the best match for the finished query went unselected.
+    Typing `payments prod db` put the highlight on `payments-prod-ci` with
+    `payments-prod-db` first on screen, and Return opened the wrong host. Only a
+    selection the user actually made, by arrow key or click, is theirs to keep;
+    a default the code chose is not a choice. See `PanelSelection`.
+
 ## Testing against a fake fleet
 
 `make testbed` builds a fabricated home directory, runs every host source, the

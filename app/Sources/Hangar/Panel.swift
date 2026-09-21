@@ -70,6 +70,9 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
     private var rows: [PanelRow] = []
     private var activeFilter: [String: String] = [:]
     private var lastQuery = ""
+    /// Whether the current selection is the user's own, by arrow key or click.
+    /// The panel's own pick of the top result is not a choice, so it is not kept.
+    private var selectionIsUserChosen = false
 
     init(store: FleetStore) {
         self.store = store
@@ -259,6 +262,7 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         headerLabel.stringValue = title
         searchField.stringValue = ""
         lastQuery = ""
+        selectionIsUserChosen = false
         applyThemeColors()
         recompute(reason: .reset)
         resizeTo(height: Brand.Metric.panelInitialHeight)
@@ -370,18 +374,18 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         // Sticky headers stop helping once everything is on screen.
         tableView.floatsGroupRows = matched.count >= 12
 
-        // The first result is always selected, so Return connects without touching
-        // the arrow keys. A selection that survived the narrowing is kept instead.
-        var target = rows.firstIndex { if case .host = $0 { return true } else { return false } }
-        if let previousSelection,
-           let kept = rows.firstIndex(where: {
-               if case .host(let entry, _, _, _) = $0 {
-                   return entry.instance.id == previousSelection
-               }
-               return false
-           }) {
-            target = kept
+        // Decided in the core so the rule is testable; see PanelSelection.
+        var hostRows: [Int] = []
+        var hostIDs: [String] = []
+        for (row, item) in rows.enumerated() {
+            guard case .host(let entry, _, _, _) = item else { continue }
+            hostRows.append(row)
+            hostIDs.append(entry.instance.id)
         }
+        let choice = PanelSelection.next(ids: hostIDs, previous: previousSelection,
+                                         chosen: selectionIsUserChosen)
+        selectionIsUserChosen = choice?.carried ?? false
+        let target = choice.map { hostRows[$0.index] }
 
         tableView.reloadData()
         if let target {
@@ -480,6 +484,7 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
     /// A plain click just selects. Command-click opens the ssh settings editor,
     /// which is where a wrong login gets fixed.
     @objc private func handleClick() {
+        if selectedEntry() != nil { selectionIsUserChosen = true }
         guard NSEvent.modifierFlags.contains(.command) else { return }
         editSelection()
     }
@@ -536,6 +541,7 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
             remaining -= 1
         }
         guard index >= 0, index < rows.count, !rows[index].isHeader else { return }
+        selectionIsUserChosen = true
         tableView.selectRowIndexes([index], byExtendingSelection: false)
         tableView.scrollRowToVisible(index)
     }
