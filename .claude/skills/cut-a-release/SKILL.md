@@ -12,7 +12,9 @@ parts a person has to approve.
 
 1. `make test` green. Not negotiable; the release build is the same code.
 2. Bump `CFBundleShortVersionString` and `CFBundleVersion` in
-   `app/Resources/Info.plist`. Semver on the short string. A user-visible
+   `app/Resources/Info.plist`, and `softwareVersion` in `site/index.html` to
+   match (the `site-version-matches-the-app` eval fails CI otherwise). Semver on
+   the short string. A user-visible
    behaviour change is a minor bump, not a patch.
 3. `make dmg`. Builds, signs with Developer ID and the hardened runtime,
    notarizes the app, staples it, builds the DMG, signs it, notarizes that,
