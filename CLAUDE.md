@@ -292,6 +292,15 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     selection the user actually made, by arrow key or click, is theirs to keep;
     a default the code chose is not a choice. See `PanelSelection`.
 
+35. **A fallback colour laid under the thing it was the fallback for.** The panel
+    and the HUD put the brand `panel` colour beneath an `NSVisualEffectView`, as the
+    brand kit asked, so with vibrancy on it was never drawn and the material alone
+    set the surface. A material takes its tone from the window behind, and text
+    takes its colour from the appearance, so in dark mode over a white Jenkins page
+    the panel blurred to light grey under light grey text. The tint goes over the
+    material; contrast is a property of the surface the text sits on, not of what
+    happens to be behind the window.
+
 ## Testing against a fake fleet
 
 `make testbed` builds a fabricated home directory, runs every host source, the

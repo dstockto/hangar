@@ -136,7 +136,7 @@ Dark mode is canonical. Colors do not encode host state alone: every state color
 | Token | Hex | Role | Approved foreground/background pair | WCAG contrast |
 |---|---:|---|---|---:|
 | `canvas` | `#111418` | Panel surround and opaque fallback | `text-primary` on `canvas` | 17.02:1 |
-| `panel` | `#171B20` | Floating panel base under material | `text-primary` on `panel` | 15.94:1 |
+| `panel` | `#171B20` | Floating panel tint over material | `text-primary` on `panel` | 15.94:1 |
 | `surface-raised` | `#1D2228` | Search field and popover fallback | `text-primary`; `text-secondary` on `surface-raised` | 14.75:1; 7.54:1 |
 | `text-primary` | `#F3F6F8` | Hostnames and primary labels | on `canvas`; on `panel` | 17.02:1; 15.94:1 |
 | `text-secondary` | `#AAB3BD` | Metadata and group counts | on `canvas`; on `panel` | 8.70:1; 8.15:1 |
@@ -154,7 +154,7 @@ Dark mode is canonical. Colors do not encode host state alone: every state color
 | Token | Hex | Role | Approved foreground/background pair | WCAG contrast |
 |---|---:|---|---|---:|
 | `canvas` | `#F6F7F8` | Panel surround and opaque fallback | `text-primary` on `canvas` | 16.47:1 |
-| `panel` | `#FFFFFF` | Floating panel base under material | `text-primary` on `panel` | 17.67:1 |
+| `panel` | `#FFFFFF` | Floating panel tint over material | `text-primary` on `panel` | 17.67:1 |
 | `surface-raised` | `#E9EDF1` | Search field and popover fallback | `text-primary`; `text-secondary` on `surface-raised` | 15.02:1; 5.20:1 |
 | `text-primary` | `#15191D` | Hostnames and primary labels | on `canvas`; on `panel` | 16.47:1; 17.67:1 |
 | `text-secondary` | `#59636D` | Metadata and group counts | on `canvas`; on `panel` | 5.71:1; 6.12:1 |
@@ -193,7 +193,7 @@ Use native macOS font APIs, not bundled font files. `SF Pro` means `.systemFont`
 **Assumption:** The main panel is an `NSPanel` presented on the active screen, not a menu attached to the status item.
 
 - **Feel:** Immediate, calm, and tool-like: a command surface that appears already focused, not a miniature application window.
-- **Material:** Use the macOS 26 Liquid Glass system material available to `NSVisualEffectView`; select a dark-appropriate HUD/popover material and let system vibrancy resolve against the current desktop. Place a `panel` color fallback beneath it at 86% opacity. Do not simulate glass with a static blur screenshot.
+- **Material:** Use the macOS 26 Liquid Glass system material available to `NSVisualEffectView`; select a dark-appropriate HUD/popover material and let system vibrancy resolve against the current desktop. Lay the `panel` color over it at 86% opacity: the material alone takes its tone from the window behind, so dark mode text on a blur of a white page lose their contrast. Do not simulate glass with a static blur screenshot.
 - **Window:** 640 pt wide; initial content height 456 pt; minimum 520 × 240; maximum 760 × 620. Center horizontally on the active screen and place its top edge 18% below the screen top. Corner radius 18 pt, system shadow only, 1 pt inside separator using `text-primary` at 8% opacity.
 - **Search region:** 56 pt high. Search field inset 12 pt horizontally and 10 pt vertically. Search icon 16 pt, text baseline centered, clear button 16 pt.
 - **Rows:** 48 pt each: 16 pt leading status/production rail, 8 pt gap, flexible text block, 12 pt trailing inset. Primary baseline at y=17; metadata baseline at y=35.

@@ -64,12 +64,12 @@ enum Notifier {
         container.layer?.cornerRadius = 12
         container.layer?.masksToBounds = true
 
-        // Brand panel colour beneath the material, so the HUD stays legible with
-        // Reduce Transparency enabled.
-        let fallback = NSView()
-        fallback.wantsLayer = true
-        fallback.layer?.backgroundColor = Brand.Color.panel
-            .withAlphaComponent(Brand.Metric.panelFallbackOpacity).cgColor
+        // Brand panel colour over the material, so the HUD's tone follows the
+        // appearance its text resolves against, not the window behind it.
+        let tint = NSView()
+        tint.wantsLayer = true
+        tint.layer?.backgroundColor = Brand.Color.panel
+            .withAlphaComponent(Brand.Metric.panelTintOpacity).cgColor
 
         let effect = NSVisualEffectView()
         effect.material = .hudWindow
@@ -77,15 +77,15 @@ enum Notifier {
         effect.state = .active
 
         stack.translatesAutoresizingMaskIntoConstraints = false
-        for view in [fallback, effect, stack] {
+        for view in [effect, tint, stack] {
             view.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(view)
         }
         NSLayoutConstraint.activate([
-            fallback.topAnchor.constraint(equalTo: container.topAnchor),
-            fallback.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            fallback.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            fallback.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tint.topAnchor.constraint(equalTo: container.topAnchor),
+            tint.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            tint.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tint.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             effect.topAnchor.constraint(equalTo: container.topAnchor),
             effect.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             effect.leadingAnchor.constraint(equalTo: container.leadingAnchor),

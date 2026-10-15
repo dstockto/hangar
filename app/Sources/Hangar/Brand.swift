@@ -134,7 +134,7 @@ enum Brand {
         /// Twice the major edge inset, for the width of a two-sided 24 pt margin.
         static let space48: CGFloat = 48
 
-        static let panelFallbackOpacity: CGFloat = 0.86
+        static let panelTintOpacity: CGFloat = 0.86
         static let separatorOpacity: CGFloat = 0.08
         static let dividerOpacity: CGFloat = 0.24
         static let narrowAnimation: TimeInterval = 0.09

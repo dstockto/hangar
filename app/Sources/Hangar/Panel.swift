@@ -105,8 +105,8 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         panel.delegate = self
         panel.setAccessibilityLabel("Hangar host search")
 
-        // System material, with the brand panel colour beneath it so the surface
-        // stays correct when Reduce Transparency turns vibrancy off.
+        // Brand panel colour over the material: the material alone takes its tone
+        // from the window behind, so dark mode text sat on a light grey blur.
         let container = NSView()
         container.wantsLayer = true
         container.layer?.cornerRadius = metric.panelCornerRadius
@@ -115,7 +115,7 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         backdrop = NSView()
         backdrop.wantsLayer = true
         backdrop.layer?.backgroundColor = Brand.Color.panel
-            .withAlphaComponent(metric.panelFallbackOpacity).cgColor
+            .withAlphaComponent(metric.panelTintOpacity).cgColor
 
         let effect = NSVisualEffectView()
         effect.material = .hudWindow
@@ -180,7 +180,7 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
         separator.fillColor = Brand.Color.textPrimary
             .withAlphaComponent(metric.separatorOpacity)
 
-        for view in [backdrop!, effect, headerLabel!, searchGlyph, searchField!,
+        for view in [effect, backdrop!, headerLabel!, searchGlyph, searchField!,
                      separator!, scrollView!, emptyLabel!, footer!] {
             view.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(view)
@@ -318,7 +318,7 @@ final class PanelController: NSObject, NSTextFieldDelegate, NSTableViewDelegate,
     private func applyThemeColors() {
         panel.appearance = nil
         backdrop.layer?.backgroundColor = Brand.Color.panel
-            .withAlphaComponent(Brand.Metric.panelFallbackOpacity).cgColor
+            .withAlphaComponent(Brand.Metric.panelTintOpacity).cgColor
         separator.fillColor = Brand.Color.textPrimary
             .withAlphaComponent(Brand.Metric.separatorOpacity)
         searchField.textColor = Brand.Color.textPrimary
