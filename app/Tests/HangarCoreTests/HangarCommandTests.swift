@@ -342,4 +342,53 @@ final class HangarCommandTests: XCTestCase {
         XCTAssertEqual(HangarCommand.parse(["  web  "]).searchText, "web")
         XCTAssertEqual(HangarCommand.parse([]).searchText, "")
     }
+
+    // MARK: - refresh
+
+    func testRefreshIsAVerb() {
+        let command = HangarCommand.parse(["refresh"])
+        XCTAssertEqual(command.verb, .refresh)
+        XCTAssertTrue(command.query.isEmpty)
+        XCTAssertNil(command.problem)
+    }
+
+    func testRefreshTakesATimeout() {
+        let command = HangarCommand.parse(["refresh", "--timeout", "30"])
+        XCTAssertEqual(command.verb, .refresh)
+        XCTAssertEqual(command.timeout, 30)
+        XCTAssertNil(command.problem)
+    }
+
+    func testAHostNamedRefreshIsStillFindable() {
+        XCTAssertEqual(HangarCommand.parse(["-s", "refresh"]).verb, .list)
+        XCTAssertEqual(HangarCommand.parse(["-s", "refresh"]).query, ["refresh"])
+        XCTAssertEqual(HangarCommand.parse(["--", "refresh"]).verb, .list)
+        // Only the first plain word is a verb.
+        XCTAssertEqual(HangarCommand.parse(["web", "refresh"]).query, ["web", "refresh"])
+    }
+
+    /// Each of these would be ignored by a refresh, so each is refused rather
+    /// than leaving someone believing they asked for something narrower.
+    func testRefreshRefusesWhatItWouldIgnore() {
+        XCTAssertEqual(HangarCommand.parse(["refresh", "web"]).problem,
+                       "refresh takes no arguments; to search for 'web', use 'hangar -s web'")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "-f", "env=prod"]).problem,
+                       "-f narrows a listing; 'hangar refresh' fetches the whole fleet")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "-n", "3"]).problem,
+                       "-n limits a listing; 'hangar refresh' fetches the whole fleet")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "-1"]).problem,
+                       "--first picks a host; 'hangar refresh' has none to pick")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "--dry-run"]).problem,
+                       "--dry-run has nothing to show for 'hangar refresh'")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "--cache", "/tmp/x"]).problem,
+                       "--cache reads another file; 'hangar refresh' updates the one the app writes")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "--exec", "true"]).problem,
+                       "--exec runs a command over a listing, not over 'hangar refresh'")
+    }
+
+    func testRefreshHelpStillAnswers() {
+        let command = HangarCommand.parse(["refresh", "web", "--help"])
+        XCTAssertTrue(command.help)
+        XCTAssertNil(command.problem)
+    }
 }

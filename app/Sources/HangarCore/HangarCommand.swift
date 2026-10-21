@@ -23,6 +23,8 @@ public struct HangarCommand: Equatable, Sendable {
         case values
         /// Connect to the one matching host.
         case ssh
+        /// Ask the running app to refresh the fleet, and wait for it.
+        case refresh
     }
 
     /// The word, when it is one. Deliberately not `RawRepresentable`: `list` is
@@ -30,10 +32,11 @@ public struct HangarCommand: Equatable, Sendable {
     /// keep being findable.
     static func verb(for word: String) -> Verb? {
         switch word {
-        case "ssh":    return .ssh
-        case "tags":   return .tags
-        case "values": return .values
-        default:       return nil
+        case "ssh":     return .ssh
+        case "refresh": return .refresh
+        case "tags":    return .tags
+        case "values":  return .values
+        default:        return nil
         }
     }
 
@@ -198,6 +201,8 @@ public struct HangarCommand: Equatable, Sendable {
         switch verb {
         case .list:
             return nil
+        case .refresh:
+            return refreshProblem
         case .ssh:
             // Without either, every host matches and --first opens a session on
             // whatever sorts first. "The best match" needs a match.
@@ -218,13 +223,31 @@ public struct HangarCommand: Equatable, Sendable {
         }
     }
 
+    /// Refresh acts on the whole fleet and the one cache the app writes, so a
+    /// flag that narrows or redirects would be silently ignored.
+    private var refreshProblem: String? {
+        if !query.isEmpty {
+            return "refresh takes no arguments; to search for '\(query[0])', "
+                + "use 'hangar -s \(query[0])'"
+        }
+        if !filters.isEmpty { return "-f narrows a listing; 'hangar refresh' fetches the whole fleet" }
+        if limit != nil { return "-n limits a listing; 'hangar refresh' fetches the whole fleet" }
+        if first { return "--first picks a host; 'hangar refresh' has none to pick" }
+        if dryRun { return "--dry-run has nothing to show for 'hangar refresh'" }
+        if cache != nil {
+            return "--cache reads another file; 'hangar refresh' updates the one the app writes"
+        }
+        return nil
+    }
+
     /// The verb as it was typed, for a message about it.
     private var verbName: String {
         switch verb {
-        case .list:   return "list"
-        case .tags:   return "tags"
-        case .values: return "values"
-        case .ssh:    return "ssh"
+        case .list:    return "list"
+        case .tags:    return "tags"
+        case .values:  return "values"
+        case .ssh:     return "ssh"
+        case .refresh: return "refresh"
         }
     }
 

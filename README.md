@@ -86,7 +86,8 @@ Standard SSH underneath. Nothing to learn, nothing to migrate.
 - **A command for the rest of your tools.** `hangar ssh web prod` connects to
   the one host that matches, and `hangar -s "web prod"` prints the same ranked
   hosts the panel shows, for tmux, fzf, herder or a shell function.
-  No AWS call: it reads the cache the app already refreshed.
+  No AWS call: it reads the cache the app already refreshed, and
+  `hangar refresh` asks the app to fetch it again.
 - **Works with your tags, not ours.** `product`/`env`, `Service`/`Environment`,
   `app`/`stage`, or a single `Name` tag all work with no configuration. The setup
   screen shows the tag keys your fleet actually uses and lets you point each one
@@ -1037,12 +1038,39 @@ which host best matches `web prod`.
 Exit codes are meant for pipelines: `0` when hosts were printed or the work
 finished, `1` when nothing matched, `2` when there is no cache yet, `3` when
 more than one host matched and none was chosen, `4` when something run with
-`--exec` failed on at least one host, and `64` when the command line was wrong or
-a fan-out was refused for want of `-y`. Under `--json`, a run that matched nothing
+`--exec` failed on at least one host, `5` when `hangar refresh` got no answer
+from the app, `6` when the refresh failed or did not finish in time, and `64` when
+the command line was wrong or a fan-out was refused for want of `-y`. Under `--json`, a run that matched nothing
 and a run with no cache both still print `[]`, so stdout stays parseable and the
 code carries the difference. A cache older than `healthy_within_hours`, and a
 missing `Include` line that would stop `ssh <alias>` resolving, are both said
 once on stderr so a pipe is unaffected.
+
+### Refreshing from the shell
+
+```sh
+hangar refresh                     fetch the fleet now, and wait for it
+hangar refresh --timeout 30        give up waiting after 30 seconds
+hangar refresh && hangar ssh web   fetch, then connect
+```
+
+The command line still makes no AWS call of its own. `hangar refresh` asks the
+running app, over a notification local to your login session, and the app runs
+the same refresh as the menu's Refresh item. The menubar icon pulses the same way
+too. The command waits until the app answers and then reports how many hosts are
+in the cache, plus one line for each source that failed while the others worked.
+If EC2 says no and `~/.ssh/config` says yes, you get a smaller fleet and the
+reason for it, not a quiet success.
+
+The app has to be running. If nothing answers within three seconds the command
+says so and exits `5`. A refresh that fetches nothing from any source leaves the
+cache as it was, prints the same advice the menu shows, and exits `6`.
+
+Requests start at most one fetch every ten seconds, whether the last one worked or
+not. A refresh that succeeded in the last ten seconds answers a new request
+without fetching again, and a request that arrives while a refresh is running
+waits for that one. A script that runs `hangar refresh` once per host costs one
+fetch, not one per host.
 
 ## Architecture
 

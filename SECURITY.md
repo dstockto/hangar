@@ -25,6 +25,15 @@ whether to run it:
   `sts.`, `oidc.` and `portal.sso.` when the profile needs them, and
   `api.github.com` only when you ask it to check for updates. There is no Hangar
   server, account, or telemetry.
+- **Listens for one notification.** `hangar refresh` asks the app to refresh
+  over a distributed notification, which any process in your login session can
+  post. All it can do is start the refresh the menu already offers, and the
+  request id it carries is checked before the app echoes it back. Requests
+  start at most one fetch every ten seconds. Replies are printed with C0 and C1
+  control characters replaced, so a forged one cannot send an escape sequence.
+  The failure text in a reply is visible to other processes in your session. It
+  holds no secret, but it can name your AWS account, role, profile and SSO
+  start URL.
 - **Never reads private keys.** Key material stays with `ssh` and your agent.
 - **Runs `credential_process`** through `/bin/sh` when a profile configures one,
   exactly as the AWS CLI does. That command comes from your own `~/.aws/config`.
