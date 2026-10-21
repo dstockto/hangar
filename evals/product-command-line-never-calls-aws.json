@@ -1,0 +1,7 @@
+{
+  "id": "product-command-line-never-calls-aws",
+  "promise": "The `hangar` command never resolves a credential or makes a network call. `hangar refresh` asks the running app to fetch, and the command itself only reads the cache.",
+  "why": "The command line is fast enough to put behind a keystroke and costs no credential because it reads ~/.hangar/cache and nothing else. Adding `hangar refresh` made fetching from the shell tempting, and the easy version would have called EC2 straight from the command line. Checks for exit status 1 from grep, not `! grep`, so a broken pattern or a missing file fails the case rather than passing it (mistake 16).",
+  "command": "grep -qE 'CredentialResolver|EC2\\(|SSM\\(|HangarHTTP|URLSession|AWSConfigFiles' app/Sources/hangar-cli/main.swift; test $? -eq 1",
+  "expect": "exit 0"
+}

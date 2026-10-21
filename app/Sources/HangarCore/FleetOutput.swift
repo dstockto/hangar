@@ -48,8 +48,9 @@ public enum FleetOutput {
             value.unicodeScalars.map { isControl($0) ? "\u{FFFD}" : $0 }))
     }
 
+    /// C1 too: U+009B is a single-scalar CSI, which some terminals obey.
     private static func isControl(_ scalar: Unicode.Scalar) -> Bool {
-        scalar.value < 0x20 || scalar.value == 0x7F
+        scalar.value < 0x20 || (0x7F...0x9F).contains(scalar.value)
     }
 
     /// The heading a host sits under, from the levels the menu is built from.

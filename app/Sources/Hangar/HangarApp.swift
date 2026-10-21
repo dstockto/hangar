@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyProblems: [String] = []
     private var primaryCombination = "\u{2318}\u{21E7}H"
     private var updateTimer: Timer?
+    private var refreshListener: RefreshListener?
 
     /// A release newer than this build, once a check has found one. The menu reads
     /// it, so the user decides when to install rather than being interrupted.
@@ -40,6 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotKeys()
         scheduleRefresh()
         scheduleUpdateChecks()
+        // Before the setup check can return early: the command line should be
+        // able to ask for a refresh whether or not onboarding has finished.
+        refreshListener = RefreshListener(store: store)
         watchWindowsForActivationPolicy()
 
         // A fresh install gets the setup check once. It reads the machine and says

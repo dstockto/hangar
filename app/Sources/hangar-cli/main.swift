@@ -6,7 +6,7 @@ import HangarCore
 //
 // It reads ~/.hangar/cache and nothing else: no AWS call, no credentials, no
 // network, which is what makes it fast enough to put behind a keystroke. The
-// menubar app is what refreshes that cache.
+// menubar app is what refreshes that cache, and `hangar refresh` asks it to.
 //
 // Parsing and formatting are in HangarCore, where the suite can reach them. What
 // is left here is the part that talks to the process: files, streams, exit codes.
@@ -201,6 +201,7 @@ COMMANDS
   hangar ssh <query>         connect to the one matching host
   hangar tags                the tag keys this fleet uses, and how many carry each
   hangar values <key>        the values one key takes, most used first
+  hangar refresh             ask the running app to refresh the fleet, and wait
 
   A command is the first plain word on the line. To search for a host named
   after one, use 'hangar -s tags' or 'hangar -- tags'.
@@ -221,7 +222,8 @@ RUNNING SOMETHING PER HOST
                              argument, never through a shell. Prefer {alias}:
                              it is the only one that cannot look like a flag
       --parallel <n>         how many at once, default 1
-      --timeout <seconds>    how long each one gets, default forever
+      --timeout <seconds>    how long each one gets, default forever. For
+                             refresh, how long to wait, default 120
   -y, --yes                  agree to a fan-out in advance. Required when more
                              than one host matches and there is no terminal
   -f, --filter <key=value>   only hosts whose tag matches; repeat to narrow
@@ -243,13 +245,15 @@ EXAMPLES
   hangar --json -f env=prod | jq -r '.[].hostname'
   hangar -f env=prod,staging -f 'name!=*canary*' -f state=running
   hangar tags && hangar values env
+  hangar refresh && hangar ssh web prod
   hangar ssh web prod
   hangar ssh -1 db-prod
   hangar -f env=prod web --exec herdr pane new --cmd 'ssh {alias}'
   hangar -f env=prod --parallel 8 -y --exec ssh {alias} uptime
 
 The list comes from ~/.hangar/cache, which the Hangar app refreshes. Nothing
-here calls AWS, so it costs no credential and no network round trip.
+here calls AWS, so it costs no credential and no network round trip. 'hangar
+refresh' asks the app to fetch, so the app has to be running.
 
 EXIT
   0  hosts were printed, or the work finished
@@ -257,6 +261,8 @@ EXIT
   2  no fleet cached yet
   3  more than one host matched and none was chosen
   4  a command run with --exec failed on at least one host
+  5  refresh: the Hangar app did not answer, so it is probably not running
+  6  refresh: the fleet could not be fetched, or did not arrive in time
  64  the command line was wrong, or a fan-out was refused for want of -y
 """
 
@@ -274,6 +280,73 @@ if let problem = command.problem {
 }
 if command.help { write(usage + "\n"); exit(0) }
 if command.version { write(version() + "\n"); exit(0) }
+
+// MARK: - Refresh
+
+/// The replies seen so far. A class on the main actor so the observer, which
+/// runs on the main queue, can update it without a lock.
+@MainActor
+final class RefreshProgress {
+    var wait: RefreshWait
+    init(_ wait: RefreshWait) { self.wait = wait }
+}
+
+/// Asks the app to refresh, waits for its answer, and returns the exit code.
+/// Before the cache is read, because a missing cache is one thing this fixes.
+@MainActor
+func refreshFleet(timeout: Double) -> Int32 {
+    let id = UUID().uuidString
+    let progress = RefreshProgress(RefreshWait(startedAt: Date(), finishWithin: timeout))
+    let center = DistributedNotificationCenter.default()
+    // Observed before the request is posted, so a fast reply is not missed.
+    let observer = center.addObserver(
+        forName: Notification.Name(RefreshSignal.reply), object: id,
+        queue: .main) { note in
+        guard let reply = RefreshSignal.reply(from: note.userInfo) else { return }
+        MainActor.assumeIsolated { progress.wait.receive(reply) }
+    }
+    defer { center.removeObserver(observer) }
+    center.postNotificationName(Notification.Name(RefreshSignal.request), object: id,
+                                userInfo: nil, deliverImmediately: true)
+
+    var outcome = progress.wait.outcome(at: Date())
+    while outcome == .waiting {
+        // Returns early when nothing is scheduled, so it sleeps rather than spins.
+        if !RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.1)) {
+            usleep(50_000)
+        }
+        outcome = progress.wait.outcome(at: Date())
+    }
+
+    switch outcome {
+    case .refreshed(let notes):
+        for note in notes { stderrLine("hangar: \(note)") }
+        // Counted from the file the app just wrote, which is the fleet every
+        // other command here reads.
+        if let cache = FleetCache.load() {
+            let hosts = cache.instances.count
+            stderrLine("hangar: refreshed; \(hosts) host\(hosts == 1 ? "" : "s") in the cache.")
+        } else {
+            stderrLine("hangar: refreshed.")
+        }
+        return 0
+    case .failed(let message):
+        for line in message.split(separator: "\n") { stderrLine("hangar: \(line)") }
+        stderrLine("hangar: the cached fleet was left as it was.")
+        return 6
+    case .noAnswer:
+        stderrLine("hangar: Hangar did not answer. Open the app, then try again.")
+        return 5
+    case .timedOut:
+        stderrLine("hangar: the refresh did not finish within \(seconds(timeout)); "
+                   + "the app is still working on it.")
+        return 6
+    case .waiting:
+        return 6   // The loop above does not end on this.
+    }
+}
+
+if command.verb == .refresh { exit(refreshFleet(timeout: command.timeout ?? 120)) }
 
 /// An empty answer in the shape that was asked for.
 ///
@@ -330,7 +403,7 @@ if health == .stale {
     let days = Int(cache.age / 86_400)
     let age = days >= 1 ? "\(days) day\(days == 1 ? "" : "s")"
                         : "\(Int(cache.age / 3600)) hours"
-    stderrLine("hangar: the cached fleet is \(age) old; open Hangar to refresh it.")
+    stderrLine("hangar: the cached fleet is \(age) old; 'hangar refresh' fetches it again.")
 }
 
 /// Nothing to print is not the same failure for every command, so each one says
@@ -376,6 +449,9 @@ case .values:
 case .list, .ssh:
     // Both need the matched hosts below; ssh then picks one of them.
     break
+
+case .refresh:
+    exit(64)   // Answered before the cache was read.
 }
 
 let all = FleetIndex.entries(for: instances, config: config)

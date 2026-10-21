@@ -639,6 +639,10 @@ final class FleetOutputTests: XCTestCase {
         XCTAssertEqual(FleetOutput.display("web\u{1B}[2Kgone"), "web\u{FFFD}[2Kgone")
         XCTAssertEqual(FleetOutput.display("a\nb"), "a\u{FFFD}b")
         XCTAssertEqual(FleetOutput.display("a\u{7F}b"), "a\u{FFFD}b")
+        // C1: U+009B is CSI in one scalar, and U+0085 is a line break.
+        XCTAssertEqual(FleetOutput.display("a\u{9B}2Kb"), "a\u{FFFD}2Kb")
+        XCTAssertEqual(FleetOutput.display("a\u{85}b"), "a\u{FFFD}b")
+        XCTAssertEqual(FleetOutput.display("caf\u{E9}"), "caf\u{E9}")
     }
 
     /// Replaced rather than stripped, so a reader can see the value was altered
