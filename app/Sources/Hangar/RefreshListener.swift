@@ -7,11 +7,7 @@ import HangarCore
 final class RefreshListener {
     private let store: FleetStore
     private var observer: NSObjectProtocol?
-    /// Requests waiting on the refresh being answered. One refresh answers all
-    /// of them, so a flood of requests is one task, not one each.
-    private var waiting: [String] = []
-    /// When a request last started a fetch, whatever the fetch then did.
-    private var lastRequested: Date?
+    private var queue = RefreshQueue()
 
     init(store: FleetStore) {
         self.store = store
@@ -28,11 +24,11 @@ final class RefreshListener {
     }
 
     private func receive(_ id: String) {
-        guard waiting.count < RefreshSignal.mostWaiting else { return }
+        let admission = queue.admit(id)
+        guard admission != .dropped else { return }
         post(.started, to: id)
-        waiting.append(id)
         // Already answering: this request rides on that refresh.
-        guard waiting.count == 1 else { return }
+        guard admission == .startsAnswer else { return }
         Task { await answer() }
     }
 
@@ -40,10 +36,8 @@ final class RefreshListener {
         Log.info(.fleet, "refresh requested from the command line")
         let failed: Bool
         if case .failed = store.status { failed = true } else { failed = false }
-        if store.status != .refreshing,
-           RefreshSignal.shouldFetch(fetchedAt: store.fetchedAt, lastFailed: failed,
-                                     lastRequested: lastRequested, now: Date()) {
-            lastRequested = Date()
+        if queue.startsFetch(isRefreshing: store.status == .refreshing,
+                             fetchedAt: store.fetchedAt, lastFailed: failed, now: Date()) {
             await store.refresh()
         }
         // Covers a refresh the timer or the menu started, which this joins
@@ -51,17 +45,10 @@ final class RefreshListener {
         while store.status == .refreshing {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        let reply: RefreshSignal.Reply
-        if case .failed(let failure) = store.status {
-            reply = .failed(failure.detail)
-        } else {
-            reply = .finished(notes: store.sourceReports.compactMap { report in
-                report.problem.map { "\(report.source.label): \($0)" }
-            })
-        }
-        let answered = waiting
-        waiting = []
-        for id in answered { post(reply, to: id) }
+        var failure: String?
+        if case .failed(let reason) = store.status { failure = reason.detail }
+        let reply = RefreshQueue.reply(failure: failure, reports: store.sourceReports)
+        for id in queue.release() { post(reply, to: id) }
     }
 
     private func post(_ reply: RefreshSignal.Reply, to id: String) {
