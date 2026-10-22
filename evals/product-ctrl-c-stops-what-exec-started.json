@@ -1,0 +1,7 @@
+{
+  "id": "product-ctrl-c-stops-what-exec-started",
+  "promise": "Ctrl-C during `hangar --exec` leaves nothing running, at one host at a time and in parallel, and the run says it was interrupted.",
+  "why": "Shipped in 0027 as a documented caveat: Foundation starts each command in its own process group, so the terminal's SIGINT reached hangar and not them, and the commands kept running reparented to init with no deadline over them. Drives the built binary on a real pty through scripts/exec-terminal-check.sh, with SIGINT reset first, because a job from a non-interactive shell starts with it ignored and the first version of this check passed for that reason alone. The pty stays open while it looks, because closing it hangs up the session and kills the orphans a real terminal keeps. Watched failing on the commit before 0036.",
+  "command": "scripts/exec-terminal-check.sh interrupt && scripts/exec-terminal-check.sh interrupt-parallel",
+  "expect": "exit 0"
+}

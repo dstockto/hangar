@@ -869,20 +869,26 @@ absence is an error rather than a fan-out, which is the case a script or an agen
 hits. `--parallel` bounds how many run at once, `--timeout` bounds each one, and
 `--dry-run` prints every vector and runs none of them.
 
-At one at a time the command inherits your terminal, so interactive things work.
-Above one, each host's output is collected and printed under its alias, because
-eight hosts interleaved is not output.
+At one at a time the command gets your terminal, the way a shell gives it to a
+job, so interactive things work. The exception is a piped stdout, as in
+`| less`, because whatever reads the pipe may need the terminal itself. Above
+one, each host's output is collected and printed under its alias, because eight
+hosts interleaved is not output.
 
-**Ctrl-C does not stop what is running.** It returns your prompt, and the command
-keeps going against the host: Foundation starts each child in its own process
-group, so a signal the terminal generates for the foreground group never reaches
-it.
+**Ctrl-C stops the run.** At one at a time it reaches the command, and a command
+that dies of it ends the run: the hosts after it are not started. A command that
+handles Ctrl-C itself, such as an interactive ssh session, keeps it, and the run
+goes on when that command exits. Above one, `hangar` ends every command still
+running, waits two seconds for them to go, and kills what is left. The same
+happens on SIGTERM, on SIGHUP when the terminal closes, and when whatever reads
+the output goes away, as with `| head`. A signal that was already ignored when
+`hangar` started, as under `nohup`, stays ignored. Either way `hangar` says how
+many hosts it did not get to and exits `130`, or 128 plus the signal number for
+anything other than Ctrl-C.
 
-`--timeout` does not rescue you here either. The deadline is enforced by
-`hangar` itself, so it dies with `hangar` and an orphan runs unbounded. It bounds
-a run you leave alone, not one you interrupt. After interrupting an `--exec`,
-check `ps` and stop the children yourself. Making Ctrl-C stop them is its own
-change.
+Ctrl-Z works too. At one at a time it stops the command and `hangar` together,
+so your shell reports a stopped job, and `fg` gives the command the terminal
+back.
 
 ### Reading it, versus piping it
 
@@ -1039,12 +1045,14 @@ Exit codes are meant for pipelines: `0` when hosts were printed or the work
 finished, `1` when nothing matched, `2` when there is no cache yet, `3` when
 more than one host matched and none was chosen, `4` when something run with
 `--exec` failed on at least one host, `5` when `hangar refresh` got no answer
-from the app, `6` when the refresh failed or did not finish in time, and `64` when
-the command line was wrong or a fan-out was refused for want of `-y`. Under `--json`, a run that matched nothing
-and a run with no cache both still print `[]`, so stdout stays parseable and the
-code carries the difference. A cache older than `healthy_within_hours`, and a
-missing `Include` line that would stop `ssh <alias>` resolving, are both said
-once on stderr so a pipe is unaffected.
+from the app, `6` when the refresh failed or did not finish in time, `64` when
+the command line was wrong or a fan-out was refused for want of `-y`, and `130`
+when Ctrl-C stopped an `--exec` run (128 plus the signal number for any other
+signal). Under `--json`, a run that matched nothing and a run with no cache both
+still print `[]`, so stdout stays parseable and the code carries the difference.
+A cache older than `healthy_within_hours`, and a missing `Include` line that
+would stop `ssh <alias>` resolving, are both said once on stderr so a pipe is
+unaffected.
 
 ### Refreshing from the shell
 

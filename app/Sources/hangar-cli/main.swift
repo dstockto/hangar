@@ -13,8 +13,11 @@ import HangarCore
 
 // MARK: - Output
 
+/// Throws nothing when stderr is gone. During `--exec` a closed terminal or a
+/// reader that went away is reported as a signal and cleaned up after, and the
+/// trapping `write(_:)` would end the run halfway through.
 func stderrLine(_ text: String) {
-    FileHandle.standardError.write(Data((text + "\n").utf8))
+    try? FileHandle.standardError.write(contentsOf: Data((text + "\n").utf8))
 }
 
 /// The one way this program writes to stdout.
@@ -26,31 +29,31 @@ func stderrLine(_ text: String) {
 /// trailing newline, so nothing at all prints nothing rather than a blank line.
 func write(_ text: String) {
     guard !text.isEmpty else { return }
-    FileHandle.standardOutput.write(Data(text.utf8))
+    try? FileHandle.standardOutput.write(contentsOf: Data(text.utf8))
 }
 
-/// Runs one vector per host, at most `parallel` at a time, and returns the exit
-/// code for the whole job.
+/// The controlling terminal, for handing to a command the way a shell hands it
+/// to a job.
 ///
-/// **Ctrl-C does not stop the children.** Foundation starts each in its own
-/// process group, so a SIGINT the terminal generates for the foreground group
-/// reaches this process and not them: the prompt comes back and the commands
-/// keep running, reparented to init. `--timeout` does not cover it: the deadline
-/// is enforced by the loop below, so it dies with us and the orphan runs
-/// unbounded. It bounds a run left alone, not one interrupted.
-/// Fixing it means a DispatchSource signal source, which runs outside
-/// signal-handler context and can hold a lock around the live list, plus
-/// SIG_IGN so the default disposition does not kill us first. That is a change
-/// to how this program handles signals, which it currently does not do at all,
-/// so it wants its own intent rather than a hurried addition here.
-///
-/// Output goes to a file per host rather than a pipe. Reading a pipe after the
-/// process ends deadlocks on anything larger than the buffer, and unlike the
-/// helpers `ProcessRunner` was written for, this runs whatever the user asked
-/// for and has no idea how much it will say.
-///
-/// At one at a time the child inherits this process's streams instead, so an
-/// interactive program works and output is live.
+/// Opened as `/dev/tty` rather than read off stdin, because ssh asks for a
+/// password on `/dev/tty` even when stdin is a pipe.
+struct ControllingTerminal {
+    let descriptor: Int32
+
+    static func open() -> ControllingTerminal? {
+        let descriptor = Darwin.open("/dev/tty", O_RDWR | O_NOCTTY | O_CLOEXEC)
+        return descriptor >= 0 ? ControllingTerminal(descriptor: descriptor) : nil
+    }
+
+    /// Whether the terminal is listening to this process's group, which is the
+    /// only time it is ours to give away.
+    var isOurs: Bool { tcgetpgrp(descriptor) == getpgrp() }
+
+    func give(to group: pid_t) { _ = tcsetpgrp(descriptor, group) }
+
+    func takeBack() { _ = tcsetpgrp(descriptor, getpgrp()) }
+}
+
 /// A deadline as a person wrote it: --timeout 0.5 is not "0 seconds".
 func seconds(_ value: Double) -> String {
     let rounded = value.rounded()
@@ -58,10 +61,51 @@ func seconds(_ value: Double) -> String {
     return "\(text) second\(text == "1" ? "" : "s")"
 }
 
+/// Runs one vector per host, at most `parallel` at a time, and returns the exit
+/// code for the whole job.
+///
+/// Foundation starts each command in its own process group, which is what lets
+/// the deadline and an interrupt reach everything a command started. It also
+/// means the terminal's own signals never reach a command unless it is handed
+/// the terminal, so this does both halves of what a shell does for a job:
+///
+/// - **At one at a time**, with stdout on the terminal, the command gets the
+///   terminal for as long as it runs. Ctrl-C, Ctrl-\ and keyboard input go to
+///   it, and a command that dies of Ctrl-C ends the run. Ctrl-Z stops the
+///   command, and this process stops too, so the shell has a job to report and
+///   to `fg`. Without the handover the kernel stopped any command that read the
+///   terminal, and the loop waited on it forever.
+/// - **Otherwise**, this process keeps the terminal. Ctrl-C, Ctrl-\, SIGTERM,
+///   SIGHUP and SIGPIPE all reach it, and it ends every group still running
+///   before it exits, rather than leaving them reparented to init.
+///
+/// Output goes to a file per host rather than a pipe. Reading a pipe after the
+/// process ends deadlocks on anything larger than the buffer, and unlike the
+/// helpers `ProcessRunner` was written for, this runs whatever the user asked
+/// for and has no idea how much it will say.
 func run(_ vectors: [[String]], aliases: [String],
          parallel: Int, timeout: Double?) -> Int32 {
     guard let program = vectors.first?.first else { return 0 }
     let streaming = parallel == 1
+
+    // SIGPIPE is a reader that went away, as in `| head`. The run has nobody
+    // left to report to, so it stops rather than dying with its commands alive.
+    let watch = SignalWatch([SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE])
+    watch.start()
+    defer { watch.stop() }
+    // Taking the terminal back is done from a background group, which the
+    // kernel answers with SIGTTOU unless it is ignored.
+    signal(SIGTTOU, SIG_IGN)
+    // Not with stdout piped: whatever reads the pipe, `less` most of all, is in
+    // this job and needs the terminal itself.
+    let terminal = streaming && isatty(1) == 1 ? ControllingTerminal.open() : nil
+    defer { if let terminal { close(terminal.descriptor) } }
+    var handedTo: pid_t?
+    var interruptedBy: Int32?
+    // Groups that were told to end and whose leader has. A member that ignores
+    // SIGTERM outlives its leader, and nothing else would ever kill it.
+    var lingering: [(group: pid_t, since: Date)] = []
+
     let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("hangar-exec-\(ProcessInfo.processInfo.processIdentifier)")
     if !streaming {
@@ -115,32 +159,89 @@ func run(_ vectors: [[String]], aliases: [String],
             stderrLine("hangar: \(aliases[index]): could not run \(program): "
                        + error.localizedDescription)
             failures += 1
+            return
         }
+        if let terminal, terminal.isOurs {
+            terminal.give(to: process.processIdentifier)
+            handedTo = process.processIdentifier
+            // It may have touched the terminal before it was handed over, and
+            // been stopped for it. SIGCONT does nothing to one that was not.
+            killpg(process.processIdentifier, SIGCONT)
+        }
+    }
+
+    func reclaimTerminal() {
+        guard let terminal, handedTo != nil else { return }
+        terminal.takeBack()
+        handedTo = nil
+    }
+
+    // The group, not the process. Foundation starts each child as its own group
+    // leader, and `sh -c` puts the real work in a grandchild: signalling the
+    // direct child alone left the grandchild running while the deadline reported
+    // success. SIGCONT after it, because a stopped group holds SIGTERM unread.
+    func end(_ entry: inout Running) {
+        killpg(entry.process.processIdentifier, SIGTERM)
+        killpg(entry.process.processIdentifier, SIGCONT)
+        entry.signalledAt = Date()
     }
 
     func finish(_ entry: Running) {
-        let status = entry.process.terminationStatus
+        if entry.process.processIdentifier == handedTo { reclaimTerminal() }
+        let ending = ExecRun.Ending(reason: entry.process.terminationReason,
+                                    status: entry.process.terminationStatus)
+        let verdict = ending.succeeded ? "" : ExecRun.describe(ending)
         if let log = entry.log {
             let text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
-            write("== \(entry.alias)\(status == 0 ? "" : "  exit \(status)") ==\n")
+            write("== \(entry.alias)\(verdict.isEmpty ? "" : "  \(verdict)") ==\n")
             if !text.isEmpty { write(text.hasSuffix("\n") ? text : text + "\n") }
-        } else if status != 0 {
-            stderrLine("hangar: \(entry.alias): exit \(status)")
+        } else if !verdict.isEmpty {
+            stderrLine("hangar: \(entry.alias): \(verdict)")
         }
-        if status != 0 { failures += 1 }
+        if !ending.succeeded { failures += 1 }
+        if interruptedBy == nil { interruptedBy = ExecRun.interruption(ending) }
+        if let signalled = entry.signalledAt {
+            lingering.append((entry.process.processIdentifier, signalled))
+        }
     }
 
-    while next < vectors.count || !live.isEmpty {
-        while live.count < parallel && next < vectors.count {
+    // Ctrl-Z stopped the command's group, which holds the terminal, so the shell
+    // saw nothing. Stop this job too, and give the command the terminal back
+    // once the shell continues us in front of it.
+    func suspend(_ entry: Running) {
+        let pid = entry.process.processIdentifier
+        if handedTo == pid { reclaimTerminal() }
+        kill(0, SIGTSTP)
+        if let terminal, terminal.isOurs {
+            terminal.give(to: pid)
+            handedTo = pid
+        }
+        killpg(pid, SIGCONT)
+    }
+
+    while (next < vectors.count && interruptedBy == nil) || !live.isEmpty
+            || !lingering.isEmpty {
+        if interruptedBy == nil, let signal = watch.received {
+            interruptedBy = signal
+            for index in live.indices where live[index].signalledAt == nil {
+                end(&live[index])
+            }
+        }
+        while interruptedBy == nil && live.count < parallel && next < vectors.count {
             start(next)
             next += 1
         }
-        guard !live.isEmpty else { continue }
+        lingering.removeAll { item in
+            if killpg(item.group, 0) != 0 { return true }       // all gone
+            guard Date().timeIntervalSince(item.since) > 2 else { return false }
+            killpg(item.group, SIGKILL)
+            return true
+        }
         // Polled rather than waited on, because several are outstanding and the
         // one that finishes first is not known in advance.
         var still: [Running] = []
         for var entry in live {
-            if let timeout, entry.process.isRunning {
+            if entry.process.isRunning {
                 if let signalled = entry.signalledAt {
                     // SIGTERM is a request. A command that traps it, which is
                     // exactly what a shell wrapper does, ignores it forever, so
@@ -148,21 +249,24 @@ func run(_ vectors: [[String]], aliases: [String],
                     if Date().timeIntervalSince(signalled) > 2 {
                         killpg(entry.process.processIdentifier, SIGKILL)
                     }
-                } else if Date().timeIntervalSince(entry.startedAt) > timeout {
-                    // The group, not the process. Foundation starts each child
-                    // as its own group leader, and `sh -c` puts the real work in
-                    // a grandchild: signalling the direct child alone left the
-                    // grandchild running while the deadline reported success.
-                    killpg(entry.process.processIdentifier, SIGTERM)
-                    entry.signalledAt = Date()
+                } else if let timeout,
+                          Date().timeIntervalSince(entry.startedAt) > timeout {
+                    end(&entry)
                     stderrLine("hangar: \(entry.alias): did not finish within "
                                + "\(seconds(timeout))")
+                } else if terminal != nil,
+                          ExecRun.isStopped(entry.process.processIdentifier) {
+                    suspend(entry)
                 }
             }
             if entry.process.isRunning { still.append(entry) } else { finish(entry) }
         }
         live = still
-        if !live.isEmpty { usleep(20_000) }
+        if !live.isEmpty || !lingering.isEmpty { usleep(20_000) }
+    }
+    if let signal = interruptedBy {
+        stderrLine("hangar: " + ExecRun.interrupted(notRun: vectors.count - next))
+        return ExecRun.exitCode(interruptedBy: signal)
     }
     return failures == 0 ? 0 : 4
 }
@@ -264,6 +368,7 @@ EXIT
   5  refresh: the Hangar app did not answer, so it is probably not running
   6  refresh: the fleet could not be fetched, or did not arrive in time
  64  the command line was wrong, or a fan-out was refused for want of -y
+130  an --exec run was stopped by Ctrl-C (128 plus the signal, for any other)
 """
 
 // MARK: - Run
@@ -526,6 +631,8 @@ if !command.exec.isEmpty {
 
     let status = run(vectors, aliases: aliases,
                      parallel: command.parallel, timeout: command.timeout)
+    // An interrupt keeps its own code: a shell reads 130 as "stopped by Ctrl-C".
+    if status > 128 { exit(status) }
     exit(status != 0 || refused > 0 ? 4 : 0)
 }
 

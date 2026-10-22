@@ -68,3 +68,4 @@ prospectively; see [docs/ai-native-sdlc.md](../docs/ai-native-sdlc.md).
 | 0033 | A sentence in a strip that had no room | Shipped |
 | 0034 | A token that roamed the whole name | Shipped |
 | 0035 | A refresh you can ask for | Open |
+| 0036 | A terminal the command never had | Open |
