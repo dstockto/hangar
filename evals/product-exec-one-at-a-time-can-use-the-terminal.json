@@ -1,0 +1,7 @@
+{
+  "id": "product-exec-one-at-a-time-can-use-the-terminal",
+  "promise": "A command `hangar --exec` runs one host at a time can read the terminal it was started from.",
+  "why": "The README promised that interactive commands work at one host at a time, and they never did for a person at a terminal: the command was in a background process group, so the kernel stopped it on its first read, and hangar waited on the stopped process forever. Agents and scripts never saw it, because their stdin is not a terminal. Watched failing on the commit before 0036.",
+  "command": "scripts/exec-terminal-check.sh reads-terminal",
+  "expect": "exit 0"
+}

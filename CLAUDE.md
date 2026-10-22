@@ -301,6 +301,19 @@ Kept because each one cost real debugging and would be easy to reintroduce.
     material; contrast is a property of the surface the text sits on, not of what
     happens to be behind the window.
 
+36. **A file descriptor is not a terminal.** `--exec` at one host at a time passed
+    its stdin to the command, and the README said interactive things worked. The
+    command was in its own process group, so the kernel stopped it the moment it
+    read the keyboard or changed the terminal's mode, and `hangar` polled a
+    stopped process forever. Ctrl-C reached `hangar` and not the command, so it
+    left the work running under init. Neither shows from an agent or a script,
+    whose stdin is not a terminal, which is how three review rounds missed both.
+    A command that needs the terminal is handed it with `tcsetpgrp`, the way a
+    shell hands it to a job. Proving it takes a pty, and that check is easy to
+    fool: a job from a non-interactive shell starts with SIGINT ignored, and
+    closing the pty before looking hangs up the session and kills the orphans.
+    Both versions of the check passed against the bug.
+
 ## Testing against a fake fleet
 
 `make testbed` builds a fabricated home directory, runs every host source, the
