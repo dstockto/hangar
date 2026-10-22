@@ -224,7 +224,7 @@ public struct HangarCommand: Equatable, Sendable {
     }
 
     /// Refresh acts on the whole fleet and the one cache the app writes, so a
-    /// flag that narrows or redirects would be silently ignored.
+    /// flag that narrows, redirects or formats would be silently ignored.
     private var refreshProblem: String? {
         if !query.isEmpty {
             return "refresh takes no arguments; to search for '\(query[0])', "
@@ -237,7 +237,26 @@ public struct HangarCommand: Equatable, Sendable {
         if cache != nil {
             return "--cache reads another file; 'hangar refresh' updates the one the app writes"
         }
+        // The app refreshes with its own config, so this one would never be read.
+        if config != nil {
+            return "--config reads another file; 'hangar refresh' uses the one the app reads"
+        }
+        // Refresh reports on stderr and prints no listing, so a format has nothing
+        // to shape, and --json would break its promise of a document on stdout.
+        if let flag = formatFlag {
+            return "\(flag) formats a listing; 'hangar refresh' prints none"
+        }
         return nil
+    }
+
+    /// The flag that chose the format, for a message about it.
+    private var formatFlag: String? {
+        switch format {
+        case .columns: return nil
+        case .alias:   return "-a"
+        case .tsv:     return "--tsv"
+        case .json:    return "--json"
+        }
     }
 
     /// The verb as it was typed, for a message about it.

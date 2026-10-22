@@ -384,6 +384,15 @@ final class HangarCommandTests: XCTestCase {
                        "--cache reads another file; 'hangar refresh' updates the one the app writes")
         XCTAssertEqual(HangarCommand.parse(["refresh", "--exec", "true"]).problem,
                        "--exec runs a command over a listing, not over 'hangar refresh'")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "--config", "/tmp/c.json"]).problem,
+                       "--config reads another file; 'hangar refresh' uses the one the app reads")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "-a"]).problem,
+                       "-a formats a listing; 'hangar refresh' prints none")
+        XCTAssertEqual(HangarCommand.parse(["refresh", "--tsv"]).problem,
+                       "--tsv formats a listing; 'hangar refresh' prints none")
+        // Before the verb too: a format flag is often typed first.
+        XCTAssertEqual(HangarCommand.parse(["--json", "refresh"]).problem,
+                       "--json formats a listing; 'hangar refresh' prints none")
     }
 
     func testRefreshHelpStillAnswers() {
