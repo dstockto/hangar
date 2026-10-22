@@ -44,6 +44,8 @@ public enum RefreshSignal {
         value.count == 36 && UUID(uuidString: value) != nil
     }
 
+    /// The reply as plain strings, since a distributed notification carries only
+    /// property-list values across processes. `reply(from:)` reads it back.
     public static func userInfo(for reply: Reply) -> [String: String] {
         switch reply {
         case .started:
@@ -124,11 +126,15 @@ public struct RefreshWait: Equatable, Sendable {
     private var answered = false
     private var result: Outcome?
 
+    /// Takes the start time rather than reading the clock, so a test can drive
+    /// the wait without sleeping through it.
     public init(startedAt: Date, finishWithin: TimeInterval) {
         self.startedAt = startedAt
         self.finishWithin = finishWithin
     }
 
+    /// Any reply proves the app is running; the first final one decides the
+    /// outcome, so a late or repeated reply cannot overturn it.
     public mutating func receive(_ reply: RefreshSignal.Reply) {
         answered = true
         guard result == nil else { return }
@@ -139,6 +145,8 @@ public struct RefreshWait: Equatable, Sendable {
         }
     }
 
+    /// A timeout shorter than `answerWithin` ends unanswered as `.noAnswer`, not
+    /// `.timedOut`: nothing answered at all, so the app is probably not running.
     public func outcome(at now: Date) -> Outcome {
         if let result { return result }
         let elapsed = now.timeIntervalSince(startedAt)
