@@ -21,7 +21,10 @@ as `ssh`, `tags` and `values`, so `hangar -s refresh` and `hangar -- refresh` st
 find a host with that name. It takes no query, and it refuses `-f`, `-n`, `-1`,
 `--dry-run`, `--cache` and `--exec` instead of ignoring them, for the reason
 `tags` already refuses `-f`. Someone who typed a narrowing flag believes they
-asked a narrower question than they did. `--timeout` is the one flag it takes,
+asked a narrower question than they did. It refuses `--config` too, because the
+app refreshes with its own config and would never read that one, and the formats
+`-a`, `--tsv` and `--json`, because it prints no listing for them to shape and
+`--json` promises a document on stdout. `--timeout` is the one flag it takes,
 and it means how long to wait. The default is 120 seconds.
 
 **The request is a distributed notification.** The command line posts
@@ -45,7 +48,8 @@ finished in the last ten seconds and did not fail, the request gets that result
 without fetching again. Either way, requests start at most one fetch every ten
 seconds, and every request waiting at once is answered from the same refresh. An
 agent that runs `hangar refresh && hangar ssh ...` once per host should cost one
-fetch.
+fetch. Those rules live in `RefreshQueue` in `HangarCore`, so the suite can
+reach them; `RefreshListener` only watches the store and posts what it decides.
 
 **A partial failure says so.** A refresh where EC2 is denied and `~/.ssh/config`
 still works succeeds, and the fleet shrinks to the local hosts. Reporting "done"
@@ -106,11 +110,17 @@ Any process in the login session can post the request or a reply.
 `RefreshSignalTests` and `RefreshWaitTests` cover the id check, every reply
 round trip, C0 and C1 controls and overlong text, when a request may fetch, and the
 waiting rules: no answer, answered and timed out, a result with no `started`, and
-two app copies answering. `HangarCommandTests` covers the verb and each refused
-flag.
+two app copies answering. `RefreshQueueTests` covers the app's side: the first
+request starting the answer and later ones joining it, the cap of 64, a request
+after release starting a new answer, a running refresh joined rather than
+doubled, the spacing between fetches, and how a failure or a partial failure
+becomes the reply. `HangarCommandTests` covers the verb and each refused flag.
 
 The offline suite cannot post a distributed notification, since doing so would
 reach a real Hangar running on the same machine. The cross-process path was
 checked by hand against a stand-in responder. That covered success with a source
 note, failure carrying ESC, a timeout, and no responder at all. The last one
-waited three seconds at no CPU cost and exited `5`.
+waited three seconds at no CPU cost and exited `5`. It was then run against the
+built app: a request inside ten seconds of the last fetch reused it, one after
+started a new fetch, and with the app quit it exited `5` after three seconds. That
+machine had only the `~/.ssh/config` source, so the EC2 path was not exercised.

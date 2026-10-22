@@ -22,6 +22,8 @@ public struct RefreshQueue: Equatable, Sendable {
     /// When a request last started a fetch, whatever the fetch then did.
     private(set) var lastRequested: Date?
 
+    /// Empty, with no request on record. Only fetches a request started are
+    /// spaced; the timer's are judged by the fleet's age instead.
     public init() {}
 
     /// Holds the request unless the cap is reached. Each held request is a reply
