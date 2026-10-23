@@ -10,12 +10,13 @@
 #   reads-terminal      a command run one at a time can read the terminal
 #   reads-terminal-redirected  the same with hangar's stdout sent to a file
 #   deadline            --timeout, with no terminal, leaves nothing running
+#   deadline-exit-zero  a host --timeout stopped fails though its command exits 0
 #   reader-gone         a reader that went away stops the run with 141, unless
 #                       SIGPIPE was ignored before hangar started
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-mode="${1:?usage: exec-terminal-check.sh interrupt|interrupt-parallel|interrupt-after-a-death|interrupt-background|reads-terminal|reads-terminal-redirected|deadline|reader-gone}"
+mode="${1:?usage: exec-terminal-check.sh interrupt|interrupt-parallel|interrupt-after-a-death|interrupt-background|reads-terminal|reads-terminal-redirected|deadline|deadline-exit-zero|reader-gone}"
 bin=app/.build/debug/hangar-cli
 swift build --package-path app --product hangar-cli >/dev/null 2>&1 || exit 1
 
@@ -114,6 +115,16 @@ case "$mode" in
         job=
         [[ $status -eq 4 ]] && ! pgrep -f "sleep $n" >/dev/null \
             && grep -q 'did not finish within 1 second' "$tmp/out"
+        ;;
+    deadline-exit-zero)
+        # The command answers the deadline's SIGTERM by exiting 0, which a shell
+        # can also do on its own, and was once counted as the host succeeding.
+        "$bin" --cache "$tmp/cache" -y alpha --timeout 1 \
+            --exec sh -c "trap 'exit 0' TERM; sleep $n & wait" \
+            < /dev/null > "$tmp/out" 2>&1
+        status=$?
+        [[ $status -eq 4 ]] && ! pgrep -f "sleep $n" >/dev/null \
+            && grep -q 'timed out' "$tmp/out"
         ;;
     reader-gone)
         # The pipe's read end is closed before hangar starts, so every write to
