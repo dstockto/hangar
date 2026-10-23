@@ -5,12 +5,14 @@
 #
 #   interrupt           Ctrl-C at one host at a time leaves nothing running
 #   interrupt-parallel  the same at --parallel 2, with a member ignoring SIGTERM
+#   interrupt-after-a-death  the same, after one command killed itself with SIGINT
 #   reads-terminal      a command run one at a time can read the terminal
+#   reads-terminal-redirected  the same with hangar's stdout sent to a file
 #   deadline            --timeout, with no terminal, leaves nothing running
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-mode="${1:?usage: exec-terminal-check.sh interrupt|interrupt-parallel|reads-terminal|deadline}"
+mode="${1:?usage: exec-terminal-check.sh interrupt|interrupt-parallel|interrupt-after-a-death|reads-terminal|reads-terminal-redirected|deadline}"
 bin=app/.build/debug/hangar-cli
 swift build --package-path app --product hangar-cli >/dev/null 2>&1 || exit 1
 
@@ -38,13 +40,15 @@ printf '%s' '{"instances": [
 # matching $1 was running before the keys were typed, so a run that never
 # started cannot pass. A job started by a non-interactive shell begins with
 # SIGINT ignored and keeps that across exec, so without the reset Ctrl-C proves
-# nothing.
+# nothing. With CHECK_STDOUT set, hangar's stdout goes to that file instead.
 drive() {
     local watch="$1" keys="$2" limit="$3"
     shift 3
     # shellcheck disable=SC2016 # the single quotes keep Perl's $SIG from the shell
     ( sleep 2; printf '%b' "$keys"; sleep 30 ) \
-        | script -q /dev/null /usr/bin/perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV' \
+        | script -q /dev/null /usr/bin/perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT";
+            open STDOUT, ">", $ENV{CHECK_STDOUT} or die if $ENV{CHECK_STDOUT};
+            exec @ARGV' \
             "$bin" --cache "$tmp/cache" -y "$@" > "$tmp/out" 2>&1 &
     job=$!
     sleep 1.5
@@ -64,9 +68,24 @@ case "$mode" in
             --exec sh -c "(trap '' TERM; sleep $n) & sleep $n; true" || exit 1
         ! pgrep -f "sleep $n" >/dev/null && grep -q 'interrupted' "$tmp/out"
         ;;
+    interrupt-after-a-death)
+        # alpha dies of a SIGINT nobody typed, while beta keeps going. That death
+        # once marked the run interrupted, and from then on Ctrl-C was ignored.
+        drive "^sleep $n$" '\003' 3 --parallel 2 \
+            --exec sh -c "case \$1 in alpha*) kill -INT \$\$;; esac; sleep $n; true" sh {alias} \
+            || exit 1
+        ! pgrep -f "sleep $n" >/dev/null && grep -q 'interrupted' "$tmp/out"
+        ;;
     reads-terminal)
         drive "^sh -c read x; echo got-$n" 'hello\n' 3 alpha --exec sh -c "read x; echo got-$n:\$x" || exit 1
         ! pgrep -f "got-$n" >/dev/null && grep -q "got-$n:hello" "$tmp/out"
+        ;;
+    reads-terminal-redirected)
+        # A file has no reader in this job that needs the terminal, so the
+        # command still gets it. Only a pipe is a reason to keep it.
+        export CHECK_STDOUT="$tmp/redirected"
+        drive "^sh -c read x; echo got-$n" 'hello\n' 3 alpha --exec sh -c "read x; echo got-$n:\$x" || exit 1
+        ! pgrep -f "got-$n" >/dev/null && grep -q "got-$n:hello" "$tmp/redirected"
         ;;
     deadline)
         "$bin" --cache "$tmp/cache" -y alpha --timeout 1 \

@@ -90,12 +90,14 @@ still covers the whole tree, because the tree is still one group.
   sends SIGCONT to the group straight after the handover, which does nothing to a
   process that was never stopped.
 - Taking the terminal back is done from a background group, which is itself a
-  SIGTTOU. `hangar` ignores SIGTTOU around that call.
-- A child that dies of SIGINT or SIGQUIT ends the run. The remaining hosts are
-  not started and `hangar` exits `130` or `131`. Someone pressing Ctrl-C at host
-  three of twenty wants to stop, not to move on to host four. A child that
-  catches the signal and exits on its own terms, as an interactive ssh session
-  does, is taken at its word.
+  SIGTTOU. `hangar` ignores SIGTTOU while it has the terminal open to hand out,
+  and puts the previous disposition back when the run ends.
+- A child that dies of SIGINT or SIGQUIT while it holds the terminal ends the
+  run. The remaining hosts are not started and `hangar` exits `130` or `131`.
+  Someone pressing Ctrl-C at host three of twenty wants to stop, not to move on
+  to host four. A child that catches the signal and exits on its own terms, as
+  an interactive ssh session does, is taken at its word. A child that did not
+  hold the terminal was never sent the key, so its SIGINT is only a failure.
 - Ctrl-Z stops the child's group and not `hangar`, so the shell would never see
   a stopped job. `hangar` notices the stop by reading the process state, since
   `Process` reports a stopped process as running. It takes the terminal back,
@@ -107,7 +109,8 @@ still covers the whole tree, because the tree is still one group.
   handed over while `hangar`'s own group is its foreground group.
 - It is not handed over when stdout is piped. Whatever reads the pipe is in
   `hangar`'s job, and the first cut stopped `less` in `hangar --exec ... | less`
-  by taking the terminal away from it. A command that reaches for the terminal
+  by taking the terminal away from it. A redirect to a file is handed over as
+  usual, because nothing in the job reads the file. A command that reaches for the terminal
   in that case waits as it does above one at a time, below.
 
 **The docs say what is true.** The README section and the doc comment above `run`
