@@ -186,6 +186,10 @@ func run(_ vectors: [[String]], aliases: [String],
         if interruptedBy == nil {
             interruptedBy = ExecRun.interruption(ending, heldTerminal: heldTerminal)
         }
+        // A group whose leader died before the run could end it is ended now: a
+        // shell starts its `&` jobs ignoring Ctrl-C, so they outlive the leader.
+        var entry = entry
+        if interruptedBy != nil, entry.signalledAt == nil { end(&entry) }
         if let signalled = entry.signalledAt {
             lingering.append((entry.process.processIdentifier, signalled))
         }
