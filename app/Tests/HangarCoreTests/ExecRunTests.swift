@@ -51,6 +51,25 @@ final class ExecRunTests: XCTestCase {
         XCTAssertNil(ExecRun.interruption(.exited(0), heldTerminal: true))
     }
 
+    /// The SIGPIPE itself is recorded on another queue and can land after the
+    /// last write, so the failed write is what reliably says the reader left.
+    func testAReaderThatWentAwayStopsTheRunAsSIGPIPE() {
+        XCTAssertEqual(ExecRun.interruption(writeError: EPIPE, watchingSIGPIPE: true), SIGPIPE)
+        XCTAssertEqual(ExecRun.exitCode(interruptedBy: SIGPIPE), 141)
+    }
+
+    /// Under a SIGPIPE ignored beforehand the run carried on past a dead reader,
+    /// and standing in for the signal must not change that.
+    func testAnIgnoredSIGPIPEStaysIgnoredWhenTheWriteFails() {
+        XCTAssertNil(ExecRun.interruption(writeError: EPIPE, watchingSIGPIPE: false))
+    }
+
+    /// A full disk or a bad descriptor is not a person or a reader asking to stop.
+    func testOtherWriteErrorsDoNotStopTheRun() {
+        XCTAssertNil(ExecRun.interruption(writeError: ENOSPC, watchingSIGPIPE: true))
+        XCTAssertNil(ExecRun.interruption(writeError: EBADF, watchingSIGPIPE: true))
+    }
+
     func testAnInterruptedRunExitsTheWayAShellReportsIt() {
         XCTAssertEqual(ExecRun.exitCode(interruptedBy: SIGINT), 130)
         XCTAssertEqual(ExecRun.exitCode(interruptedBy: SIGTERM), 143)
@@ -154,6 +173,19 @@ final class ExecRunTests: XCTestCase {
         kill(getpid(), SIGUSR1)
         usleep(100_000)
         XCTAssertEqual(watch.received, SIGUSR2)
+    }
+
+    func testAWatchSaysWhichSignalsItCollects() {
+        let before = signal(SIGUSR2, SIG_IGN)
+        defer { signal(SIGUSR2, before) }
+        let watch = SignalWatch([SIGUSR1, SIGUSR2])
+        XCTAssertFalse(watch.isWatching(SIGUSR1), "nothing before start")
+        watch.start()
+        XCTAssertTrue(watch.isWatching(SIGUSR1))
+        XCTAssertFalse(watch.isWatching(SIGUSR2), "ignored beforehand, so left alone")
+        XCTAssertFalse(watch.isWatching(SIGHUP), "never asked for")
+        watch.stop()
+        XCTAssertFalse(watch.isWatching(SIGUSR1))
     }
 
     /// A source fires for an ignored signal too, so watching one that `nohup`

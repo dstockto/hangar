@@ -42,6 +42,19 @@ public enum ExecRun {
         return signal
     }
 
+    /// The signal a failed write to stdout stands for, if it means the run should
+    /// stop.
+    ///
+    /// EPIPE is the reader going away, as with `| head`, and is SIGPIPE delivered
+    /// as an error because the watch ignores the signal. The signal itself is
+    /// recorded on another queue and may land after the last write, so a run that
+    /// lost its reader on the last host's output exited 0. The error is the
+    /// reliable report. A SIGPIPE ignored before `hangar` started stays ignored,
+    /// so then the write failing changes nothing, as it never did.
+    public static func interruption(writeError: Int32, watchingSIGPIPE: Bool) -> Int32? {
+        writeError == EPIPE && watchingSIGPIPE ? SIGPIPE : nil
+    }
+
     /// The code a shell reports for a process a signal ended, so 130 for Ctrl-C.
     public static func exitCode(interruptedBy signal: Int32) -> Int32 {
         128 + signal
@@ -141,6 +154,12 @@ public final class SignalWatch {
             source.resume()
             sources.append(source)
         }
+    }
+
+    /// Whether `signal` is being collected, which a signal ignored before `start`
+    /// is not. A caller standing in for one has to honour the same choice.
+    public func isWatching(_ signal: Int32) -> Bool {
+        previous[signal] != nil
     }
 
     /// The first signal that arrived since `start`, if any did.

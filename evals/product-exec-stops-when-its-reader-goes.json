@@ -1,0 +1,7 @@
+{
+  "id": "product-exec-stops-when-its-reader-goes",
+  "promise": "When whatever reads `hangar --exec` output goes away, as with `| head`, the run stops and exits 141, even when that happens on the last host's output.",
+  "why": "The README promised 128 plus the signal for a reader that went away, and the run only kept that promise while some host was still going. The SIGPIPE is recorded on the signal watch's own queue, so when it arrived during the last host's output the loop had already finished and hangar exited 0. The failed write's EPIPE is now the report, which is synchronous. The check closes the pipe's read end before hangar starts, so it does not depend on timing, and also proves a SIGPIPE ignored beforehand stays ignored. Watched failing at 40ec749.",
+  "command": "scripts/exec-terminal-check.sh reader-gone",
+  "expect": "exit 0"
+}
