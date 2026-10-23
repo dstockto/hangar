@@ -25,22 +25,30 @@ final class ExecRunTests: XCTestCase {
     /// At one host at a time the command holds the terminal, so a command that
     /// died of Ctrl-C is the only sign the key was pressed.
     func testACommandKilledByCtrlCStopsTheRun() {
-        XCTAssertEqual(ExecRun.interruption(.signalled(SIGINT)), SIGINT)
-        XCTAssertEqual(ExecRun.interruption(.signalled(SIGQUIT)), SIGQUIT)
+        XCTAssertEqual(ExecRun.interruption(.signalled(SIGINT), heldTerminal: true), SIGINT)
+        XCTAssertEqual(ExecRun.interruption(.signalled(SIGQUIT), heldTerminal: true), SIGQUIT)
+    }
+
+    /// Above one at a time no command holds the terminal, so one that died of
+    /// SIGINT sent it to itself. Taking that as Ctrl-C once marked the run
+    /// interrupted, and the real key then did nothing while the others ran on.
+    func testASigintTheTerminalNeverSentDoesNotStopTheRun() {
+        XCTAssertNil(ExecRun.interruption(.signalled(SIGINT), heldTerminal: false))
+        XCTAssertNil(ExecRun.interruption(.signalled(SIGQUIT), heldTerminal: false))
     }
 
     /// SIGTERM and SIGKILL are what the deadline sends. A host that ran out of
     /// time is a failure on that host, not a person asking to stop.
     func testTheDeadlinesOwnSignalsDoNotStopTheRun() {
-        XCTAssertNil(ExecRun.interruption(.signalled(SIGTERM)))
-        XCTAssertNil(ExecRun.interruption(.signalled(SIGKILL)))
+        XCTAssertNil(ExecRun.interruption(.signalled(SIGTERM), heldTerminal: true))
+        XCTAssertNil(ExecRun.interruption(.signalled(SIGKILL), heldTerminal: true))
     }
 
     /// A command that caught the interrupt and exited on its own terms is taken
     /// at its word, the way a shell takes it.
     func testAnExitCodeIsNeverReadAsAnInterrupt() {
-        XCTAssertNil(ExecRun.interruption(.exited(130)))
-        XCTAssertNil(ExecRun.interruption(.exited(0)))
+        XCTAssertNil(ExecRun.interruption(.exited(130), heldTerminal: true))
+        XCTAssertNil(ExecRun.interruption(.exited(0), heldTerminal: true))
     }
 
     func testAnInterruptedRunExitsTheWayAShellReportsIt() {
@@ -87,6 +95,37 @@ final class ExecRunTests: XCTestCase {
 
     func testAProcessThatDoesNotExistIsNotStopped() {
         XCTAssertFalse(ExecRun.isStopped(99_999_999))
+    }
+
+    // MARK: - Where stdout goes
+
+    /// A pipe's reader is in the same job and may need the terminal, as `less`
+    /// does, so only a pipe keeps the terminal from the command.
+    func testAPipeIsToldApartFromAFile() throws {
+        var ends: [Int32] = [0, 0]
+        XCTAssertEqual(pipe(&ends), 0)
+        defer { ends.forEach { close($0) } }
+        XCTAssertTrue(ExecRun.isPipe(ends[0]))
+        XCTAssertTrue(ExecRun.isPipe(ends[1]))
+
+        var pair: [Int32] = [0, 0]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair), 0)
+        defer { pair.forEach { close($0) } }
+        XCTAssertTrue(ExecRun.isPipe(pair[0]), "a socket has a reader too")
+
+        let path = NSTemporaryDirectory() + "hangar-isPipe-\(getpid())"
+        let file = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0o600)
+        XCTAssertGreaterThanOrEqual(file, 0)
+        defer { close(file); unlink(path) }
+        XCTAssertFalse(ExecRun.isPipe(file), "`> out.txt` has no reader in the job")
+
+        let null = open("/dev/null", O_WRONLY)
+        defer { close(null) }
+        XCTAssertFalse(ExecRun.isPipe(null))
+    }
+
+    func testAClosedDescriptorIsNotAPipe() {
+        XCTAssertFalse(ExecRun.isPipe(-1))
     }
 
     // MARK: - Watching signals

@@ -13,23 +13,31 @@ public enum ExecRun {
         case exited(Int32)
         case signalled(Int32)
 
+        /// Read from the pair `Process` reports, where `status` is an exit code
+        /// or a signal number depending on `reason` and means nothing alone.
         public init(reason: Process.TerminationReason, status: Int32) {
             self = reason == .uncaughtSignal ? .signalled(status) : .exited(status)
         }
 
+        /// Only a zero exit. A command a signal ended never chose a status, even
+        /// when the number `Process` reports for it is zero.
         public var succeeded: Bool { self == .exited(0) }
     }
 
     /// The signal in this ending that means the person wants the whole run to
     /// stop, if there is one.
     ///
-    /// At one host at a time the command owns the terminal, so Ctrl-C reaches it
-    /// and not `hangar`, and a command that died of it is the only sign the key
-    /// was pressed. Someone stopping host three of twenty wants to stop, not to
-    /// move on to host four. A command that caught the signal and exited on its
-    /// own terms is taken at its word, the way a shell takes it.
-    public static func interruption(_ ending: Ending) -> Int32? {
-        guard case .signalled(let signal) = ending,
+    /// A command that held the terminal is the one Ctrl-C reached instead of
+    /// `hangar`, so its dying of it is the only sign the key was pressed. Someone
+    /// stopping host three of twenty wants to stop, not to move on to host four.
+    /// A command that caught the signal and exited on its own terms is taken at
+    /// its word, the way a shell takes it.
+    ///
+    /// A command that did not hold the terminal was never sent the key, so its
+    /// SIGINT says nothing about the person. Reading it as one once left Ctrl-C
+    /// doing nothing until every other command had finished.
+    public static func interruption(_ ending: Ending, heldTerminal: Bool) -> Int32? {
+        guard heldTerminal, case .signalled(let signal) = ending,
               signal == SIGINT || signal == SIGQUIT else { return nil }
         return signal
     }
@@ -71,6 +79,17 @@ public enum ExecRun {
         }
     }
 
+    /// Whether a descriptor is a pipe. At one host at a time that means the reader
+    /// is in this job and may need the terminal itself, as `less` does, while a
+    /// file has no reader there and is no reason to keep the terminal from the
+    /// command. A socket counts as a pipe: it has a reader at the other end too.
+    public static func isPipe(_ descriptor: Int32) -> Bool {
+        var info = stat()
+        guard fstat(descriptor, &info) == 0 else { return false }
+        let type = info.st_mode & S_IFMT
+        return type == S_IFIFO || type == S_IFSOCK
+    }
+
     /// Whether a process is stopped. `Process.isRunning` says yes for a stopped
     /// process, so a command stopped by the terminal looked like one still working.
     public static func isStopped(_ pid: pid_t) -> Bool {
@@ -101,10 +120,14 @@ public final class SignalWatch {
     private var sources: [DispatchSourceSignal] = []
     private var previous: [Int32: sig_t?] = [:]
 
+    /// Changes nothing until `start`, so the caller chooses the moment these
+    /// signals stop ending the process.
     public init(_ signals: [Int32]) {
         self.signals = signals
     }
 
+    /// Takes each signal over and starts recording. Until `stop`, none of them
+    /// ends the process, so the caller has to read `received` and act on it.
     public func start() {
         guard sources.isEmpty else { return }
         for signal in signals {
