@@ -6,6 +6,7 @@
 #   interrupt           Ctrl-C at one host at a time leaves nothing running
 #   interrupt-parallel  the same at --parallel 2, with a member ignoring SIGTERM
 #   interrupt-after-a-death  the same, after one command killed itself with SIGINT
+#   interrupt-background  Ctrl-C at one host at a time, with a job started by `&`
 #   reads-terminal      a command run one at a time can read the terminal
 #   reads-terminal-redirected  the same with hangar's stdout sent to a file
 #   deadline            --timeout, with no terminal, leaves nothing running
@@ -14,7 +15,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-mode="${1:?usage: exec-terminal-check.sh interrupt|interrupt-parallel|interrupt-after-a-death|reads-terminal|reads-terminal-redirected|deadline|reader-gone}"
+mode="${1:?usage: exec-terminal-check.sh interrupt|interrupt-parallel|interrupt-after-a-death|interrupt-background|reads-terminal|reads-terminal-redirected|deadline|reader-gone}"
 bin=app/.build/debug/hangar-cli
 swift build --package-path app --product hangar-cli >/dev/null 2>&1 || exit 1
 
@@ -74,8 +75,14 @@ case "$mode" in
         # alpha dies of a SIGINT nobody typed, while beta keeps going. That death
         # once marked the run interrupted, and from then on Ctrl-C was ignored.
         drive "^sleep $n$" '\003' 3 --parallel 2 \
-            --exec sh -c "case \$1 in alpha*) kill -INT \$\$;; esac; sleep $n; true" sh '{alias}' \
+            --exec sh -c "case \$1 in *alpha*) kill -INT \$\$;; esac; sleep $n; true" sh '{alias}' \
             || exit 1
+        ! pgrep -f "sleep $n" >/dev/null && grep -q 'interrupted' "$tmp/out"
+        ;;
+    interrupt-background)
+        # A shell starts its `&` jobs ignoring SIGINT, so this one outlives the
+        # leader Ctrl-C killed unless the run ends the leader's group.
+        drive "^sleep $n$" '\003' 3 --exec sh -c "(sleep $n) & sleep $n; true" || exit 1
         ! pgrep -f "sleep $n" >/dev/null && grep -q 'interrupted' "$tmp/out"
         ;;
     reads-terminal)

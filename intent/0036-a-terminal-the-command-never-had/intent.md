@@ -74,6 +74,9 @@ which killed `hangar` the same way before this change.
   that ignores SIGTERM outlives the leader, and once the leader was reaped
   nothing would have sent the SIGKILL. The deadline had the same gap before
   this change.
+- A command that died of Ctrl-C before `hangar` could end it has its group
+  ended too. A shell starts its `&` jobs ignoring SIGINT, so a job a command
+  started that way outlived the leader the key killed.
 
 Ignoring in `hangar` does not leak into the children. `Process` resets every
 disposition and the signal mask when it spawns, which was checked rather than
