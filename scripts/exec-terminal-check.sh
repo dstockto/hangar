@@ -74,7 +74,7 @@ case "$mode" in
         # alpha dies of a SIGINT nobody typed, while beta keeps going. That death
         # once marked the run interrupted, and from then on Ctrl-C was ignored.
         drive "^sleep $n$" '\003' 3 --parallel 2 \
-            --exec sh -c "case \$1 in alpha*) kill -INT \$\$;; esac; sleep $n; true" sh {alias} \
+            --exec sh -c "case \$1 in alpha*) kill -INT \$\$;; esac; sleep $n; true" sh '{alias}' \
             || exit 1
         ! pgrep -f "sleep $n" >/dev/null && grep -q 'interrupted' "$tmp/out"
         ;;
