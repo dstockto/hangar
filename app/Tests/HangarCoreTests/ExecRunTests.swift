@@ -86,6 +86,23 @@ final class ExecRunTests: XCTestCase {
         XCTAssertEqual(ExecRun.describe(.signalled(SIGUSR2)), "killed by signal \(SIGUSR2)")
     }
 
+    /// `sh` can outlive its group's SIGTERM, report the child it lost and exit 0,
+    /// and that once made a host the deadline stopped count as a success.
+    func testAHostThatRanOutOfTimeFailsWhateverItExitedWith() {
+        XCTAssertFalse(ExecRun.succeeded(.exited(0), timedOut: true))
+        XCTAssertFalse(ExecRun.succeeded(.signalled(SIGTERM), timedOut: true))
+        XCTAssertTrue(ExecRun.succeeded(.exited(0), timedOut: false))
+        XCTAssertFalse(ExecRun.succeeded(.exited(1), timedOut: false))
+    }
+
+    func testAHostThatRanOutOfTimeIsNotReportedAsExitZero() {
+        XCTAssertEqual(ExecRun.describe(.exited(0), timedOut: true), "timed out")
+        XCTAssertEqual(ExecRun.describe(.signalled(SIGTERM), timedOut: true),
+                       "killed by SIGTERM")
+        XCTAssertEqual(ExecRun.describe(.exited(2), timedOut: true), "exit 2")
+        XCTAssertEqual(ExecRun.describe(.exited(2), timedOut: false), "exit 2")
+    }
+
     func testAnInterruptedRunSaysHowFarItGot() {
         XCTAssertEqual(ExecRun.interrupted(notRun: 0), "interrupted.")
         XCTAssertEqual(ExecRun.interrupted(notRun: 1), "interrupted, 1 host not run.")
