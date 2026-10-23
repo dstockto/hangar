@@ -112,6 +112,9 @@ func run(_ vectors: [[String]], aliases: [String],
         /// Set once the deadline has fired, so the next pass escalates rather
         /// than sending a second SIGTERM and printing the message again.
         var signalledAt: Date?
+        /// Set when the deadline fired, which an interrupt also signalling the
+        /// group does not, so the host fails however the command then exits.
+        var timedOut = false
     }
 
     var next = 0
@@ -168,7 +171,8 @@ func run(_ vectors: [[String]], aliases: [String],
         let heldTerminal = terminal?.takeBack(from: entry.process.processIdentifier) ?? false
         let ending = ExecRun.Ending(reason: entry.process.terminationReason,
                                     status: entry.process.terminationStatus)
-        let verdict = ending.succeeded ? "" : ExecRun.describe(ending)
+        let succeeded = ExecRun.succeeded(ending, timedOut: entry.timedOut)
+        let verdict = succeeded ? "" : ExecRun.describe(ending, timedOut: entry.timedOut)
         if let log = entry.log {
             let text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
             var failed = write("== \(entry.alias)\(verdict.isEmpty ? "" : "  \(verdict)") ==\n")
@@ -182,7 +186,7 @@ func run(_ vectors: [[String]], aliases: [String],
         } else if !verdict.isEmpty {
             stderrLine("hangar: \(entry.alias): \(verdict)")
         }
-        if !ending.succeeded { failures += 1 }
+        if !succeeded { failures += 1 }
         if interruptedBy == nil {
             interruptedBy = ExecRun.interruption(ending, heldTerminal: heldTerminal)
         }
@@ -230,6 +234,7 @@ func run(_ vectors: [[String]], aliases: [String],
                 } else if let timeout,
                           Date().timeIntervalSince(entry.startedAt) > timeout {
                     end(&entry)
+                    entry.timedOut = true
                     stderrLine("hangar: \(entry.alias): did not finish within "
                                + "\(seconds(timeout))")
                 } else if let terminal,

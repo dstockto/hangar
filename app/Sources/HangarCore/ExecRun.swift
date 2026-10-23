@@ -70,6 +70,18 @@ public enum ExecRun {
         }
     }
 
+    /// Whether a host counts as done. One the deadline fired on did not finish in
+    /// time, whatever it exited with: `sh` can outlive its group's SIGTERM and exit 0.
+    public static func succeeded(_ ending: Ending, timedOut: Bool) -> Bool {
+        ending.succeeded && !timedOut
+    }
+
+    /// An ending in words once the deadline is counted, so a host that failed by
+    /// running out of time is not reported as "exit 0".
+    public static func describe(_ ending: Ending, timedOut: Bool) -> String {
+        timedOut && ending.succeeded ? "timed out" : describe(ending)
+    }
+
     static func name(of signal: Int32) -> String {
         switch signal {
         case SIGHUP:  return "SIGHUP"
