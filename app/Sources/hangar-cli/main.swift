@@ -32,28 +32,6 @@ func write(_ text: String) {
     try? FileHandle.standardOutput.write(contentsOf: Data(text.utf8))
 }
 
-/// The controlling terminal, for handing to a command the way a shell hands it
-/// to a job.
-///
-/// Opened as `/dev/tty` rather than read off stdin, because ssh asks for a
-/// password on `/dev/tty` even when stdin is a pipe.
-struct ControllingTerminal {
-    let descriptor: Int32
-
-    static func open() -> ControllingTerminal? {
-        let descriptor = Darwin.open("/dev/tty", O_RDWR | O_NOCTTY | O_CLOEXEC)
-        return descriptor >= 0 ? ControllingTerminal(descriptor: descriptor) : nil
-    }
-
-    /// Whether the terminal is listening to this process's group, which is the
-    /// only time it is ours to give away.
-    var isOurs: Bool { tcgetpgrp(descriptor) == getpgrp() }
-
-    func give(to group: pid_t) { _ = tcsetpgrp(descriptor, group) }
-
-    func takeBack() { _ = tcsetpgrp(descriptor, getpgrp()) }
-}
-
 /// A deadline as a person wrote it: --timeout 0.5 is not "0 seconds".
 func seconds(_ value: Double) -> String {
     let rounded = value.rounded()
@@ -69,7 +47,7 @@ func seconds(_ value: Double) -> String {
 /// means the terminal's own signals never reach a command unless it is handed
 /// the terminal, so this does both halves of what a shell does for a job:
 ///
-/// - **At one at a time**, with stdout on the terminal, the command gets the
+/// - **At one at a time**, unless stdout is a pipe, the command gets the
 ///   terminal for as long as it runs. Ctrl-C, Ctrl-\ and keyboard input go to
 ///   it, and a command that dies of Ctrl-C ends the run. Ctrl-Z stops the
 ///   command, and this process stops too, so the shell has a job to report and
@@ -93,14 +71,10 @@ func run(_ vectors: [[String]], aliases: [String],
     let watch = SignalWatch([SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGPIPE])
     watch.start()
     defer { watch.stop() }
-    // Taking the terminal back is done from a background group, which the
-    // kernel answers with SIGTTOU unless it is ignored.
-    signal(SIGTTOU, SIG_IGN)
     // Not with stdout piped: whatever reads the pipe, `less` most of all, is in
-    // this job and needs the terminal itself.
-    let terminal = streaming && isatty(1) == 1 ? ControllingTerminal.open() : nil
-    defer { if let terminal { close(terminal.descriptor) } }
-    var handedTo: pid_t?
+    // this job and needs the terminal itself. A file has no such reader.
+    let terminal = streaming && !ExecRun.isPipe(1) ? ControllingTerminal.open() : nil
+    defer { terminal?.close() }
     var interruptedBy: Int32?
     // Groups that were told to end and whose leader has. A member that ignores
     // SIGTERM outlives its leader, and nothing else would ever kill it.
@@ -161,19 +135,7 @@ func run(_ vectors: [[String]], aliases: [String],
             failures += 1
             return
         }
-        if let terminal, terminal.isOurs {
-            terminal.give(to: process.processIdentifier)
-            handedTo = process.processIdentifier
-            // It may have touched the terminal before it was handed over, and
-            // been stopped for it. SIGCONT does nothing to one that was not.
-            killpg(process.processIdentifier, SIGCONT)
-        }
-    }
-
-    func reclaimTerminal() {
-        guard let terminal, handedTo != nil else { return }
-        terminal.takeBack()
-        handedTo = nil
+        terminal?.give(to: process.processIdentifier)
     }
 
     // The group, not the process. Foundation starts each child as its own group
@@ -187,7 +149,7 @@ func run(_ vectors: [[String]], aliases: [String],
     }
 
     func finish(_ entry: Running) {
-        if entry.process.processIdentifier == handedTo { reclaimTerminal() }
+        let heldTerminal = terminal?.takeBack(from: entry.process.processIdentifier) ?? false
         let ending = ExecRun.Ending(reason: entry.process.terminationReason,
                                     status: entry.process.terminationStatus)
         let verdict = ending.succeeded ? "" : ExecRun.describe(ending)
@@ -199,30 +161,20 @@ func run(_ vectors: [[String]], aliases: [String],
             stderrLine("hangar: \(entry.alias): \(verdict)")
         }
         if !ending.succeeded { failures += 1 }
-        if interruptedBy == nil { interruptedBy = ExecRun.interruption(ending) }
+        if interruptedBy == nil {
+            interruptedBy = ExecRun.interruption(ending, heldTerminal: heldTerminal)
+        }
         if let signalled = entry.signalledAt {
             lingering.append((entry.process.processIdentifier, signalled))
         }
     }
 
-    // Ctrl-Z stopped the command's group, which holds the terminal, so the shell
-    // saw nothing. Stop this job too, and give the command the terminal back
-    // once the shell continues us in front of it.
-    func suspend(_ entry: Running) {
-        let pid = entry.process.processIdentifier
-        if handedTo == pid { reclaimTerminal() }
-        kill(0, SIGTSTP)
-        if let terminal, terminal.isOurs {
-            terminal.give(to: pid)
-            handedTo = pid
-        }
-        killpg(pid, SIGCONT)
-    }
-
     while (next < vectors.count && interruptedBy == nil) || !live.isEmpty
             || !lingering.isEmpty {
-        if interruptedBy == nil, let signal = watch.received {
-            interruptedBy = signal
+        if interruptedBy == nil { interruptedBy = watch.received }
+        // Either route ends everything still going: a command that died of
+        // Ctrl-C may not have been the only one running.
+        if interruptedBy != nil {
             for index in live.indices where live[index].signalledAt == nil {
                 end(&live[index])
             }
@@ -254,9 +206,9 @@ func run(_ vectors: [[String]], aliases: [String],
                     end(&entry)
                     stderrLine("hangar: \(entry.alias): did not finish within "
                                + "\(seconds(timeout))")
-                } else if terminal != nil,
+                } else if let terminal,
                           ExecRun.isStopped(entry.process.processIdentifier) {
-                    suspend(entry)
+                    terminal.suspend(entry.process.processIdentifier)
                 }
             }
             if entry.process.isRunning { still.append(entry) } else { finish(entry) }
