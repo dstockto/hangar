@@ -27,9 +27,25 @@ func stderrLine(_ text: String) {
 /// mixing them lets output arrive in an order neither one chose, in a pipe,
 /// which is exactly where nobody looks. Every shape also carries its own
 /// trailing newline, so nothing at all prints nothing rather than a blank line.
-func write(_ text: String) {
-    guard !text.isEmpty else { return }
-    try? FileHandle.standardOutput.write(contentsOf: Data(text.utf8))
+///
+/// Returns the errno that stopped the write, or 0. `--exec` reads EPIPE from it,
+/// because the SIGPIPE beside it is recorded too late to rely on.
+@discardableResult
+func write(_ text: String) -> Int32 {
+    guard !text.isEmpty else { return 0 }
+    return Array(text.utf8).withUnsafeBytes { bytes in
+        guard let base = bytes.baseAddress else { return 0 }
+        var offset = 0
+        while offset < bytes.count {
+            let written = Darwin.write(1, base + offset, bytes.count - offset)
+            if written < 0 {
+                if errno == EINTR { continue }
+                return errno
+            }
+            offset += written
+        }
+        return 0
+    }
 }
 
 /// A deadline as a person wrote it: --timeout 0.5 is not "0 seconds".
@@ -155,8 +171,14 @@ func run(_ vectors: [[String]], aliases: [String],
         let verdict = ending.succeeded ? "" : ExecRun.describe(ending)
         if let log = entry.log {
             let text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
-            write("== \(entry.alias)\(verdict.isEmpty ? "" : "  \(verdict)") ==\n")
-            if !text.isEmpty { write(text.hasSuffix("\n") ? text : text + "\n") }
+            var failed = write("== \(entry.alias)\(verdict.isEmpty ? "" : "  \(verdict)") ==\n")
+            if failed == 0, !text.isEmpty {
+                failed = write(text.hasSuffix("\n") ? text : text + "\n")
+            }
+            if interruptedBy == nil {
+                interruptedBy = ExecRun.interruption(
+                    writeError: failed, watchingSIGPIPE: watch.isWatching(SIGPIPE))
+            }
         } else if !verdict.isEmpty {
             stderrLine("hangar: \(entry.alias): \(verdict)")
         }

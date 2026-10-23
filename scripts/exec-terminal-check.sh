@@ -9,10 +9,12 @@
 #   reads-terminal      a command run one at a time can read the terminal
 #   reads-terminal-redirected  the same with hangar's stdout sent to a file
 #   deadline            --timeout, with no terminal, leaves nothing running
+#   reader-gone         a reader that went away stops the run with 141, unless
+#                       SIGPIPE was ignored before hangar started
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-mode="${1:?usage: exec-terminal-check.sh interrupt|interrupt-parallel|interrupt-after-a-death|reads-terminal|reads-terminal-redirected|deadline}"
+mode="${1:?usage: exec-terminal-check.sh interrupt|interrupt-parallel|interrupt-after-a-death|reads-terminal|reads-terminal-redirected|deadline|reader-gone}"
 bin=app/.build/debug/hangar-cli
 swift build --package-path app --product hangar-cli >/dev/null 2>&1 || exit 1
 
@@ -105,6 +107,25 @@ case "$mode" in
         job=
         [[ $status -eq 4 ]] && ! pgrep -f "sleep $n" >/dev/null \
             && grep -q 'did not finish within 1 second' "$tmp/out"
+        ;;
+    reader-gone)
+        # The pipe's read end is closed before hangar starts, so every write to
+        # stdout fails and nothing depends on timing. Python ignores SIGPIPE
+        # itself, so restore_signals decides what hangar inherits.
+        # shellcheck disable=SC2016 # the single quotes are Python's, not the shell's
+        /usr/bin/python3 -I -c '
+import os, subprocess, sys
+def run(restore):
+    r, w = os.pipe()
+    os.close(r)
+    p = subprocess.run(sys.argv[1:], stdin=subprocess.DEVNULL, stdout=w,
+                       stderr=subprocess.PIPE, restore_signals=restore)
+    os.close(w)
+    return p.returncode, p.stderr.decode()
+code, err = run(True)
+ignored, _ = run(False)
+sys.exit(0 if code == 141 and "interrupted" in err and ignored == 0 else 1)
+' "$bin" --cache "$tmp/cache" -y --parallel 2 --exec sh -c 'echo hi'
         ;;
     *)
         echo "unknown mode: $mode" >&2
