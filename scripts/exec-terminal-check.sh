@@ -42,6 +42,7 @@ printf '%s' '{"instances": [
 drive() {
     local watch="$1" keys="$2" limit="$3"
     shift 3
+    # shellcheck disable=SC2016 # the single quotes keep Perl's $SIG from the shell
     ( sleep 2; printf '%b' "$keys"; sleep 30 ) \
         | script -q /dev/null /usr/bin/perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV' \
             "$bin" --cache "$tmp/cache" -y "$@" > "$tmp/out" 2>&1 &
